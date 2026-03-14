@@ -1,0 +1,17 @@
+node_modules
+dist
+.grasp-it
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+coverage/
+*.log
+__pycache__/
+.claude/
+.idea/
+.worktrees/
+homepage/public/demo/
+.private/
+__pycache__/
+*.pyc

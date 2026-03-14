@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '%s' \"$TOOL_INPUT\" | grep -qE 'git\\s+(commit|merge|cherry-pick|rebase)' && [ -f .grasp-it/config.json ] && grep -q '\"autoUpdate\".*true' .grasp-it/config.json && [ -f .grasp-it/knowledge-graph.json ] && echo \"[grasp-it] Commit detected with auto-update enabled. You MUST read the file at ${CLAUDE_PLUGIN_ROOT}/hooks/auto-update-prompt.md and execute its instructions to incrementally update the knowledge graph. Do not ask the user for confirmation — just do it.\" || true"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f .grasp-it/config.json ] && grep -q '\"autoUpdate\".*true' .grasp-it/config.json && [ -f .grasp-it/meta.json ] && [ -f .grasp-it/knowledge-graph.json ] && [ \"$(node -p \"JSON.parse(require('fs').readFileSync('.grasp-it/meta.json','utf8')).gitCommitHash\")\" != \"$(git rev-parse HEAD 2>/dev/null)\" ] && echo \"[grasp-it] Knowledge graph is stale. You MUST read the file at ${CLAUDE_PLUGIN_ROOT}/hooks/auto-update-prompt.md and execute its instructions to check for structural changes and update the graph. Do not ask the user for confirmation — just do it.\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}
