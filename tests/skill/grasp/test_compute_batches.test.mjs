@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/understand/compute-batches.mjs');
+const SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/compute-batches.mjs');
 const FIXTURES = resolve(__dirname, 'fixtures');
 
 function runScript(projectRoot, extraArgs = []) {

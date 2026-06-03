@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MERGE_SCRIPT = resolve(__dirname, "../../skills/understand/merge-batch-graphs.py");
+const MERGE_SCRIPT = resolve(__dirname, "../../skills/grasp/merge-batch-graphs.py");
 
 let projectRoot;
 let intermediateDir;

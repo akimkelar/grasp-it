@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(
   __dirname,
-  '../../../grasp-it-plugin/skills/understand/scan-project.mjs',
+  '../../../grasp-it-plugin/skills/grasp/scan-project.mjs',
 );
 
 /**
@@ -290,7 +290,7 @@ describe('scan-project.mjs — category assignment (project-scanner.md Step 4)',
     // LICENSE exception: must NOT be docs. The default ignore filter
     // normally drops LICENSE entirely, so we re-include it via
     // `!LICENSE` so the category test can fire.
-    writeFileSync(join(projectRoot, '.understandignore'), '!LICENSE\n');
+    writeFileSync(join(projectRoot, '.graspignore'), '!LICENSE\n');
     const r2 = runScript(projectRoot);
     const license = byPath(r2.output, 'LICENSE');
     expect(license).toBeDefined();
@@ -406,7 +406,7 @@ describe('scan-project.mjs — category assignment (project-scanner.md Step 4)',
   });
 });
 
-describe('scan-project.mjs — .understandignore handling', () => {
+describe('scan-project.mjs — .graspignore handling', () => {
   let projectRoot;
 
   afterEach(() => {
@@ -416,11 +416,11 @@ describe('scan-project.mjs — .understandignore handling', () => {
     }
   });
 
-  it('respects .understandignore patterns and increments filteredByIgnore', () => {
+  it('respects .graspignore patterns and increments filteredByIgnore', () => {
     // `**/*.log` is NOT in the hardcoded defaults at the recursive level
     // — wait, `*.log` is. Use a custom pattern to exercise user-driven drops.
     projectRoot = setupTree({
-      '.understandignore': 'fixtures/\n',
+      '.graspignore': 'fixtures/\n',
       'src/index.ts': 'export const x = 1;\n',
       'fixtures/snap1.json': '{ "a": 1 }\n',
       'fixtures/snap2.json': '{ "b": 2 }\n',
@@ -440,7 +440,7 @@ describe('scan-project.mjs — .understandignore handling', () => {
     // appear in the output. It is NOT counted in filteredByIgnore (it
     // was re-included, not additionally filtered).
     projectRoot = setupTree({
-      '.understandignore': '!keep.log\n',
+      '.graspignore': '!keep.log\n',
       'src/index.ts': 'export const x = 1;\n',
       'keep.log': 'important diagnostic\n',
       'drop.log': 'noise\n',
