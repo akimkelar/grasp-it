@@ -18,7 +18,7 @@ Update the domain-analyzer agent and grasp-po skill to emit the new schema nodes
 **Key changes:**
 - Replace the `domain → flow → step` output structure with `Domain → Feature → Operation` + standalone `Actor`, `BusinessRule`, `Entity`
 - Remove `Flow` and `Step` node types entirely
-- Remove `contains_flow`, `flow_step`, `cross_domain` relationship types
+- Remove `CONTAINS_FLOW`, `FLOW_STEP`, `CROSS_DOMAIN` relationship types
 - Add new node types with ID prefixes:
   - `feature:<kebab-name>`
   - `operation:<kebab-name>`
@@ -33,8 +33,10 @@ Update the domain-analyzer agent and grasp-po skill to emit the new schema nodes
   - `RESTRICTED_FOR` (Operation → Actor)
   - `GOVERNS` (BusinessRule → Feature/Operation)
   - `USES_ENTITY` (Feature/Operation → Entity)
-- Keep existing `IMPLEMENTED_BY` but extend its `status` values to include `"legacy" | "target" | "shared" | "planned"`
-- Keep existing `Decision`, `Constraint`, `Decision` nodes and `DECIDES`/`CONSTRAINED_BY` relationships (no changes to PO interview layer)
+- Extend `CONSTRAINED_BY` to accept `Feature` and `BusinessRule` as source (previously `Decision` only)
+- Extend `DECIDES` to target `Feature` and `BusinessRule` (previously `Claim` only)
+- Add `IMPLEMENTED_BY` as a native bridge relationship with `status: "legacy" | "target" | "shared" | "planned"` and `confidence: float`
+- Keep existing `Decision` and `Constraint` nodes and update `Decision.status` to include `"draft"` (`"draft" | "accepted" | "deprecated"`)
 - Update the mermaid diagram in the agent file to reflect the new schema
 
 ### 5.2 Update grasp-po/SKILL.md
@@ -56,22 +58,27 @@ Update the domain-analyzer agent and grasp-po skill to emit the new schema nodes
 - Add note that Groovy/Grails entry point patterns are now supported
 - Ensure the skill description is consistent with the new node types
 
-### 5.4 Graph validation updates
+### 5.4 Graph validation updates in `packages/core`
 
-**Search for:** Any code that validates or serializes knowledge graph nodes
+**Primary file:** `grasp-it-plugin/packages/core/src/schema.ts`
+
+This file contains the Zod schema for graph validation and has these stale references that must be updated:
+
+- **`EdgeTypeSchema`** (`z.enum([...])` at the top): remove `"contains_flow"`, `"flow_step"`, `"cross_domain"`; add `"has_feature"`, `"has_operation"`, `"sequence"`, `"performed_by"`, `"restricted_for"`, `"governs"`, `"uses_entity"`, `"implemented_by"`
+- **`NODE_TYPE_ALIASES`**: remove `business_flow: "flow"`, `business_process: "flow"`, `task: "step"`, `business_step: "step"`; add appropriate aliases for new types
+- **`EDGE_TYPE_ALIASES`**: remove `has_flow: "contains_flow"`, `next_step: "flow_step"`, `interacts_with: "cross_domain"`; add aliases for new relationship types
+- **`GraphNodeSchema`** (`type: z.enum([...])` in the Zod object): remove `"flow"`, `"step"`; add `"feature"`, `"actor"`, `"business-rule"`, `"operation"`
+- **`GraphNodeSchema.status`**: update from `z.enum(["proposed", "accepted", "implemented"])` to include `"planned"`, `"partial"`, `"deprecated"`, `"draft"`, `"active"` (all valid status values across the schema)
+
+**Search for additional files:**
 ```bash
-grep -r "flow\|step\|domain\|decision\|constraint" grasp-it-plugin/packages/core/src --include="*.ts" -l
+grep -r "flow\|step\|contains_flow\|flow_step\|cross_domain" grasp-it-plugin/packages/core/src --include="*.ts" -l
 ```
 
-**Update any files that:**
-- Hardcode node type lists (look for `kind === "knowledge"` validation logic)
-- Validate relationship types
-- Serialize graph output
-
-Ensure the validation layer:
-- Accepts `Feature`, `Actor`, `BusinessRule`, `Operation`, `Entity` nodes
-- Accepts new relationship types
-- Does not reject `Flow`/`Step` as legacy (graceful ignore, not hard error)
+Ensure the validation layer in `packages/core`:
+- Accepts `feature`, `actor`, `business-rule`, `operation`, `entity` as valid knowledge node types
+- Accepts `has_feature`, `has_operation`, `sequence`, `performed_by`, `restricted_for`, `governs`, `uses_entity`, `implemented_by` as valid relationship types
+- Removes `flow`, `step`, `contains_flow`, `flow_step`, `cross_domain` (these are no longer valid)
 
 ### 5.5 Find and update legacy graph references
 

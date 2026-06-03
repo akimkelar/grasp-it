@@ -54,7 +54,7 @@ export const groovyConfig = {
 - Add to named exports
 
 **Modify:** `grasp-it-plugin/packages/core/package.json`
-- Add dependency: `"tree-sitter-groovy": "^0.25.0"`
+- Add dependency: `"tree-sitter-groovy": "^0.1.2"` (confirmed installed version — do NOT use `^0.25.0`)
 
 ### 4.2 G2 — Groovy import resolver
 
@@ -137,6 +137,10 @@ export const grailsConfig = {
 - Add import for `grailsConfig`
 - Add to `builtinFrameworkConfigs` array
 - Add to named exports
+
+**Create:** `grasp-it-plugin/packages/core/src/languages/frameworks/grails.md`
+
+The `promptSnippetPath: "./frameworks/grails.md"` in `grailsConfig` references this file — it must be created. It should be a Grails framework context prompt for the LLM, describing Grails conventions: `grails-app/` directory layout (controllers, services, domain classes, jobs, taglibs, interceptors, conf), GORM for persistence, GSP views, URL mappings DSL, and how controller public methods map to HTTP actions. This prompt snippet is injected into the domain-analyzer LLM context when a Grails project is detected.
 
 ### 4.6 G6 — Extend Spring framework config for Groovy
 

@@ -33,18 +33,21 @@ grep -r "flow\|step\|contains_flow\|flow_step\|cross_domain" docs/ --include="*.
 
 ### 6.4 Verify graph documentation internal consistency
 
-Check that `docs/graph/` files are consistent with each other and with `docs/architecture/neo4j-schema.md`:
+`docs/graph/` files were created as part of Task 3 and validated/corrected during that task. As a final check, confirm that after Task 5 schema changes are applied, the `docs/graph/` files remain consistent with each other and with `docs/architecture/neo4j-schema.md`:
 - No contradictory node type names or relationship types
-- No stale references to removed nodes (Flow, Step)
-- Seeding rules align with what domain-analyzer actually produces
+- No stale references to removed nodes (`Flow`, `Step`) or removed relationships (`CONTAINS_FLOW`, `FLOW_STEP`, `CROSS_DOMAIN`)
+- Seeding rules in `docs/graph/seeding-rules.md` align with what domain-analyzer actually produces after Task 5 updates
+- If any inconsistencies were introduced by Task 5 changes, fix them here
 
 ### 6.5 Final review checklist
 
-- [ ] neo4j-schema.md matches actual agent/skill output
+- [ ] neo4j-schema.md matches actual agent/skill output after Task 5
 - [ ] No obsolete schema files remain without clear deprecation notice
 - [ ] CLAUDE.md schema description is accurate
-- [ ] docs/graph/ architecture.md is a good summary (complementary to neo4j-schema.md, not duplicate)
+- [ ] docs/graph/ files exist and are validated (Task 3 completed)
+- [ ] docs/graph/architecture.md is a good summary (complementary to neo4j-schema.md, not a duplicate)
 - [ ] All docs/graph/ files reference neo4j-schema.md as canonical source
+- [ ] docs/graph/ content is still consistent after Task 5 schema changes
 
 ## Completion
 
