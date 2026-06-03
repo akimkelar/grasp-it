@@ -38,17 +38,17 @@ Supporting documentation:
 
 The prompt alias **"work on tasks"** (used with `/loop work on tasks` or directly) triggers a sequential task implementation workflow:
 
-1. **Pick next task:** Read `docs/tasks/` directory and find the first `.md` file in sequence (sorted alphabetically, task files are named `NNN-description.md`)
-2. **Spawn sub-agent:** Launch a sub-agent for each task, providing:
-   - The task description from the markdown file
-   - Context from `CLAUDE.md` (project overview, architecture, conventions, gotchas)
-   - Any additional context needed for the task
-3. **Complete task:** When the sub-agent finishes implementation:
-   - Move the completed task file to `docs/tasks/archive/`
-   - Commit the change with a descriptive message
-   - Push the commit
-4. **Report progress:** After each task, display a table summarizing completed vs. remaining tasks
-5. **Continue:** Repeat until all tasks in `docs/tasks/` are complete
+1. **Pick next task:** List `docs/tasks/` directory (sorted alphabetically, files named `NNN-description.md`). Identify the first `.md` file that is NOT already in `docs/tasks/archive/`. When picking, only the file name determines eligibility — do not pre-read file content to evaluate or verify anything before spawning a sub-agent.
+
+2. **Spawn sub-agent:** Launch a sub-agent with `run_in_background: true` and provide:
+   - Path to the task file (e.g., `docs/tasks/02-project-cleanup.md`)
+   - Context from `CLAUDE.md` (project overview, architecture, conventions, gotchas, key commands)
+
+3. **Sub-agent completes the task:** The sub-agent reads the task file, does the work, creates a completion report at `docs/tasks/archive/NN-report.md` (same number as the task), archives the task file, commits, and pushes.
+
+4. **Report progress:** When the sub-agent completes, display a table summarizing completed tasks vs. remaining tasks (use file names from `docs/tasks/archive/` vs `docs/tasks/`).
+
+5. **Continue:** Repeat from step 1 until all tasks are in `docs/tasks/archive/`.
 
 ## Key Commands
 - `pnpm install` — Install all dependencies
