@@ -2,7 +2,7 @@
 
 ## Overview
 
-Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j database**, logicaly separated by the `kind` node property:
+Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j database**, logically separated by the `kind` node property:
 
 - **Codebase subgraph** (`kind: "codebase"`) — structural facts extracted from source code by deterministic scripts (tree-sitter, regex). LLM adds summaries only.
 - **Knowledge subgraph** (`kind: "knowledge"`) — business and product knowledge extracted by LLM from codebase signals and PO interviews.
