@@ -7,6 +7,8 @@ export {
   autoFixGraph,
   COMPLEXITY_ALIASES,
   DIRECTION_ALIASES,
+  toNeo4jLabel,
+  toNeo4jRelationshipType,
   type ValidationResult,
   type GraphIssue,
 } from "./schema.js";

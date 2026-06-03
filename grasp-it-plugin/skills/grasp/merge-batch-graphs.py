@@ -121,6 +121,42 @@ def normalize_direction(value: Any) -> str:
     return candidate
 
 
+# ── Neo4j label and relationship-type conversion ─────────────────────────────
+
+def to_neo4j_label(internal_type: str) -> str:
+    """Convert an internal node type to a Neo4j PascalCase label.
+
+    Internal JSON graph files use lowercase/kebab-case types
+    (e.g. ``"file"``, ``"business-rule"``, ``"endpoint"``). When persisting to
+    Neo4j, the persistence layer must convert these to PascalCase labels
+    (e.g. ``File``, ``"BusinessRule"``, ``Endpoint``).
+
+    This function provides the uniform transformation rule so no special-casing
+    of individual node types is needed.
+
+    Example:
+        to_neo4j_label("file")            -> "File"
+        to_neo4j_label("business-rule")   -> "BusinessRule"
+        to_neo4j_label("domain")          -> "Domain"
+    """
+    return "".join(seg[0].upper() + seg[1:].lower() for seg in internal_type.split("-"))
+
+
+def to_neo4j_relationship_type(internal_type: str) -> str:
+    """Convert an internal edge type to a Neo4j UPPER_SNAKE_CASE relationship type.
+
+    Internal JSON graph files use lowercase edge types (e.g. ``"imports"``,
+    ``"implemented_by"``). When persisting to Neo4j, the persistence layer
+    must convert these to UPPER_SNAKE_CASE (e.g. ``IMPORTS``, ``IMPLEMENTED_BY``).
+
+    Example:
+        to_neo4j_relationship_type("imports")         -> "IMPORTS"
+        to_neo4j_relationship_type("implemented_by")  -> "IMPLEMENTED_BY"
+        to_neo4j_relationship_type("governs")        -> "GOVERNS"
+    """
+    return internal_type.upper()
+
+
 def _num(v: Any) -> float:
     """Coerce a value to float for safe comparison (handles string weights)."""
     try:

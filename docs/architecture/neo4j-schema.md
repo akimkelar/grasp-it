@@ -64,12 +64,23 @@ Each node's subgraph origin is tracked by the `kind` property (`"codebase"` or `
 
 The JSON graph format and `schema.ts` enum use **lowercase** internal type strings (e.g. `"file"`,
 `"domain"`, `"business-rule"`). When writing to Neo4j, the persistence layer converts these to
-PascalCase labels and UPPER_SNAKE_CASE relationship types.
+PascalCase labels and UPPER_SNAKE_CASE relationship types using the transformation functions in
+`schema.ts`:
 
-**Known inconsistency:** the `schema.ts` enum currently uses `"BusinessRule"` (PascalCase) instead of
-`"business-rule"` (kebab-case) as the canonical internal value. This is handled via an alias roundtrip
-(`sanitizeGraph` lowercases input → `normalizeGraph` maps `businessrule` alias → `"BusinessRule"`).
-Task 17 tracks fixing this to `"business-rule"` for consistency with all other type values.
+- **`toNeo4jLabel(type)`** — converts lowercase/kebab-case to PascalCase
+  - `"file"` → `File`, `"business-rule"` → `BusinessRule`, `"endpoint"` → `Endpoint`
+- **`toNeo4jRelationshipType(type)`** — converts lowercase to UPPER_SNAKE_CASE
+  - `"imports"` → `IMPORTS`, `"implemented_by"` → `IMPLEMENTED_BY`, `"governs"` → `GOVERNS`
+
+These functions are idempotent and provide a uniform transformation rule — no special-casing of
+individual node or relationship types is needed.
+
+**Note:** The `schema.ts` enum currently uses `"BusinessRule"` (PascalCase) as the canonical
+internal value for the business-rule node type instead of `"business-rule"` (kebab-case). This
+inconsistency is tracked in Task 17 (`docs/tasks/17-fix-businessrule-casing.md`). The alias
+system in `normalizeGraph` handles backward compatibility, but when Task 17 is complete, the
+canonical enum value will be `"business-rule"` and `toNeo4jLabel("business-rule")` will return
+`"BusinessRule"` as expected.
 
 ---
 

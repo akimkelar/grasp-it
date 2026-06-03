@@ -447,6 +447,48 @@ export const KnowledgeGraphSchema = z.object({
   tour: z.array(TourStepSchema),
 });
 
+// ── Neo4j label and relationship-type conversion ─────────────────────────────
+
+/**
+ * Convert an internal node `type` value to a Neo4j PascalCase label.
+ *
+ * Internal JSON graph files use lowercase/kebab-case types
+ * (e.g. `"file"`, `"business-rule"`, `"endpoint"`). When persisting to
+ * Neo4j, the persistence layer must convert these to PascalCase labels
+ * (e.g. `File`, `BusinessRule`, `Endpoint`).
+ *
+ * This function provides the uniform transformation rule so no special-casing
+ * of individual node types is needed.
+ *
+ * @example
+ *   toNeo4jLabel("file")           // "File"
+ *   toNeo4jLabel("business-rule")  // "BusinessRule"
+ *   toNeo4jLabel("domain")         // "Domain"
+ */
+export function toNeo4jLabel(internalType: string): string {
+  // Split on hyphens and capitalize each segment (handles kebab-case)
+  return internalType
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join("");
+}
+
+/**
+ * Convert an internal edge `type` value to a Neo4j UPPER_SNAKE_CASE relationship type.
+ *
+ * Internal JSON graph files use lowercase edge types (e.g. `"imports"`, `"implemented_by"`).
+ * When persisting to Neo4j, the persistence layer must convert these to UPPER_SNAKE_CASE
+ * (e.g. `:IMPORTS`, `:IMPLEMENTED_BY`).
+ *
+ * @example
+ *   toNeo4jRelationshipType("imports")         // "IMPORTS"
+ *   toNeo4jRelationshipType("implemented_by")  // "IMPLEMENTED_BY"
+ *   toNeo4jRelationshipType("governs")         // "GOVERNS"
+ */
+export function toNeo4jRelationshipType(internalType: string): string {
+  return internalType.toUpperCase();
+}
+
 export interface GraphIssue {
   level: "auto-corrected" | "dropped" | "fatal";
   category: string;
