@@ -44,7 +44,7 @@ The prompt alias **"work on tasks"** (used with `/loop work on tasks` or directl
    - Path to the task file (e.g., `docs/tasks/02-project-cleanup.md`)
    - Context from `CLAUDE.md` (project overview, architecture, conventions, gotchas, key commands)
 
-3. **Sub-agent completes the task:** The sub-agent reads the task file, does the work, creates a completion report at `docs/tasks/archive/NN-report.md` (same number as the task), archives the task file, commits, and pushes.
+3. **Sub-agent completes the task:** The sub-agent reads the task file, does the work, creates a completion report at `docs/tasks/archive/NN-report.md` (same number as the task), moves the original task file to `docs/tasks/archive/` (archive by moving, do NOT delete), commits, and pushes.
 
 4. **Report progress:** When the sub-agent completes, display a table summarizing completed tasks vs. remaining tasks (use file names from `docs/tasks/archive/` vs `docs/tasks/`).
 
@@ -76,7 +76,9 @@ Versions are tracked in the individual package.json files:
 
 All packages start at `0.1.0`. Semantic versioning begins at first official release.
 
-## Testing Local Plugin Changes at `~/.claude/plugins/cache/grasp-it/grasp-it/<version>/`. Symlinks don't work because Claude's Search/Glob tools can't follow them. To test local changes:
+## Testing Local Plugin Changes
+
+Claude Code caches installed plugins at `~/.claude/plugins/cache/grasp-it/grasp-it/<version>/`. Symlinks don't work because Claude's Search/Glob tools can't follow them. To test local changes:
 
 1. **Build the packages:**
    ```bash
