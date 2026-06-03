@@ -17,12 +17,38 @@ An open-source tool combining LLM intelligence + static analysis to produce a kn
 
 ## Knowledge Graph
 
-The project analyzes codebases and produces a structured knowledge graph stored in Neo4j. See [`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md) for the Neo4j schema design (databases, node labels, relationship types) and mermaid diagrams.
+The project analyzes codebases and produces a structured knowledge graph stored in Neo4j:
+
+- **[`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md)** — full schema design (databases, node labels, relationship types, mermaid diagrams, key query patterns, indexes)
+- **[`docs/architecture/schema-evolution-plan.md`](docs/architecture/schema-evolution-plan.md)** — settled decisions and rationale, Groovy/Grails support tasks (G1–G6)
+
+Supporting documentation:
+- **[`docs/graph/architecture.md`](docs/graph/architecture.md)** — high-level graph overview and diagram
+- **[`docs/graph/outdating-rules.md`](docs/graph/outdating-rules.md)** — detecting and resolving stale nodes
+- **[`docs/graph/quality-rules.md`](docs/graph/quality-rules.md)** — quality dimensions and validation queries
+- **[`docs/graph/seeding-rules.md`](docs/graph/seeding-rules.md)** — initial graph creation quality bar
 
 ## Agent Pipeline
 - Agents write intermediate results to `.grasp-it/intermediate/` on disk (not returned to context)
 - Agent model field is omitted from frontmatter so each platform falls back to its configured default — `inherit` was a Claude Code-only keyword that opencode (and similar tools) treated as a literal model id and rejected with `ProviderModelNotFoundError` (see #167)
 - Intermediate files cleaned up after graph assembly
+- **Investigation principle:** agents working over `docs/tasks/` should perform a broad search over the project's files first, to avoid missing related changes across the codebase
+
+## Work on Tasks
+
+The prompt alias **"work on tasks"** (used with `/loop work on tasks` or directly) triggers a sequential task implementation workflow:
+
+1. **Pick next task:** Read `docs/tasks/` directory and find the first `.md` file in sequence (sorted alphabetically, task files are named `NNN-description.md`)
+2. **Spawn sub-agent:** Launch a sub-agent for each task, providing:
+   - The task description from the markdown file
+   - Context from `CLAUDE.md` (project overview, architecture, conventions, gotchas)
+   - Any additional context needed for the task
+3. **Complete task:** When the sub-agent finishes implementation:
+   - Move the completed task file to `docs/tasks/archive/`
+   - Commit the change with a descriptive message
+   - Push the commit
+4. **Report progress:** After each task, display a table summarizing completed vs. remaining tasks
+5. **Continue:** Repeat until all tasks in `docs/tasks/` are complete
 
 ## Key Commands
 - `pnpm install` — Install all dependencies
