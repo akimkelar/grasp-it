@@ -60,7 +60,7 @@ const knowledgeGraph: KnowledgeGraph = {
     },
     {
       id: "business-rule:manager-approval",
-      type: "BusinessRule",
+      type: "business-rule",
       name: "Manager Approval Required",
       summary: "Invoices over $1000 require approval",
       tags: ["approval"],
@@ -160,7 +160,7 @@ describe("knowledge node types", () => {
     expect(result.success).toBe(true);
     const brNode = result.data!.nodes.find((n) => n.id === "business-rule:manager-approval");
     expect(brNode).toBeDefined();
-    expect(brNode!.type).toBe("BusinessRule");
+    expect(brNode!.type).toBe("business-rule");
     expect((brNode as any).ruleText).toContain("$1000");
     expect(brNode!.status).toBe("active");
   });
