@@ -57,8 +57,8 @@ Check that it accurately describes what each script and LLM agent produces:
 - `extract-structure.mjs` and `extract-import-map.mjs` produce structural facts (no business semantics)
 - `extract-domain-context.py` produces entry points and file signatures (raw material for LLM)
 - `/grasp-domain` domain-analyzer LLM produces `Domain`, `Feature`, `Operation`, draft `BusinessRule`, `Entity` nodes
-- `/grasp-po` produces `Actor`, confirmed `BusinessRule`, `Decision`, `Constraint`, `Operation` sequences
-- `Actor` nodes require `/grasp-po` only — scripts produce no actor signals
+- `/grasp-requirements` produces `Actor`, confirmed `BusinessRule`, `Decision`, `Constraint`, `Operation` sequences
+- `Actor` nodes require `/grasp-requirements` only — scripts produce no actor signals
 - No references to removed nodes
 
 ## Completion

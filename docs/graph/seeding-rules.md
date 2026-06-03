@@ -23,7 +23,7 @@ Seeding generates an initial useful graph from a codebase. The goal is not just 
 - `Actor` hints from role-related naming (limited — true actor definition requires PO)
 - `Entity` nodes from business object naming patterns
 
-### From `/grasp-po` (PO interview)
+### From `/grasp-requirements` (PO interview)
 
 - `Feature` descriptions with `status: "planned"`
 - `Actor` definitions with `permissions` and `restrictions`
@@ -94,7 +94,7 @@ Seeding is the initial graph creation. After seeding, the graph is updated incre
 
 - `/grasp` rebuilds the codebase subgraph (deterministic, script-only)
 - `/grasp-domain` updates domain/feature/operation knowledge (LLM, from script signals)
-- `/grasp-po` adds or updates PO interview knowledge (LLM, from PO input)
+- `/grasp-requirements` adds or updates PO interview knowledge (LLM, from PO input)
 
 The graph is never fully deleted and rebuilt from scratch — only the codebase subgraph is wiped per `/grasp` run. Knowledge subgraph persists and is updated incrementally.
 

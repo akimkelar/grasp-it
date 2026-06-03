@@ -11,7 +11,7 @@ Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j da
 - **Knowledge subgraph** — product and domain knowledge: business domains, features, operations,
   actors, business rules, decisions, and constraints. Populated by:
   - `/grasp-domain` — mines domain and feature knowledge from the codebase
-  - `/grasp-po` — interviews the Product Owner to distil planned feature knowledge
+  - `/grasp-requirements` — interviews the Product Owner to distil planned feature knowledge
 
 The knowledge subgraph stores knowledge of two kinds:
 - **Implemented** — what the codebase currently does, extracted by analysis
@@ -78,7 +78,7 @@ Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summarie
 
 ### Knowledge Nodes (`kind: "knowledge"`)
 
-#### Business Layer — populated by `/grasp-domain` and `/grasp-po`
+#### Business Layer — populated by `/grasp-domain` and `/grasp-requirements`
 
 | Label | Description | Properties |
 |-------|-------------|------------|
@@ -89,7 +89,7 @@ Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summarie
 | `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `tags[]` |
 | `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `tags[]` |
 
-#### PO Interview Layer — populated by `/grasp-po`
+#### PO Interview Layer — populated by `/grasp-requirements`
 
 | Label | Description | Properties |
 |-------|-------------|------------|

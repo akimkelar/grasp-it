@@ -81,7 +81,7 @@ RETURN f.id, f.name
 |-----------|------------|
 | `implemented` feature has no `IMPLEMENTED_BY` edges | Re-run `/grasp-domain` to re-link to code |
 | Feature has only `legacy` edges | Re-run `/grasp-domain` — code was refactored, new edges expected |
-| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-po` to update status, or manually update |
+| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-requirements` to update status, or manually update |
 | Actor/BusinessRule/Entity has no relationships | Review with PO — node may be incorrect or deprecated |
 | Decision is `deprecated` | Archive or delete; review if any constraints depend on it |
 

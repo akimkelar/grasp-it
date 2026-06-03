@@ -2,7 +2,7 @@
 
 ## Description
 
-Update the domain-analyzer agent and grasp-po skill to emit the new schema nodes (`Feature`, `Actor`, `BusinessRule`, `Operation`, `Entity`) and relationships, and remove deprecated `Flow`/`Step` nodes and their relationships.
+Update the domain-analyzer agent and grasp-requirements skill to emit the new schema nodes (`Feature`, `Actor`, `BusinessRule`, `Operation`, `Entity`) and relationships, and remove deprecated `Flow`/`Step` nodes and their relationships.
 
 ## Pre-requisites
 
@@ -39,9 +39,9 @@ Update the domain-analyzer agent and grasp-po skill to emit the new schema nodes
 - Keep existing `Decision` and `Constraint` nodes and update `Decision.status` to include `"draft"` (`"draft" | "accepted" | "deprecated"`)
 - Update the mermaid diagram in the agent file to reflect the new schema
 
-### 5.2 Update grasp-po/SKILL.md
+### 5.2 Update grasp-requirements/SKILL.md
 
-**File:** `grasp-it-plugin/skills/grasp-po/SKILL.md`
+**File:** `grasp-it-plugin/skills/grasp-requirements/SKILL.md`
 
 **Key changes:**
 - Update the PO interview output schema to include `Actor`, `BusinessRule`, `Operation`, `Feature`, `Entity` node types
@@ -93,7 +93,7 @@ Update all references to use the new schema.
 
 When complete:
 - domain-analyzer.md emits new node types and relationships
-- grasp-po/SKILL.md reflects new schema
+- grasp-requirements/SKILL.md reflects new schema
 - No remaining references to Flow/Step in agent/skill files
 - Graph validation accepts new schema
 - Commit with message: `refactor: update schema nodes — add Feature/Actor/BusinessRule/Operation/Entity, remove Flow/Step`

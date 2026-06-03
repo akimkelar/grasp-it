@@ -20,22 +20,22 @@ The core idea is a **two-graph system**:
 
 - **Knowledge graph** — domain and product knowledge: business features, actors, operations,
   business rules, decisions, and constraints. Populated by `/grasp-domain` (from code) and
-  `/grasp-po` (from the Product Owner).
+  `/grasp-requirements` (from the Product Specialist).
 
 The knowledge graph stores two kinds of knowledge:
 - **Implemented** — what the codebase currently does
-- **Planned** — what the PO envisions for a new or changed feature
+- **Planned** — what the Product Specialist envisions for a new or changed feature
 
 ### Primary Workflow
 
 ```
 1. /grasp           → analyze the codebase, build the structural graph
 2. /grasp-domain    → mine domain and feature knowledge from the code
-3. /grasp-po        → interview the Product Owner, extract planned feature knowledge
+3. /grasp-requirements        → interview the Product Owner, extract planned feature knowledge
 4. Use the graph    → create tasks, implementation plans, test cases, and drive implementation
 ```
 
-The `/grasp-po` interview is structured: the agent asks probing questions about features, actors
+The `/grasp-requirements` interview is structured: the agent asks probing questions about features, actors
 (who can do what), business rules (what is allowed/forbidden), operations (what steps happen and
 in what order), decisions (what was chosen and why), and constraints (what must always hold).
 The interview continues until mutual confidence is reached. The result is a structured graph of
@@ -77,10 +77,10 @@ Derives business domains, features, and flows from the codebase graph.
 ### 4. Interview the Product Owner
 
 ```bash
-/grasp-po "new feature area"
+/grasp-requirements "new feature area"
 ```
 
-Conducts a structured interview to extract planned knowledge — what the PO wants, what rules apply,
+Conducts a structured interview to extract planned knowledge — what the Product Specialist wants, what rules apply,
 who the actors are, what the constraints are. Stores everything in the knowledge graph.
 
 ### 5. Search and explore
@@ -99,7 +99,7 @@ Connect to the Neo4j Browser at `localhost:7474` to explore the graph visually.
 |-------|---------|--------|
 | `/grasp` | Full codebase analysis | Neo4j codebase graph |
 | `/grasp-domain` | Extract business domains and features from code | Knowledge graph (implemented) |
-| `/grasp-po` | Interview Product Owner, extract planned knowledge | Knowledge graph (planned) |
+| `/grasp-requirements` | Interview Product Specialist, extract planned knowledge | Knowledge graph (planned) |
 | `/grasp-search` | Query the graph before coding | Architecture understanding |
 | `/grasp-diff` | Analyze change impact | Affected components |
 | `/grasp-explain` | Deep-dive into a specific file or function | Plain-English explanation |

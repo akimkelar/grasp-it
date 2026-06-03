@@ -11,7 +11,7 @@ After all schema changes are implemented, update the architecture documentation 
 **File:** `docs/architecture/neo4j-schema.md`
 
 - Confirm it already reflects the final schema (Feature, Actor, BusinessRule, Operation, Entity nodes present; Flow/Step absent)
-- Confirm all relationship types match what domain-analyzer.md and grasp-po/SKILL.md emit
+- Confirm all relationship types match what domain-analyzer.md and grasp-requirements/SKILL.md emit
 - Check that `IMPLEMENTED_BY` status values are documented correctly
 - Check that `Decision.status` includes `"draft"`
 
@@ -22,7 +22,7 @@ Search for any files that reference the old schema:
 grep -r "flow\|step\|contains_flow\|flow_step\|cross_domain" docs/ --include="*.md" -l
 ```
 
-- `feature-development-graph-design.md` — this was a draft exploration document. If it exists, archive it or note that it's superseded by neo4j-schema.md and the schema-evolution-plan.md final decisions section.
+- `docs/architecture/approaches/feature-development-graph-design.md` — this was a draft exploration document. If it exists, archive it or note that it's superseded by neo4j-schema.md and the schema-evolution-plan.md final decisions section.
 
 ### 6.3 Update CLAUDE.md schema reference if needed
 

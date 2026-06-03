@@ -11,8 +11,8 @@ An open-source tool combining LLM intelligence + static analysis to produce a kn
 - **Monorepo** with pnpm workspaces
 - **grasp-it-plugin/** — Claude Code plugin containing all source code:
   - **packages/core** — Shared analysis engine (types, persistence, tree-sitter, search, schema, tours, plugins)
-  - **src/** — Skill TypeScript source for `/grasp`, `/grasp-diff`, `/grasp-explain`, `/grasp-domain`, `/grasp-gaps`, `/grasp-knowledge`, `/grasp-po`, `/grasp-search`
-  - **skills/** — Skill definitions (`/grasp`, `/grasp-diff`, `/grasp-explain`, `/grasp-domain`, `/grasp-gaps`, `/grasp-knowledge`, `/grasp-po`, `/grasp-search`)
+  - **src/** — Skill TypeScript source for `/grasp`, `/grasp-diff`, `/grasp-explain`, `/grasp-domain`, `/grasp-gaps`, `/grasp-knowledge`, `/grasp-requirements`, `/grasp-search`
+  - **skills/** — Skill definitions (`/grasp`, `/grasp-diff`, `/grasp-explain`, `/grasp-domain`, `/grasp-gaps`, `/grasp-knowledge`, `/grasp-requirements`, `/grasp-search`)
   - **agents/** — Agent definitions (project-scanner, file-analyzer, architecture-analyzer, tour-builder, graph-reviewer)
 
 ## Knowledge Graph

@@ -5,7 +5,7 @@
 The primary purpose of Grasp-It has shifted. The most important workflow is now:
 
 1. **`/grasp-domain`** — mine business domain and feature knowledge from the codebase
-2. **`/grasp-po`** — interview the Product Owner to extract planned feature knowledge (business rules,
+2. **`/grasp-requirements`** — interview the Product Owner to extract planned feature knowledge (business rules,
    decisions, constraints, actors, operations)
 
 The resulting graphs are then used to create tasks, build implementation plans, design test cases,
@@ -40,7 +40,7 @@ a flow. Keeping both would split the same concept across two node types with no 
 
 ### Deferred nodes
 
-The following nodes from earlier drafts and the `feature-development-graph-design.md` document
+The following nodes from earlier drafts and the `docs/architecture/approaches/feature-development-graph-design.md` document
 are **deferred** — they have no script signal, require speculative LLM extraction, and can be
 modeled as `tags[]`, `scope[]`, or `BusinessRule` text until a concrete use case justifies them:
 
@@ -166,7 +166,7 @@ Properties:
 - `restrictions: string[]` — what they cannot do
 - `tags: string[]`
 
-**Extraction source:** `/grasp-po` PO interview only. Scripts produce no actor signals.
+**Extraction source:** `/grasp-requirements` PO interview only. Scripts produce no actor signals.
 Code may hint at roles (guard names, permission constants), but business-level actor
 definition requires the PO. Trying to infer actors from code alone would produce
 technical roles (e.g. "AdminUser", "AuthGuard") rather than business roles.
@@ -190,7 +190,7 @@ Properties:
 - `scope: string[]`
 - `tags: string[]`
 
-**Extraction source:** Primarily `/grasp-po` PO interview. Partially inferrable by the
+**Extraction source:** Primarily `/grasp-requirements` PO interview. Partially inferrable by the
 domain-analyzer LLM from guard/middleware names and permission-checking code patterns
 (e.g. `@Roles('MANAGER')`, `if (!user.isAdmin) throw Forbidden`), but semantic intent
 requires PO confirmation. Domain-analyzer can produce draft `BusinessRule` nodes; PO
@@ -215,7 +215,7 @@ Properties:
 - `tags: string[]`
 
 **Extraction source:** Both the domain-analyzer LLM (from entry points + exported function
-names in the script output) and `/grasp-po` PO interview. The scripts surface raw operation
+names in the script output) and `/grasp-requirements` PO interview. The scripts surface raw operation
 signals deterministically — HTTP endpoints, exported handler names, event handler names —
 which the LLM maps to named operations. PO interview adds operations not yet implemented and
 clarifies sequencing / constraints. This is the node type with the highest script-to-LLM
@@ -294,7 +294,7 @@ at the business level. Keeping them separate means the graph can answer both
 
 ## Rationale for Actor
 
-The entire premise of the PO interview in `/grasp-po` is to extract "who can do what, who is
+The entire premise of the PO interview in `/grasp-requirements` is to extract "who can do what, who is
 restricted from what, what processes run in which context to achieve which goal." Without `Actor`
 as a first-class node, the answer to "who" is scattered across constraint text and summaries,
 and is not queryable.
@@ -325,12 +325,12 @@ the product concept of a "feature" — a named, versioned, deliverable slice of 
 | Node | Script provides | LLM required | Skill that creates it |
 |------|----------------|--------------|----------------------|
 | `Feature` | URL paths, dir names, controller names | Yes — semantic grouping | `/grasp-domain` (domain-analyzer) |
-| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-po` only |
-| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-po` accepted |
-| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-po` |
+| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-requirements` only |
+| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-requirements` accepted |
+| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-requirements` |
 | `Domain` | Entry point groupings (existing) | Yes (existing) | `/grasp-domain` (existing) |
 | `Flow` / `Step` | Nothing | Yes (existing) | `/grasp-domain` (existing) |
-| `Decision` / `Constraint` / `Claim` | Nothing | Yes (existing) | `/grasp-po` (existing) |
+| `Decision` / `Constraint` / `Claim` | Nothing | Yes (existing) | `/grasp-requirements` (existing) |
 | `File`, `Function`, `Class` | Full structural facts | Yes — summaries only | `/grasp` (existing) |
 
 **Key principle:** Scripts run once at zero LLM cost, produce deterministic facts, and reduce

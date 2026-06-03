@@ -1,30 +1,30 @@
 ---
-name: grasp-po
-description: Interview a Product Owner to extract product knowledge into the knowledge graph. Use when you need to gather requirements, design decisions, business rules, and constraints directly from a PO through guided questioning.
+name: grasp-requirements
+description: Interview a Product Specialist to extract product requirements into the knowledge graph. Use when you need to gather requirements, design decisions, business rules, and constraints directly from a product specialist through guided questioning.
 argument-hint: [topic area]
 ---
 
-# /grasp-po
+# /grasp-requirements
 
-Conduct a structured interview with a Product Owner (PO) to extract product knowledge into the knowledge graph. The interview continues until mutual confidence is reached — until both the agent and PO understand the topic the same way. At that point, knowledge is extracted and stored.
+Conduct a structured interview with a Product Specialist to extract product requirements into the knowledge graph. The interview continues until mutual confidence is reached — until both the agent and the Product Specialist understand the topic the same way. At that point, knowledge is extracted and stored.
 
 ## When to Use
 
 - When starting a new feature or significant change
 - When the existing graph's `:Knowledge:Semantic:Decision` and `:Knowledge:Semantic:Constraint` nodes need population
 - When migrating or re-implementing behavior that was never formally documented
-- Use `/grasp-chat` when querying existing knowledge; use `/grasp-po` when building new knowledge
+- Use `/grasp-chat` when querying existing knowledge; use `/grasp-requirements` when building new knowledge
 
 ## Graph Schema
 
-PO-extracted knowledge uses these node types:
+Product requirements knowledge uses these node types:
 
 - `decision` — a commitment or resolved question (`status: proposed | accepted | implemented`)
 - `constraint` — a rule, invariant, or condition the implementation must respect
 - `concept` — a topic or subject (extended with `subConcepts[]`, `constrainedBy[]`)
 - `claim` — an assertion (extended with `confidence: tentative | agreed`)
 
-Key relationship types for PO knowledge:
+Key relationship types for product requirements knowledge:
 
 - `sub_concept_of` — concept composition (part-of hierarchy)
 - `constrained_by` — a rule applies to a concept or decision
@@ -59,9 +59,9 @@ if [ -n "$COMMON_DIR" ] && [ -n "$GIT_DIR" ]; then
   fi
 fi
 
-SKILL_REAL=$(realpath ~/.agents/skills/grasp-po 2>/dev/null || readlink -f ~/.agents/skills/grasp-po 2>/dev/null || echo "")
+SKILL_REAL=$(realpath ~/.agents/skills/grasp-requirements 2>/dev/null || readlink -f ~/.agents/skills/grasp-requirements 2>/dev/null || echo "")
 SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-po 2>/dev/null || readlink -f ~/.copilot/skills/grasp-po 2>/dev/null || echo "")
+COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-requirements 2>/dev/null || readlink -f ~/.copilot/skills/grasp-requirements 2>/dev/null || echo "")
 COPILOT_SELF_RELATIVE=$P([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
 PLUGIN_ROOT=""
@@ -90,8 +90,8 @@ mkdir -p "$PROJECT_ROOT/.grasp-it/intermediate"
 
 ## Phase 1: Topic Confirmation
 
-1. Confirm the topic area with the PO: `$ARGUMENTS` or the user's initial statement
-2. If no topic was provided, ask the PO what area they want to cover
+1. Confirm the topic area with the Product Specialist: `$ARGUMENTS` or the user's initial statement
+2. If no topic was provided, ask the Product Specialist what area they want to cover
 3. State the goal: "We're going to explore [topic] together. I'll ask questions to make sure I understand it the same way you do. When we're both confident we understand it fully, I'll record what we've agreed on."
 4. Create an `interview-context.json`:
 ```json
@@ -108,7 +108,7 @@ mkdir -p "$PROJECT_ROOT/.grasp-it/intermediate"
 
 ### Interview Strategy
 
-Use the `po-interviewer` agent definition. The agent:
+Use the `pr-interviewer` agent definition. The agent:
 
 1. Asks structured, probing questions to extract:
    - **Concepts** — what are the key abstractions? What parts make up the whole?
@@ -123,7 +123,7 @@ Use the `po-interviewer` agent definition. The agent:
    - All decisions have `rationale` and `scope`
    - All active claims have `confidence: agreed`
 
-3. Writes nodes incrementally to `$PROJECT_ROOT/.grasp-it/intermediate/po-nodes.json`:
+3. Writes nodes incrementally to `$PROJECT_ROOT/.grasp-it/intermediate/pr-nodes.json`:
 ```json
 {
   "nodes": [
@@ -134,7 +134,7 @@ Use the `po-interviewer` agent definition. The agent:
 }
 ```
 
-4. Writes edges to `$PROJECT_ROOT/.grasp-it/intermediate/po-edges.json`:
+4. Writes edges to `$PROJECT_ROOT/.grasp-it/intermediate/pr-edges.json`:
 ```json
 {
   "edges": [
@@ -156,13 +156,13 @@ Ask questions in this order for each concept area:
 5. **Scope** — When/where does this apply? Only in this feature? For all users?
 6. **Evidence** — Is there documentation, a ticket, or code that shows this?
 
-For each question, mark the response as `tentative` or `agreed`. Switch to `agreed` only when the PO confirms and you paraphrase back their meaning and they confirm your paraphrase is correct.
+For each question, mark the response as `tentative` or `agreed`. Switch to `agreed` only when the Product Specialist confirms and you paraphrase back their meaning and they confirm your paraphrase is correct.
 
 ---
 
 ## Phase 3: Consensus Check
 
-Periodically (or when the PO signals done), verify mutual understanding:
+Periodically (or when the Product Specialist signals done), verify mutual understanding:
 
 1. Summarize back what was agreed in the conversation:
    - List the key concepts and their sub-concepts
@@ -172,7 +172,7 @@ Periodically (or when the PO signals done), verify mutual understanding:
 
 2. Ask: "Have I understood this correctly? Is there anything I've missed or misrepresented?"
 
-3. If the PO confirms, mark all current claims as `confidence: agreed`, set all current decisions to `status: accepted`
+3. If the Product Specialist confirms, mark all current claims as `confidence: agreed`, set all current decisions to `status: accepted`
 
 4. If gaps remain, continue interviewing until consensus
 
@@ -181,12 +181,12 @@ Periodically (or when the PO signals done), verify mutual understanding:
 ## Phase 4: Merge into Knowledge Graph
 
 1. Read the existing `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` (if it exists)
-2. Read the new `po-nodes.json` and `po-edges.json`
+2. Read the new `pr-nodes.json` and `pr-edges.json`
 3. Merge:
    - Nodes with the same `id` are deduplicated (keep existing if already `accepted` or `implemented`, otherwise update)
    - Edges are deduplicated by `(source, target, type)` composite
    - All new nodes/edges are appended
-4. Ensure a `layer:knowledge` layer exists — add any new PO-derived nodes to its `nodeIds`
+4. Ensure a `layer:knowledge` layer exists — add any new Product Specialist-derived nodes to its `nodeIds`
 5. Validate the merged graph using the schema validation
 6. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
 
@@ -208,7 +208,7 @@ Offer to launch the dashboard:
 
 ---
 
-## Reference: PO Interview Node Shapes
+## Reference: Product Requirements Interview Node Shapes
 
 ```
 Decision node:
