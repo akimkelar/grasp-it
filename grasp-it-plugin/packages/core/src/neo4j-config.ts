@@ -8,7 +8,7 @@
  * A global config at ~/.grasp-it/ can be used for shared credentials.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 
@@ -197,12 +197,30 @@ export function loadConfig(projectRoot: string): ConfigLoadResult {
 }
 
 /**
- * Save configuration to a .env file
+ * Ensure .env is listed in .gitignore so credentials are not committed.
+ * Appends the entry only if it is not already present.
+ */
+export function ensureEnvInGitignore(projectRoot: string): void {
+  const gitignorePath = join(projectRoot, ".gitignore");
+  const entry = ".env";
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, "utf-8");
+    const lines = content.split("\n").map((l) => l.trim());
+    if (lines.includes(entry)) return; // already present
+    appendFileSync(gitignorePath, `\n# Added by grasp-it — keep Neo4j credentials out of version control\n${entry}\n`, "utf-8");
+  } else {
+    writeFileSync(gitignorePath, `# Added by grasp-it — keep Neo4j credentials out of version control\n${entry}\n`, "utf-8");
+  }
+}
+
+/**
+ * Save configuration to a .env file and ensure .env is in .gitignore.
  */
 export function saveConfig(projectRoot: string, config: Neo4jConfig): void {
   const filePath = join(projectRoot, NEO4J_CONFIG_FILE);
   const content = serializeEnvFile(config);
   writeFileSync(filePath, content, "utf-8");
+  ensureEnvInGitignore(projectRoot);
 }
 
 /**

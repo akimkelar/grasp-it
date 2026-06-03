@@ -129,6 +129,7 @@ export {
   buildCypherShellCommand,
   getConnectionTypeDescription,
   getRequiredConfigKeys,
+  ensureEnvInGitignore,
   SETUP_PROMPTS,
   type Neo4jConfig,
   type ConfigLoadResult,

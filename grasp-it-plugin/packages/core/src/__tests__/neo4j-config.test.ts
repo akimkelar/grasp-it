@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { writeFileSync, readFileSync, unlinkSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -7,6 +7,7 @@ import {
   loadConfig,
   saveConfig,
   hasConfig,
+  ensureEnvInGitignore,
   ENV_VARS,
   DEFAULTS,
   type Neo4jConfig,
@@ -251,6 +252,49 @@ NEO4J_PASSWORD=secret
       const result = loadConfig(dirWithSpaces);
       expect(result.success).toBe(true);
       expect(result.config?.uri).toBe("bolt://localhost:7687");
+    });
+  });
+
+  describe("ensureEnvInGitignore", () => {
+    it("creates .gitignore with .env entry when no .gitignore exists", () => {
+      ensureEnvInGitignore(projectRoot);
+      const gitignorePath = join(projectRoot, ".gitignore");
+      expect(existsSync(gitignorePath)).toBe(true);
+      const content = readFileSync(gitignorePath, "utf-8");
+      expect(content).toContain(".env");
+    });
+
+    it("appends .env entry to existing .gitignore", () => {
+      const gitignorePath = join(projectRoot, ".gitignore");
+      writeFileSync(gitignorePath, "node_modules/\ndist/\n", "utf-8");
+      ensureEnvInGitignore(projectRoot);
+      const content = readFileSync(gitignorePath, "utf-8");
+      expect(content).toContain("node_modules/");
+      expect(content).toContain(".env");
+    });
+
+    it("does not duplicate .env if already in .gitignore", () => {
+      const gitignorePath = join(projectRoot, ".gitignore");
+      writeFileSync(gitignorePath, "node_modules/\n.env\ndist/\n", "utf-8");
+      ensureEnvInGitignore(projectRoot);
+      const content = readFileSync(gitignorePath, "utf-8");
+      const count = (content.match(/^\.env$/gm) ?? []).length;
+      expect(count).toBe(1);
+    });
+
+    it("saveConfig automatically adds .env to .gitignore", () => {
+      const config: Neo4jConfig = {
+        uri: "bolt://localhost:7687",
+        database: "neo4j",
+        username: "neo4j",
+        password: "secret",
+        connectionType: "cypher-shell",
+      };
+      saveConfig(projectRoot, config);
+      const gitignorePath = join(projectRoot, ".gitignore");
+      expect(existsSync(gitignorePath)).toBe(true);
+      const content = readFileSync(gitignorePath, "utf-8");
+      expect(content).toContain(".env");
     });
   });
 });
