@@ -32,28 +32,42 @@ Both graph types share the same top-level shape:
 }
 ```
 
-### Node Types (16 total: 5 code + 8 non-code + 3 domain)
+### Node Types (21 total: 7 codebase + 8 knowledge + 6 structural)
 
+**Codebase nodes (7):**
 | Type | ID Convention | Description |
 |---|---|---|
 | `file` | `file:<relative-path>` | Source file |
 | `function` | `function:<relative-path>:<name>` | Function or method |
 | `class` | `class:<relative-path>:<name>` | Class, interface, or type |
 | `module` | `module:<name>` | Logical module or package |
-| `concept` | `concept:<name>` | Abstract concept or pattern |
 | `config` | `config:<relative-path>` | Configuration file |
-| `document` | `document:<relative-path>` | Documentation file |
-| `service` | `service:<relative-path>` | Dockerfile, docker-compose, K8s manifest |
 | `table` | `table:<relative-path>:<table-name>` | Database table |
 | `endpoint` | `endpoint:<relative-path>:<name>` | API endpoint |
+
+**Knowledge nodes (8):**
+| Type | ID Convention | Description |
+|---|---|---|
+| `domain` | `domain:<kebab-case-name>` | Business domain |
+| `feature` | `feature:<kebab-case-name>` | Business feature within a domain |
+| `actor` | `actor:<kebab-case-name>` | Human or system actor |
+| `business-rule` | `business-rule:<kebab-case-name>` | Business constraint or rule |
+| `operation` | `operation:<kebab-case-name>` | Business operation within a feature |
+| `entity` | `entity:<kebab-case-name>` | Domain entity (data object) |
+| `decision` | `decision:<kebab-case-name>` | Architecture decision |
+| `constraint` | `constraint:<kebab-case-name>` | Architecture constraint |
+
+**Structural nodes (6):**
+| Type | ID Convention | Description |
+|---|---|---|
+| `concept` | `concept:<name>` | Abstract concept or pattern |
+| `document` | `document:<relative-path>` | Documentation file |
+| `service` | `service:<relative-path>` | Dockerfile, docker-compose, K8s manifest |
 | `pipeline` | `pipeline:<relative-path>` | CI/CD pipeline |
 | `schema` | `schema:<relative-path>` | GraphQL, Protobuf, Prisma schema |
 | `resource` | `resource:<relative-path>` | Terraform, CloudFormation resource |
-| `domain` | `domain:<kebab-case-name>` | Business domain (domain graph only) |
-| `flow` | `flow:<kebab-case-name>` | Business flow/process (domain graph only) |
-| `step` | `step:<flow-name>:<step-name>` | Business step (domain graph only) |
 
-### Edge Types (29 total in 7 categories)
+### Edge Types (36 total in 7 categories)
 
 | Category | Types |
 |---|---|
@@ -63,7 +77,7 @@ Both graph types share the same top-level shape:
 | Dependencies | `depends_on`, `tested_by`, `configures` |
 | Semantic | `related`, `similar_to` |
 | Infrastructure | `deploys`, `serves`, `provisions`, `triggers`, `migrates`, `documents`, `routes`, `defines_schema` |
-| Domain | `contains_flow`, `flow_step`, `cross_domain` |
+| Knowledge | `has_feature`, `has_operation`, `sequence`, `performed_by`, `restricted_for`, `governs`, `uses_entity`, `implemented_by`, `constrained_by`, `decides` |
 
 ### Layers
 
@@ -80,12 +94,16 @@ Tours are guided walkthroughs with sequential steps. Each step has:
 
 ### Domain Graph Specifics
 
-The domain graph (`domain-graph.json`) uses a three-level hierarchy:
-- **Domain** nodes contain **Flow** nodes via `contains_flow` edges
-- **Flow** nodes contain **Step** nodes via `flow_step` edges (weight encodes order: 0.1, 0.2, etc.)
-- **Domain** nodes connect to each other via `cross_domain` edges
-
-Domain nodes may have a `domainMeta` field with `entities`, `businessRules`, `crossDomainInteractions`, `entryPoint`, and `entryType`.
+The domain graph (`domain-graph.json`) uses a domain/feature/operation hierarchy:
+- **Domain** nodes group **Feature** nodes via `has_feature` edges
+- **Feature** nodes group **Operation** nodes via `has_operation` edges
+- **Operation** nodes can be ordered via `sequence` edges (Operation → Operation)
+- **Actors** perform operations via `performed_by` edges (Operation → Actor)
+- **Actors** may be restricted from operations via `restricted_for` edges (Operation → Actor)
+- **BusinessRules** govern Features or Operations via `governs` edges
+- Features and Operations reference domain entities via `uses_entity` edges
+- Features and Operations link to code nodes via `implemented_by` edges (status: legacy/target/shared/planned)
+- **Decisions** and **Constraints** connect to Features/Operations via `decides` and `constrained_by` edges
 
 ## How to Help Users
 
@@ -94,5 +112,5 @@ Domain nodes may have a `domainMeta` field with `entities`, `businessRules`, `cr
 3. **Architecture overview**: Summarize layers and their contents. Example: `jq '.layers[] | {name, count: (.nodeIds | length)}' knowledge-graph.json`
 4. **Onboarding**: Walk through the tour steps to explain the codebase.
 5. **Dashboard**: Guide users to run `/grasp-dashboard` to visualize the graph interactively. The dashboard supports toggling between Structural and Domain views.
-6. **Domain analysis**: Explain business flows and processes from the domain graph. Example: `jq '.nodes[] | select(.type == "flow")' domain-graph.json`
+6. **Domain analysis**: Explain business features, operations, and actors from the domain graph. Example: `jq '.nodes[] | select(.type == "feature")' domain-graph.json`
 7. **Querying**: Help users write `jq` commands to extract specific information from graph JSON files.
