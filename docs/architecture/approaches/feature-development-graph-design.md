@@ -1,5 +1,15 @@
 # Feature Development Graph Design for AVAX Portal
 
+> **DEPRECATED — Superseded**
+>
+> This document was an early exploration for a specific codebase (AVAX Portal). The schema it proposes was never adopted.
+>
+> The final schema is documented in:
+> - [`docs/architecture/neo4j-schema.md`](../neo4j-schema.md) — canonical schema reference
+> - [`docs/architecture/schema-evolution-plan.md`](../schema-evolution-plan.md#final-decisions-settled) — final decisions and rationale
+>
+> Key differences from final schema: `Flow`, `Step`, `Process`, `Risk`, `Impact`, `Context`, `StateTransition`, `ViewArtifact`, `DataArtifact`, `Evidence` were **not adopted**. The final schema uses `Domain` → `Feature` → `Operation` + `Actor`, `BusinessRule`, `Entity`.
+
 ## Purpose
 
 This note proposes a graph design for feature development in AVAX Portal.
