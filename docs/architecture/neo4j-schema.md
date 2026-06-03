@@ -351,6 +351,33 @@ CREATE INDEX rel_weight FOR ()-[r]-() ON (r.weight);
 
 ---
 
+## Setup and Maintenance
+
+### Applying Constraints and Indexes
+
+Before writing any graph data to Neo4j, apply the schema setup script to ensure all constraints and indexes are in place:
+
+```bash
+# Using cypher-shell
+cypher-shell -u <username> -p <password> < grasp-it-plugin/skills/grasp/setup-neo4j-schema.cypher
+
+# Using Neo4j browser or Neo4j Studio
+# Copy the contents of grasp-it-plugin/skills/grasp/setup-neo4j-schema.cypher and execute as a query
+
+# Via Neo4j MCP or programmatically
+# Run the statements in setup-neo4j-schema.cypher using your Neo4j driver's session.execute method
+```
+
+The script is idempotent — all constraints and indexes use `IF NOT EXISTS` guards, so re-running is safe.
+
+### When to Re-apply
+
+- **Fresh Neo4j instance**: Required before the first graph write
+- **After Neo4j upgrade**: Indexes may need recreation
+- **Schema changes**: When adding new node labels, apply corresponding constraints
+
+---
+
 ## Node ID Conventions
 
 | Label | ID format | Example |
