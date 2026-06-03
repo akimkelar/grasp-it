@@ -302,7 +302,7 @@ RETURN f.name AS function,
 Pre-filter seeds by `kind` property, then apply text matching within that scope.
 
 ```cypher
-WITH ['domain', 'flow'] AS kinds,
+WITH ['domain', 'feature'] AS kinds,
      ['update', 'edit'] AS terms
 MATCH (seed)
 WHERE seed.kind IN kinds
