@@ -1,31 +1,62 @@
 # Neo4j Schema Design
 
-## Overview
+## Purpose
 
-This document maps the existing `KnowledgeGraph` JSON structure to Neo4j primitives — nodes with labels, relationships with types, and database organization.
+Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j database**:
 
-The project currently uses a custom JSON-based graph. The goal is to replace it with Neo4j while preserving all existing node types, edge types, and semantics.
+- **Codebase subgraph** — structural facts extracted from source code: files, functions, classes,
+  modules, imports, calls. Generated deterministically by `/grasp` scripts, no LLM required for
+  structure (LLM adds summaries only). Rebuilt on every `/grasp` run.
+
+- **Knowledge subgraph** — product and domain knowledge: business domains, features, operations,
+  actors, business rules, decisions, and constraints. Populated by:
+  - `/grasp-domain` — mines domain and feature knowledge from the codebase
+  - `/grasp-po` — interviews the Product Owner to distil planned feature knowledge
+
+The knowledge subgraph stores knowledge of two kinds:
+- **Implemented** — what the codebase currently does, extracted by analysis
+- **Planned** — what the PO envisions for a new or changed feature, extracted from interviews
+
+Both subgraphs are used together to create tasks, build implementation plans, design test cases,
+and drive implementation. The `IMPLEMENTED_BY` relationship bridges them — tracing a planned
+feature or operation directly to the code that realizes it.
 
 ---
 
-## Databases
+## Single Database Strategy
 
-| Database | Purpose | Kind |
-|----------|---------|------|
-| `codebase` | Code structure — files, functions, classes, modules, imports, calls | `codebase` |
-| `knowledge` | Semantic knowledge — articles, entities, topics, citations, domain flows | `knowledge` |
+**One Neo4j database. Two logical subgraphs. Separated by the `kind` node property.**
 
-Neo4j single-instance uses one active database at a time. Both can coexist on the same Neo4j instance; switch between them with `USE`. If running Aura or a cluster, assign each to its own DBMS.
+The `kind` property (`"codebase"` or `"knowledge"`) acts as the logical separator. All indexes
+are `kind`-scoped. The primary use case — "which files implement this feature?" and its reverse
+"which features touch this file?" — requires `IMPLEMENTED_BY` to be a native Neo4j relationship
+traversable in both directions. That is only possible within a single database.
+
+### Rebuild pattern
+
+The codebase subgraph is rebuilt on every `/grasp` run:
+
+```cypher
+-- Wipe codebase nodes and all their relationships
+MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
+```
+
+Knowledge nodes survive because the wipe is scoped by `kind`. The `IMPLEMENTED_BY`
+relationships are rewritten after each rebuild by re-linking knowledge nodes to their new
+codebase counterparts (matched by `id`).
 
 ---
 
 ## Labeling Convention
 
-Node labels are simple, Neo4j-friendly strings without hierarchical prefixes. Each node carries a `kind` property (`"codebase"` or `"knowledge"`) to distinguish its database origin. This avoids verbose labels like `:Codebase:Code:File` and enables efficient filtering via `WHERE n.kind = "codebase"`.
+Node labels are simple, Neo4j-friendly strings. Each node carries a `kind` property
+(`"codebase"` or `"knowledge"`) to distinguish its subgraph origin.
 
-**Codebase nodes** use labels like `File`, `Function`, `Class`, `Module`, `Concept`, `Config`, `Service`, `Table`, `Endpoint`, `Pipeline`, `Schema`, `Resource`.
+**Codebase nodes** use labels: `File`, `Function`, `Class`, `Module`, `Config`,
+`Table`, `Endpoint`.
 
-**Knowledge nodes** use labels like `Domain`, `Flow`, `Step`, `Article`, `Entity`, `Topic`, `Claim`, `Source`, `Decision`, `Constraint`.
+**Knowledge nodes** use labels: `Domain`, `Feature`, `Actor`, `BusinessRule`, `Operation`,
+`Entity`, `Decision`, `Constraint`.
 
 ---
 
@@ -33,60 +64,76 @@ Node labels are simple, Neo4j-friendly strings without hierarchical prefixes. Ea
 
 ### Codebase Nodes (`kind: "codebase"`)
 
+Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summaries.
+
 | Label | Description | Properties |
 |-------|-------------|------------|
 | `File` | Source file | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]`, `languageNotes` |
 | `Function` | Function definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
 | `Class` | Class definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
 | `Module` | Module or namespace | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]` |
-| `Concept` | Abstract concept in code | `id`, `name`, `summary`, `complexity`, `tags[]` |
 | `Config` | Configuration file or entry | `id`, `name`, `filePath`, `summary`, `tags[]` |
-| `Service` | External service or API | `id`, `name`, `summary`, `tags[]` |
 | `Table` | Database table | `id`, `name`, `summary`, `tags[]` |
-| `Endpoint` | HTTP endpoint | `id`, `name`, `filePath`, `summary`, `tags[]` |
-| `Pipeline` | Data pipeline | `id`, `name`, `summary`, `tags[]` |
-| `Schema` | Data schema | `id`, `name`, `filePath`, `summary`, `tags[]` |
-| `Resource` | Infrastructure resource | `id`, `name`, `summary`, `tags[]` |
+| `Endpoint` | HTTP endpoint | `id`, `name`, `filePath`, `method`, `path`, `summary`, `tags[]` |
 
 ### Knowledge Nodes (`kind: "knowledge"`)
 
+#### Business Layer — populated by `/grasp-domain` and `/grasp-po`
+
 | Label | Description | Properties |
 |-------|-------------|------------|
-| `Domain` | Problem domain | `id`, `name`, `summary`, `tags[]` |
-| `Flow` | Workflow or process flow | `id`, `name`, `summary`, `tags[]` |
-| `Step` | Step in a flow | `id`, `name`, `summary`, `tags[]` |
-| `Article` | Article or document | `id`, `name`, `summary`, `tags[]` |
-| `Entity` | Named entity | `id`, `name`, `summary`, `tags[]` |
-| `Topic` | Topic or subject | `id`, `name`, `summary`, `tags[]` |
-| `Claim` | Assertion or claim | `id`, `name`, `summary`, `confidence`, `rationale`, `tags[]` |
-| `Source` | Source of knowledge | `id`, `name`, `summary`, `tags[]` |
-| `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope`, `tags[]` |
-| `Constraint` | Rule or invariant | `id`, `name`, `condition`, `invariant`, `scope`, `tags[]` |
+| `Domain` | Product domain or area | `id`, `name`, `summary`, `tags[]` |
+| `Feature` | Named product feature | `id`, `name`, `summary`, `status`, `tags[]` |
+| `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `tags[]` |
+| `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `tags[]` |
+| `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `tags[]` |
+| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `tags[]` |
+
+#### PO Interview Layer — populated by `/grasp-po`
+
+| Label | Description | Properties |
+|-------|-------------|------------|
+| `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
+| `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
+
+### Key Property Values
+
+**`Feature.status` / `Operation.status`:**
+
+| Value | Meaning |
+|-------|---------|
+| `"planned"` | PO described it; no implementation exists yet |
+| `"partial"` | Some implementation exists but does not fully match PO intent |
+| `"implemented"` | Codebase fully realizes it |
+
+**`BusinessRule.status`:** `"active"` | `"deprecated"` | `"proposed"`
+
+**`Decision.status`:** `"draft"` | `"accepted"` | `"deprecated"`
+
+**`IMPLEMENTED_BY.status`:** `"legacy"` | `"target"` | `"shared"` | `"planned"`
 
 ### Shared Node Properties
 
 Every node carries:
-- `id: string` — unique node identifier (e.g., `file:src/utils.ts`)
+- `id: string` — unique identifier (e.g. `feature:interview-scheduling`, `file:src/utils.ts`)
 - `name: string` — human-readable label
-- `kind: "codebase" | "knowledge"` — database origin, used for filtering
+- `kind: "codebase" | "knowledge"` — subgraph origin
 - `summary: string` — LLM-generated description
 - `tags: string[]` — arbitrary tags
-- `complexity: "simple" | "moderate" | "complex"` — optional; stored as property
-- `lineRange: [number, number]` — optional; for code nodes
+- `complexity: "simple" | "moderate" | "complex"` — optional
+- `lineRange: [number, number]` — optional; code nodes only
 
 ---
 
 ## Relationship Types
 
-Relationships use `:TYPE` syntax. Direction is explicit in Neo4j but can be ignored for undirected traversals using `-[r]-()`.
-
 ### Structural Relationships (codebase)
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
+| `:CONTAINS` | `File` | `Function` / `Class` / `Module` | File contains definition | `weight: float` |
 | `:IMPORTS` | `Module` | `Module` | Module imports another | `weight: float` |
 | `:EXPORTS` | `Module` | `*` | Module exports node | `weight: float` |
-| `:CONTAINS` | `File` | `Function` / `Class` / `Module` | File contains function/class/module | `weight: float` |
 | `:INHERITS` | `Class` | `Class` | Class inheritance | `weight: float` |
 | `:IMPLEMENTS` | `Class` | `Class` | Class implements interface | `weight: float` |
 
@@ -95,298 +142,162 @@ Relationships use `:TYPE` syntax. Direction is explicit in Neo4j but can be igno
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
 | `:CALLS` | `Function` | `Function` | Function calls another | `weight: float`, `description: string` |
-| `:SUBSCRIBES` | `*` | `Service` | Subscribes to service events | `weight: float` |
-| `:PUBLISHES` | `*` | `Service` | Publishes to service | `weight: float` |
-| `:MIDDLEWARE` | `Function` | `Function` | Acts as middleware | `weight: float` |
-
-### Data Flow Relationships (codebase)
-
-| Type | From | To | Description | Properties |
-|------|------|----|-------------|------------|
-| `:READS_FROM` | `*` | `Table` / `Endpoint` | Reads from table/endpoint | `weight: float` |
-| `:WRITES_TO` | `*` | `Table` / `Endpoint` | Writes to table/endpoint | `weight: float` |
-| `:TRANSFORMS` | `*` | `*` | Transforms data | `weight: float` |
-| `:VALIDATES` | `*` | `*` | Validates another | `weight: float` |
-
-### Dependency Relationships (codebase)
-
-| Type | From | To | Description | Properties |
-|------|------|----|-------------|------------|
-| `:DEPENDS_ON` | `*` | `*` | Depends on another node | `weight: float` |
-| `:TESTED_BY` | `*` | `*` | Tested by test node | `weight: float` |
+| `:READS_FROM` | `Function` | `Table` / `Endpoint` | Reads from data source | `weight: float` |
+| `:WRITES_TO` | `Function` | `Table` / `Endpoint` | Writes to data source | `weight: float` |
 | `:CONFIGURES` | `*` | `Config` | Configures something | `weight: float` |
+| `:TESTED_BY` | `*` | `*` | Tested by test node | `weight: float` |
+| `:DEPENDS_ON` | `*` | `*` | Depends on another node | `weight: float` |
 
-### Infrastructure Relationships (codebase)
-
-| Type | From | To | Description | Properties |
-|------|------|----|-------------|------------|
-| `:DEPLOYS` | `*` | `Resource` | Deploys to resource | `weight: float` |
-| `:SERVES` | `Endpoint` | `Service` | Endpoint serves service | `weight: float` |
-| `:PROVISIONS` | `*` | `Resource` | Provisions resource | `weight: float` |
-| `:TRIGGERS` | `*` | `*` | Triggers another action | `weight: float` |
-
-### Schema/Data Relationships (codebase)
+### Product and Business Relationships (knowledge)
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:MIGRATES` | `Schema` | `Schema` | Schema migration | `weight: float` |
-| `:DOCUMENTS` | `*` | `Config` | Documents config | `weight: float` |
-| `:ROUTES` | `Endpoint` | `Endpoint` | Routes to endpoint | `weight: float` |
-| `:DEFINES_SCHEMA` | `*` | `Schema` | Defines schema | `weight: float` |
+| `:HAS_FEATURE` | `Domain` | `Feature` | Domain owns a feature | `weight: float` |
+| `:HAS_OPERATION` | `Feature` | `Operation` | Feature contains an operation | `weight: float` |
+| `:SEQUENCE` | `Operation` | `Operation` | This operation precedes the target | `weight: float` |
+| `:PERFORMED_BY` | `Operation` | `Actor` | Operation is performed by this actor | `weight: float` |
+| `:RESTRICTED_FOR` | `Operation` | `Actor` | Operation is forbidden for this actor | `weight: float` |
+| `:GOVERNS` | `BusinessRule` | `Feature` / `Operation` | Rule governs feature or operation | `weight: float` |
+| `:USES_ENTITY` | `Feature` / `Operation` | `Entity` | Feature/operation works with an entity | `weight: float` |
 
-### Domain Relationships (knowledge)
-
-| Type | From | To | Description | Properties |
-|------|------|----|-------------|------------|
-| `:CONTAINS_FLOW` | `Domain` | `Flow` | Domain contains flow | `weight: float` |
-| `:FLOW_STEP` | `Flow` | `Step` | Flow has step | `weight: float` |
-| `:CROSS_DOMAIN` | `Domain` | `Domain` | Cross-domain relation | `weight: float` |
-
-### Semantic Relationships (knowledge)
+### PO Interview Relationships (knowledge)
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:CITES` | `Article` | `Source` | Article cites source | `weight: float` |
-| `:CONTRADICTS` | `Claim` | `Claim` | Contradicts claim | `weight: float` |
-| `:BUILDS_ON` | `*` | `*` | Builds on another | `weight: float` |
-| `:EXEMPLIFIES` | `*` | `*` | Exemplifies concept | `weight: float` |
-| `:CATEGORIZED_UNDER` | `*` | `Topic` | Categorized under topic | `weight: float` |
-| `:AUTHORED_BY` | `*` | `Entity` | Authored by entity | `weight: float` |
+| `:CONSTRAINED_BY` | `Decision` / `Feature` / `BusinessRule` | `Constraint` | Rule that applies | `weight: float` |
+| `:DECIDES` | `Decision` | `Feature` / `BusinessRule` | Decision resolves this | `weight: float` |
 
-### Conversation Relationships (knowledge) — PO Chat Extraction
+### Bridge Relationship (knowledge → codebase, native within single DB)
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:SUB_CONCEPT_OF` | `Concept` | `Concept` | Part-of composition | `weight: float` |
-| `:CONSTRAINED_BY` | `Decision` / `Concept` | `Constraint` | Rule that applies | `weight: float` |
-| `:DECIDES` | `Claim` | `Decision` | Claim leads to decision | `weight: float` |
-| `:IMPLEMENTS` | `Decision` | `Concept` | Decision fulfills concept | `weight: float` |
-| `:SUPPORTS` | `Claim` / `Decision` | `Claim` | Provides evidence for claim | `weight: float` |
-| `:APPLIES_IN` | `Constraint` / `Decision` | `Concept` | Scope/context binding | `weight: float` |
-| `:CONSOLIDATES` | `Decision` | `Claim` | Decision integrates multiple claims | `weight: float` |
+| `:IMPLEMENTED_BY` | `Feature` / `Operation` / `BusinessRule` | `File` / `Function` / `Class` / `Endpoint` | Business concept realized in code | `status: string`, `confidence: float` |
+
+`status` values: `"legacy"` | `"target"` | `"shared"` | `"planned"`
 
 ---
 
-## Mermaid Diagrams
-
-### Entity-Relationship Overview (Codebase)
+## Schema Diagram
 
 ```mermaid
-erDiagram
-    File ||--o{ Function : contains
-    File ||--o{ Class : contains
-    File ||--o{ Module : contains
-    Module ||--|| Module : imports
-    Module ||--o{ Module : exports
-    Class ||--o{ Class : inherits
-    Class ||--o{ Class : implements
-    Function ||--o{ Function : calls
-    Function ||--o{ Function : middleware
-    Function ||--o{ Service : subscribes
-    Function ||--o{ Service : publishes
-    Function ||--o{ Endpoint : reads_from
-    Function ||--o{ Endpoint : writes_to
-    Function ||--o{ Table : reads_from
-    Function ||--o{ Table : writes_to
-    Function ||--o{ Config : configures
-    Function ||--o{ Function : depends_on
-    Function ||--o{ Function : tested_by
-    Function ||--o{ Resource : deploys
-    Function ||--o{ Resource : provisions
-    Function ||--o{ Function : triggers
-    Endpoint ||--o{ Service : serves
-    Endpoint ||--o{ Endpoint : routes
-    Schema ||--o{ Schema : migrates
-    Function ||--o{ Schema : defines_schema
-```
+graph TD
+    subgraph knowledge["Knowledge subgraph (kind: knowledge)"]
+        D["Domain"]
+        F["Feature\nstatus: planned|partial|implemented"]
+        O["Operation\nstatus: planned|partial|implemented"]
+        A["Actor"]
+        E["Entity"]
+        BR["BusinessRule"]
+        DC["Decision"]
+        CN["Constraint"]
 
-### Entity-Relationship Overview (Knowledge)
-
-```mermaid
-erDiagram
-    Domain ||--o{ Flow : contains_flow
-    Flow ||--o{ Step : flow_step
-    Domain ||--o{ Domain : cross_domain
-    Article ||--o{ Source : cites
-    Claim ||--o{ Claim : contradicts
-    Claim ||--o{ Claim : builds_on
-    Article ||--o{ Article : builds_on
-    Claim ||--o{ Claim : supports
-    Topic ||--o{ Article : categorized_under
-    Topic ||--o{ Concept : categorized_under
-    Entity ||--o{ Article : authored_by
-    Concept ||--o{ Concept : sub_concept_of
-    Decision ||--o{ Concept : implements
-    Decision ||--o{ Constraint : constrained_by
-    Claim ||--o{ Decision : decides
-    Decision ||--o{ Claim : consolidates
-    Constraint ||--o{ Concept : applies_in
-```
-
-### Property Graph Structure
-
-```mermaid
-graph TB
-    subgraph codebase
-        F1["File<br/>kind: codebase<br/>id: file:src/utils.ts<br/>name: utils.ts<br/>summary: Helper functions<br/>complexity: moderate"]
-        FN1["Function<br/>kind: codebase<br/>id: function:src/utils.ts:parse<br/>name: parse<br/>lineRange: 10-50<br/>complexity: simple"]
-        CL1["Class<br/>kind: codebase<br/>id: class:src/utils.ts:Parser<br/>name: Parser<br/>lineRange: 52-100<br/>complexity: moderate"]
-        FN2["Function<br/>kind: codebase<br/>id: function:validate"]
-        T1["Table<br/>kind: codebase<br/>id: table:users"]
-
-        F1 -->|"CONTAINS"| FN1
-        F1 -->|"CONTAINS"| CL1
-        FN1 -->|"CALLS"| FN2
-        FN1 -->|"READS_FROM"| T1
+        D -->|HAS_FEATURE| F
+        F -->|HAS_OPERATION| O
+        O -->|SEQUENCE| O
+        O -->|PERFORMED_BY| A
+        O -->|RESTRICTED_FOR| A
+        O -->|USES_ENTITY| E
+        F -->|USES_ENTITY| E
+        BR -->|GOVERNS| F
+        BR -->|GOVERNS| O
+        DC -->|CONSTRAINED_BY| CN
+        DC -->|DECIDES| F
+        DC -->|DECIDES| BR
     end
 
-    subgraph knowledge
-        D1["Domain<br/>kind: knowledge<br/>id: domain:auth<br/>name: Authentication"]
-        FL1["Flow<br/>kind: knowledge<br/>id: flow:login<br/>name: Login Flow"]
-        ST1["Step<br/>kind: knowledge<br/>id: step:verify<br/>name: Verify Credentials"]
-        A1["Article<br/>kind: knowledge<br/>id: article:oauth-spec<br/>name: OAuth 2.0 Spec"]
-        S1["Source<br/>kind: knowledge<br/>id: source:rfc6749"]
+    subgraph codebase["Codebase subgraph (kind: codebase) — rebuilt per /grasp run"]
+        FILE["File"]
+        FN["Function"]
+        CL["Class"]
+        EP["Endpoint"]
+        TB["Table"]
 
-        D1 -->|"CONTAINS_FLOW"| FL1
-        FL1 -->|"FLOW_STEP"| ST1
-        A1 -->|"CITES"| S1
+        FILE -->|CONTAINS| FN
+        FILE -->|CONTAINS| CL
+        FN -->|CALLS| FN
+        FN -->|READS_FROM| TB
+        FN -->|WRITES_TO| TB
+        EP -->|CALLS| FN
     end
-```
 
-### Tour/Traversal Path
-
-```mermaid
-graph LR
-    START(("Start")) --> FILE["File<br>kind: codebase<br>main.ts"]
-    FILE -->|"CONTAINS"| FN1["Function<br>kind: codebase<br>init"]
-    FN1 -->|"CALLS"| FN2["Function<br>kind: codebase<br>authenticate"]
-    FN2 -->|"CALLS"| FN3["Function<br>kind: codebase<br>validateToken"]
-    FN3 -->|"READS_FROM"| T1["Table<br>kind: codebase<br>users"]
-    T1 -->|"WRITES_TO"| T2["Table<br>kind: codebase<br>sessions"]
-    FN3 -->|"CALLS"| FN4["Function<br>kind: codebase<br>generateToken"]
-    FN4 --> END(("End"))
-
-    style START fill:#2d2d2d,stroke:#d4a574
-    style END fill:#2d2d2d,stroke:#d4a574
+    F -->|IMPLEMENTED_BY\nstatus, confidence| FILE
+    F -->|IMPLEMENTED_BY\nstatus, confidence| EP
+    O -->|IMPLEMENTED_BY\nstatus, confidence| FN
+    BR -->|IMPLEMENTED_BY\nstatus, confidence| FN
 ```
 
 ---
 
-## Knowledge Extraction from Conversations
+## Key Query Patterns
 
-This chapter extends the schema for extracting structured knowledge from multi-turn conversations (Q&A sessions, discussions, design deliberations). The goal is to capture not isolated facts but the **complete, agreed-upon understanding** — everything needed to implement correctly without re-asking questions.
+### What code implements a feature?
 
-### Guiding Principle
+```cypher
+MATCH (f:Feature {id: $featureId})-[r:IMPLEMENTED_BY]->(code)
+WHERE f.kind = "knowledge"
+RETURN labels(code) AS codeType, code.name, code.filePath, r.status, r.confidence
+ORDER BY r.confidence DESC
+```
 
-A conversation terminates only when participants share confidence that they understand the topic the same way. At that point, a skill extracts the resulting knowledge into the graph. The schema below is designed to represent that complete understanding.
+### Which features touch a file?
 
-### Extended Node Types
+```cypher
+MATCH (code:File {filePath: $filePath})<-[:IMPLEMENTED_BY]-(n)
+WHERE code.kind = "codebase"
+RETURN labels(n) AS kind, n.name, n.status
+```
 
-#### Decision
+### Full operation map for a feature
 
-Captures a commitment to act or a resolved question. Includes the reasoning behind it.
+```cypher
+MATCH (f:Feature {id: $featureId})-[:HAS_OPERATION]->(op:Operation)
+WHERE f.kind = "knowledge"
+OPTIONAL MATCH (op)-[:PERFORMED_BY]->(a:Actor)
+OPTIONAL MATCH (op)-[:RESTRICTED_FOR]->(ra:Actor)
+OPTIONAL MATCH (br:BusinessRule)-[:GOVERNS]->(op)
+OPTIONAL MATCH (op)-[r:IMPLEMENTED_BY]->(code)
+RETURN op.name, op.status,
+       collect(DISTINCT a.name) AS performers,
+       collect(DISTINCT ra.name) AS restricted,
+       collect(DISTINCT br.name) AS rules,
+       collect(DISTINCT {type: labels(code)[0], name: code.name, status: r.status}) AS impl
+ORDER BY op.name
+```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | string | Unique identifier |
-| `name` | string | Human-readable label |
-| `kind` | `"knowledge"` | Always `"knowledge"` |
-| `summary` | string | What was decided |
-| `rationale` | string | Why this decision was made |
-| `status` | `"draft"` \| `"accepted"` \| `"deprecated"` | Lifecycle state |
-| `scope` | string[] | Where/when this applies (e.g., service name, feature flag) |
-| `tags` | string[] | Arbitrary tags |
+### All planned features in a domain
 
-#### Constraint
+```cypher
+MATCH (d:Domain {id: $domainId})-[:HAS_FEATURE]->(f:Feature)
+WHERE f.status = "planned"
+RETURN f.name, f.summary
+```
 
-A rule, invariant, or condition that implementation must respect.
+### Planned vs implemented split
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | string | Unique identifier |
-| `name` | string | Human-readable label |
-| `kind` | `"knowledge"` | Always `"knowledge"` |
-| `condition` | string | Precondition or trigger (e.g., "when token expired") |
-| `invariant` | string | What must hold true (e.g., "refresh token must be httpOnly") |
-| `scope` | string[] | Where this applies |
-| `tags` | string[] | Arbitrary tags |
+```cypher
+MATCH (d:Domain {id: $domainId})-[:HAS_FEATURE]->(f:Feature)
+RETURN f.status AS status, count(f) AS count
+ORDER BY status
+```
 
-#### Claim (Extended)
+### All decisions and constraints for a feature
 
-Claims are assertions made during conversation. Extended with confidence tracking.
+```cypher
+MATCH (f:Feature {id: $featureId})
+OPTIONAL MATCH (dc:Decision)-[:DECIDES]->(f)
+OPTIONAL MATCH (f)-[:CONSTRAINED_BY]->(cn:Constraint)
+OPTIONAL MATCH (br:BusinessRule)-[:GOVERNS]->(f)
+RETURN f, collect(DISTINCT dc) AS decisions,
+       collect(DISTINCT cn) AS constraints,
+       collect(DISTINCT br) AS rules
+```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | string | Unique identifier |
-| `name` | string | Human-readable label |
-| `kind` | `"knowledge"` | Always `"knowledge"` |
-| `summary` | string | The assertion |
-| `confidence` | `"tentative"` \| `"agreed"` | Whether consensus was reached |
-| `rationale` | string | Evidence or reasoning supporting the claim |
-| `tags` | string[] | Arbitrary tags |
+### Find all complex functions related to a domain
 
-#### Concept (Extended)
-
-Concepts are extended with compositional structure and constraint references.
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `id` | string | Unique identifier |
-| `name` | string | Human-readable label |
-| `kind` | `"codebase"` or `"knowledge"` | Context-dependent |
-| `summary` | string | Description |
-| `subConcepts` | Concept[] | Parts that compose this concept |
-| `constrainedBy` | Constraint[] | Rules this concept must respect |
-| `tags` | string[] | Arbitrary tags |
-
-### Example: Auth Flow Knowledge Extraction
-
-Input conversation (truncated for clarity):
-> "Auth Flow agreed: user provides credentials → server validates → issues JWT with 15m expiry → client stores in memory, not localStorage → refresh via silent refresh endpoint"
-> "localStorage is out because XSS could read it"
-> "We use httpOnly cookies for refresh token"
-
-Extracted graph:
-
-```mermaid
-graph TB
-    subgraph codebase
-        CV["Concept<br/>kind: codebase<br/>id: concept:credential-validation"]
-        JT["Concept<br/>kind: codebase<br/>id: concept:jwt-issuance"]
-        TS["Concept<br/>kind: codebase<br/>id: concept:token-storage"]
-        RF["Concept<br/>kind: codebase<br/>id: concept:refresh-flow"]
-        CF["Concept<br/>kind: codebase<br/>id: concept:auth-flow<br/>subConcepts: [CV, JT, TS, RF]"]
-    end
-
-    subgraph knowledge
-        D1["Decision<br/>kind: knowledge<br/>id: decision:jwt-memory-only<br/>rationale: localStorage XSS risk"]
-        D2["Decision<br/>kind: knowledge<br/>id: decision:15m-expiry"]
-        D3["Decision<br/>kind: knowledge<br/>id: decision:httpOnly-refresh"]
-        C1["Constraint<br/>kind: knowledge<br/>id: constraint:no-localStorage<br/>invariant: tokens not in localStorage"]
-        C2["Constraint<br/>kind: knowledge<br/>id: constraint:15m-jwt<br/>condition: JWT issuance<br/>invariant: expiry = 15m"]
-        C3["Constraint<br/>kind: knowledge<br/>id: constraint:httpOnly-cookie<br/>invariant: refresh token httpOnly"]
-    end
-
-    CF -->|"SUB_CONCEPT_OF"| CV
-    CF -->|"SUB_CONCEPT_OF"| JT
-    CF -->|"SUB_CONCEPT_OF"| TS
-    CF -->|"SUB_CONCEPT_OF"| RF
-
-    D1 -->|"IMPLEMENTS"| TS
-    D2 -->|"IMPLEMENTS"| JT
-    D3 -->|"IMPLEMENTS"| RF
-
-    D1 -->|"CONSTRAINED_BY"| C1
-    D2 -->|"CONSTRAINED_BY"| C2
-    D3 -->|"CONSTRAINED_BY"| C3
-
-    CV -->|"SUB_CONCEPT_OF"| CF
-    JT -->|"SUB_CONCEPT_OF"| CF
-    RF -->|"SUB_CONCEPT_OF"| CF
-
-    C1 -->|"APPLIES_IN"| TS
-    C2 -->|"APPLIES_IN"| JT
-    C3 -->|"APPLIES_IN"| RF
+```cypher
+MATCH (d:Domain {id: $domainId})-[:HAS_FEATURE]->(:Feature)-[:IMPLEMENTED_BY]->(f:Function)
+WHERE f.kind = "codebase" AND f.complexity = "complex"
+RETURN f.name, f.filePath, f.summary
 ```
 
 ---
@@ -396,151 +307,64 @@ graph TB
 ### Required Constraints
 
 ```cypher
--- Node ID uniqueness (per database)
-CREATE CONSTRAINT codebase_node_id_unique FOR (n:`Codebase`) REQUIRE n.id IS UNIQUE;
-CREATE CONSTRAINT knowledge_node_id_unique FOR (n:`Knowledge`) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT node_id_unique FOR (n:_Node_) REQUIRE n.id IS UNIQUE;
+```
 
--- Ensure label consistency (optional, using token lookups)
-CREATE CONSTRAINT FOR (n:File) REQUIRE n.filePath IS NOT NULL;
+Create per-label:
+```cypher
+CREATE CONSTRAINT file_id FOR (n:File) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT function_id FOR (n:Function) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT class_id FOR (n:Class) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT feature_id FOR (n:Feature) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT operation_id FOR (n:Operation) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT domain_id FOR (n:Domain) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT actor_id FOR (n:Actor) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT businessrule_id FOR (n:BusinessRule) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT decision_id FOR (n:Decision) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT constraint_id FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
 ```
 
 ### Recommended Indexes
 
 ```cypher
--- Kind-filtered indexes for efficient database separation
-CREATE INDEX codebase_kind_idx FOR (n) WHERE n.kind = "codebase" ON (n.id);
-CREATE INDEX knowledge_kind_idx FOR (n) WHERE n.kind = "knowledge" ON (n.id);
+-- Kind separation
+CREATE INDEX kind_idx FOR (n) ON (n.kind);
 
--- By name for search
-CREATE INDEX codebase_name_idx FOR (n) WHERE n.kind = "codebase" ON (n.name);
-CREATE INDEX knowledge_name_idx FOR (n) WHERE n.kind = "knowledge" ON (n.name);
+-- Name search
+CREATE INDEX codebase_name FOR (n) WHERE n.kind = "codebase" ON (n.name);
+CREATE INDEX knowledge_name FOR (n) WHERE n.kind = "knowledge" ON (n.name);
 
--- By complexity for filtering
-CREATE INDEX codebase_complexity_idx FOR (n) WHERE n.kind = "codebase" ON (n.complexity);
-CREATE INDEX knowledge_complexity_idx FOR (n) WHERE n.kind = "knowledge" ON (n.complexity);
+-- Status filtering (planned vs implemented)
+CREATE INDEX feature_status FOR (n:Feature) ON (n.status);
+CREATE INDEX operation_status FOR (n:Operation) ON (n.status);
 
--- By tag for filtering
-CREATE INDEX codebase_tags_idx FOR (n) WHERE n.kind = "codebase" ON (n.tags);
-CREATE INDEX knowledge_tags_idx FOR (n) WHERE n.kind = "knowledge" ON (n.tags);
-```
+-- Complexity filtering
+CREATE INDEX function_complexity FOR (n:Function) ON (n.complexity);
 
-### Relationship Indexes
+-- Tag filtering
+CREATE INDEX codebase_tags FOR (n) WHERE n.kind = "codebase" ON (n.tags);
+CREATE INDEX knowledge_tags FOR (n) WHERE n.kind = "knowledge" ON (n.tags);
 
-```cypher
--- Speed up traversals by relationship type
-CREATE INDEX rel_type_idx FOR ()-[r]-() ON (type(r));
-
--- Composite for weighted traversals
-CREATE INDEX rel_weight_idx FOR ()-[r]-() ON (r.weight);
+-- Relationship traversal
+CREATE INDEX rel_weight FOR ()-[r]-() ON (r.weight);
 ```
 
 ---
 
-## Data Migration Notes
+## Node ID Conventions
 
-### JSON → Neo4j Mapping
-
-| JSON Field | Neo4j Equivalent |
-|------------|------------------|
-| `nodes[].type` | Node label (simple label, e.g., `File`, `Claim`) |
-| `nodes[].kind` | Added as property: `"codebase"` or `"knowledge"` |
-| `edges[].type` | Relationship type (`:TYPE`) |
-| `edges[].source` | Start node |
-| `edges[].target` | End node |
-| `edges[].weight` | Relationship property `weight` |
-| `edges[].direction` | Neo4j relationship direction (or ignore if bidirectional) |
-| `layers` | Separate `:Layer` nodes with `:MEMBER_OF` relationships |
-| `tour` | Ordered array → path traversal query |
-
-### Batch Import
-
-Use `LOAD CSV` or Neo4j's `apoc.periodic.iterate` for bulk imports from the existing JSON format.
-
----
-
-## Query Patterns
-
-### Find shortest path (BFS equivalent)
-
-```cypher
-MATCH path = shortestPath((start {id: $startId})-[*]->(end {id: $endId}))
-RETURN path
-```
-
-### Louvain community detection
-
-```cypher
-CALL gds.louvain.stream('my-graph', { relationshipWeightProperty: 'weight' })
-YIELD nodeId, communityId
-RETURN communityId, collect(gds.util.asNode(nodeId).name) AS members
-```
-
-### Topological sort for tours (Kahn's algorithm)
-
-```cypher
--- Kahn's via collect + remove
-MATCH (n)
-WHERE NOT ()-->(n) AND n.kind = "codebase"
-WITH n ORDER BY n.id
-MATCH (n)-[r]->(m)
-RETURN n.id AS sorted
-```
-
-### Filter by kind and complexity
-
-```cypher
--- Find all complex functions in codebase
-MATCH (n:Function)
-WHERE n.kind = "codebase" AND n.complexity = 'complex' AND 'security' IN n.tags
-RETURN n
-
--- Find all decisions in knowledge graph
-MATCH (n:Decision)
-WHERE n.kind = "knowledge"
-RETURN n
-```
-
-### Find all decisions for a concept
-
-```cypher
-MATCH (d:Decision)-[:IMPLEMENTS]->(c:Concept {id: $conceptId})
-WHERE d.kind = "knowledge" AND c.kind = "codebase"
-RETURN d
-```
-
-### Get full context of a decision (constraints, supporting claims)
-
-```cypher
-MATCH (d:Decision {id: $decisionId})
-WHERE d.kind = "knowledge"
-OPTIONAL MATCH (d)-[:CONSTRAINED_BY]->(c:Constraint)
-OPTIONAL MATCH (supporter:Claim)-[:SUPPORTS]->(d)
-RETURN d, c, supporter
-```
-
-### Trace concept composition
-
-```cypher
-MATCH path = (c:Concept {id: $conceptId})-[:SUB_CONCEPT_OF*]->(sub:Concept)
-WHERE c.kind = "codebase"
-RETURN path
-```
-
-### Find constraints for a scope
-
-```cypher
-MATCH (c:Constraint)
-WHERE c.kind = "knowledge" AND $scope IN c.scope
-RETURN c
-```
-
-### Cross-database traversal with kind filtering
-
-```cypher
--- Find knowledge nodes related to a codebase concept
-MATCH (c:Concept {id: $conceptId})
-WHERE c.kind = "codebase"
-MATCH (c)-[r]-(n)
-WHERE n.kind = "knowledge"
-RETURN n, type(r) AS relationship
-```
+| Label | ID format | Example |
+|-------|-----------|---------|
+| `File` | `file:<relative-path>` | `file:src/auth/login.ts` |
+| `Function` | `function:<path>:<name>` | `function:src/auth/login.ts:validate` |
+| `Class` | `class:<path>:<name>` | `class:src/auth/AuthService.ts:AuthService` |
+| `Endpoint` | `endpoint:<method>:<path>` | `endpoint:POST:/api/interviews` |
+| `Table` | `table:<name>` | `table:users` |
+| `Domain` | `domain:<kebab-name>` | `domain:auth` |
+| `Feature` | `feature:<kebab-name>` | `feature:interview-scheduling` |
+| `Operation` | `operation:<kebab-name>` | `operation:send-invitation` |
+| `Actor` | `actor:<kebab-name>` | `actor:agency-user` |
+| `BusinessRule` | `business-rule:<kebab-name>` | `business-rule:manager-approval-only` |
+| `Entity` | `entity:<kebab-name>` | `entity:interview` |
+| `Decision` | `decision:<kebab-name>` | `decision:jwt-memory-only` |
+| `Constraint` | `constraint:<kebab-name>` | `constraint:no-localstorage` |
