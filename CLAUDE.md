@@ -74,11 +74,9 @@ Versions are tracked in the individual package.json files:
 - `grasp-it-plugin/package.json` → `"version"` field
 - `grasp-it-plugin/packages/core/package.json` → `"version"` field
 
-At this early stage, versioning is not yet formalized. All packages start at `0.1.0`.
+All packages start at `0.1.0`. Semantic versioning begins at first official release.
 
-## Testing Local Plugin Changes
-
-Claude Code caches installed plugins at `~/.claude/plugins/cache/grasp-it/grasp-it/<version>/`. Symlinks don't work because Claude's Search/Glob tools can't follow them. To test local changes:
+## Testing Local Plugin Changes at `~/.claude/plugins/cache/grasp-it/grasp-it/<version>/`. Symlinks don't work because Claude's Search/Glob tools can't follow them. To test local changes:
 
 1. **Build the packages:**
    ```bash
