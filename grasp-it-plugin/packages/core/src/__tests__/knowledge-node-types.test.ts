@@ -60,7 +60,7 @@ const knowledgeGraph: KnowledgeGraph = {
     },
     {
       id: "business-rule:manager-approval",
-      type: "business-rule",
+      type: "BusinessRule",
       name: "Manager Approval Required",
       summary: "Invoices over $1000 require approval",
       tags: ["approval"],
@@ -160,7 +160,7 @@ describe("knowledge node types", () => {
     expect(result.success).toBe(true);
     const brNode = result.data!.nodes.find((n) => n.id === "business-rule:manager-approval");
     expect(brNode).toBeDefined();
-    expect(brNode!.type).toBe("business-rule");
+    expect(brNode!.type).toBe("BusinessRule");
     expect((brNode as any).ruleText).toContain("$1000");
     expect(brNode!.status).toBe("active");
   });
@@ -373,7 +373,7 @@ describe("knowledge node types", () => {
       (graph.edges[0] as any).type = "contains_flow";
       const result = validateGraph(graph);
       expect(result.success).toBe(true);
-      expect(result.data!.edges.find((e) => e.type === "contains_flow")).toBeUndefined();
+      expect(result.data!.edges.find((e) => (e as any).type === "contains_flow")).toBeUndefined();
       expect(result.issues).toContainEqual(
         expect.objectContaining({ level: "dropped", category: "invalid-edge" })
       );
@@ -384,7 +384,7 @@ describe("knowledge node types", () => {
       (graph.edges[0] as any).type = "flow_step";
       const result = validateGraph(graph);
       expect(result.success).toBe(true);
-      expect(result.data!.edges.find((e) => e.type === "flow_step")).toBeUndefined();
+      expect(result.data!.edges.find((e) => (e as any).type === "flow_step")).toBeUndefined();
       expect(result.issues).toContainEqual(
         expect.objectContaining({ level: "dropped", category: "invalid-edge" })
       );
@@ -395,7 +395,7 @@ describe("knowledge node types", () => {
       (graph.edges[0] as any).type = "cross_domain";
       const result = validateGraph(graph);
       expect(result.success).toBe(true);
-      expect(result.data!.edges.find((e) => e.type === "cross_domain")).toBeUndefined();
+      expect(result.data!.edges.find((e) => (e as any).type === "cross_domain")).toBeUndefined();
       expect(result.issues).toContainEqual(
         expect.objectContaining({ level: "dropped", category: "invalid-edge" })
       );

@@ -62,9 +62,9 @@ Node labels are simple, Neo4j-friendly strings. Each node carries a `kind` prope
 
 ## Node Labels
 
-### Codebase Nodes (`kind: "codebase"`)
+### Codebase Nodes
 
-Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summaries.
+Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summaries. These are the code-building-block nodes created by the codebase analyzer.
 
 | Label | Description | Properties |
 |-------|-------------|------------|
@@ -76,7 +76,9 @@ Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summarie
 | `Table` | Database table | `id`, `name`, `summary`, `tags[]` |
 | `Endpoint` | HTTP endpoint | `id`, `name`, `filePath`, `method`, `path`, `summary`, `tags[]` |
 
-### Knowledge Nodes (`kind: "knowledge"`)
+### Knowledge Nodes
+
+Business concepts, domain models, and LLM-facts extracted from wikis and interviews. These are the domain-model nodes created by the knowledge-layer skills.
 
 #### Business Layer — populated by `/grasp-domain` and `/grasp-requirements`
 
@@ -95,6 +97,23 @@ Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summarie
 |-------|-------------|------------|
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
 | `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
+
+### Additional Non-code Node Types
+
+Produced by parsers and extractors for non-code files. Not all have Cypher uniqueness constraints — treat them as optional labels.
+
+| Label | Description | Source | ID pattern |
+|-------|-------------|--------|------------|
+| `concept` | Abstract concept or idea | LLM analysis of docs | `concept:<name>` |
+| `document` | Documentation file | `extract-structure.mjs` for md/txt | `file:<path>` |
+| `service` | Container/service definition | YAML/JSON parsers (k8s) | `<kind>:<name>` |
+| `pipeline` | CI/CD pipeline or target | YAML/JSON parsers | `<kind>:<name>` |
+| `schema` | Protobuf/OpenAPI/GraphQL schema | Specialized parsers | `<kind>:<name>` |
+| `resource` | Infrastructure-as-code resource | Terraform parser | `<kind>:<name>` |
+| `article` | Wiki/knowledge-base article | `/grasp-knowledge` | `article:<slug>` |
+| `topic` | Topic or category | `/grasp-knowledge` | `topic:<slug>` |
+| `claim` | Assertion or thesis | `/grasp-knowledge` | `claim:<slug>` |
+| `source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
 
 ### Key Property Values
 
@@ -117,15 +136,26 @@ Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summarie
 Every node carries:
 - `id: string` — unique identifier (e.g. `feature:interview-scheduling`, `file:src/utils.ts`)
 - `name: string` — human-readable label
-- `kind: "codebase" | "knowledge"` — subgraph origin
+- `type: string` — node category (e.g. `"function"`, `"BusinessRule"`, `"domain"`)
 - `summary: string` — LLM-generated description
 - `tags: string[]` — arbitrary tags
 - `complexity: "simple" | "moderate" | "complex"` — optional
 - `lineRange: [number, number]` — optional; code nodes only
 
+The subgraph origin (`"codebase"` vs `"knowledge"`) is stored on the root `KnowledgeGraph.kind` field, not on individual nodes. Use this to scope wipe queries:
+
+```cypher
+-- Wipe only the codebase subgraph
+MATCH (n)
+WHERE n.id STARTS WITH "file:" OR n.id STARTS WITH "function:" OR n.id STARTS WITH "class:"
+DETACH DELETE n
+```
+
 ---
 
 ## Relationship Types
+
+> **Convention:** Relationship types use `UPPER_SNAKE_CASE` (e.g., `:CONTAINS`, `:IMPORTS`, `:GOVERNS`) to distinguish them visually from node labels in Cypher queries. Node labels use `PascalCase` (e.g., `File`, `Function`, `BusinessRule`).
 
 ### Structural Relationships (codebase)
 

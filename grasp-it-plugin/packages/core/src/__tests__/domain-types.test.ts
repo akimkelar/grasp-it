@@ -50,7 +50,7 @@ const domainGraph: KnowledgeGraph = {
     },
     {
       id: "business-rule:manager-approval",
-      type: "business-rule",
+      type: "BusinessRule",
       name: "Manager Approval Required",
       summary: "Orders over $1000 require manager approval",
       tags: ["approval"],

@@ -3,7 +3,7 @@ export type NodeType =
   | "file" | "function" | "class" | "module" | "concept"
   | "config" | "document" | "service" | "table" | "endpoint"
   | "pipeline" | "schema" | "resource"
-  | "domain" | "feature" | "operation" | "actor" | "business-rule" | "entity"
+  | "domain" | "feature" | "operation" | "actor" | "BusinessRule" | "entity"
   | "article" | "topic" | "claim" | "source"
   | "decision" | "constraint";
 

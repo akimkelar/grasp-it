@@ -69,10 +69,10 @@ export const NODE_TYPE_ALIASES: Record<string, string> = {
   reference: "source",
   raw: "source",
   paper: "source",
-  // Conversation aliases (PO chat extraction) — decision is a valid node type, no mapping needed
-  rule: "constraint",
-  invariant: "constraint",
-  business_rule: "constraint",
+  // Conversation aliases (PO chat extraction) — business-rule gets lowercased to "businessrule" (no hyphen) before alias lookup, so handle both forms
+  businessrule: "BusinessRule",
+  rule: "BusinessRule",
+  business_rule: "BusinessRule",
   agreement: "decision",
   resolution: "decision",
   commitment: "decision",
@@ -380,7 +380,7 @@ export const GraphNodeSchema = z.object({
     "file", "function", "class", "module", "concept",
     "config", "document", "service", "table", "endpoint",
     "pipeline", "schema", "resource",
-    "domain", "feature", "operation", "actor", "business-rule", "entity",
+    "domain", "feature", "operation", "actor", "BusinessRule", "entity",
     "article", "topic", "claim", "source",
     "decision", "constraint",
   ]),
