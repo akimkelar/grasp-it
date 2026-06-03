@@ -72,9 +72,21 @@ If there are tests that produce a full graph via a skill or agent mock, verify t
 - `IMPLEMENTED_BY` edges between knowledge and codebase nodes are accepted
 - Structural non-code nodes (`Document`, `Service`, etc.) appear in a realistic codebase graph
 
+## Running tests
+
+Always run the full test suite — not just the new tests — after every change:
+
+```bash
+pnpm test
+```
+
+All pre-existing tests must continue to pass. Do not consider the task done if any test
+(new or existing) is failing. Fix regressions before marking complete.
+
 ## Acceptance criteria
 
-- `pnpm test` passes with all 20 node types having at least one positive test case
+- `pnpm test` passes — zero failures, zero errors across the entire suite
+- All 20 node types have at least one positive test case in the schema tests
 - Alias resolution for all entries in `NODE_TYPE_ALIASES` is tested
 - No test asserts `type === "BusinessRule"` after Task 17 is complete (use `"business-rule"`)
 - Test file(s) are co-located with `schema.ts` or in `tests/` with clear naming
