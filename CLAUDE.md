@@ -44,7 +44,7 @@ The prompt alias **"work on tasks"** (used with `/loop work on tasks` or directl
    - Path to the task file (e.g., `docs/tasks/02-project-cleanup.md`)
    - Context from `CLAUDE.md` (project overview, architecture, conventions, gotchas, key commands)
 
-3. **Sub-agent completes the task:** The sub-agent reads the task file, does the work, creates a completion report at `docs/tasks/archive/NN-report.md` (same number as the task), moves the original task file to `docs/tasks/archive/` (archive by moving, do NOT delete), commits, and pushes.
+3. **Sub-agent completes the task:** The sub-agent reads the task file, does the work, creates a completion report at `docs/tasks/archive/NN-report.md` (same number as the task), then **copies** the original task file to `docs/tasks/archive/` (preserving it — archive by copying, NEVER delete the original), commits, and pushes. The original task file must remain in `docs/tasks/archive/` alongside the report.
 
 4. **Report progress:** When the sub-agent completes, display a table summarizing completed tasks vs. remaining tasks (use file names from `docs/tasks/archive/` vs `docs/tasks/`).
 
