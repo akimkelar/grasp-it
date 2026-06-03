@@ -95,3 +95,17 @@ plugins {
     compile "org.grails.plugins:hibernate5"
 }
 ```
+
+### Architectural Layers for Grails
+
+Assign nodes to these layers when detected:
+
+| Layer ID | Layer Name | What Goes Here |
+|---|---|---|
+| `layer:api` | API Layer | `grails-app/controllers/` — HTTP request handlers, REST endpoints |
+| `layer:service` | Service Layer | `grails-app/services/` — business logic, transactional services; `grails-app/jobs/` — scheduled background jobs |
+| `layer:data` | Data Layer | `grails-app/domain/` — GORM persistent entities, database schema |
+| `layer:ui` | UI Layer | `grails-app/taglib/` — custom tag libraries; `grails-app/views/` — GSP view templates |
+| `layer:middleware` | Middleware Layer | `grails-app/interceptors/` — request interceptors with before/after hooks |
+| `layer:config` | Config Layer | `grails-app/conf/` — application.yml, UrlMappings, DataSource config; `grails-app/init/` — bootstrap classes |
+| `layer:types` | Types Layer | `src/main/groovy/` — command objects, DTOs, shared value objects |
