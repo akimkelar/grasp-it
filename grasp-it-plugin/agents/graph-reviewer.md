@@ -35,17 +35,22 @@ Verify every **node** has ALL required fields with correct types:
 | Field | Type | Constraint |
 |---|---|---|
 | `id` | string | Non-empty, follows prefix convention (see valid prefixes below) |
-| `type` | string | One of the 16 valid node types (see below) |
+| `type` | string | One of the 21 valid node types (see below) |
 | `name` | string | Non-empty |
 | `summary` | string | Non-empty, not just the filename |
 | `tags` | string[] | At least 1 element, all lowercase and hyphenated |
 | `complexity` | string | One of: `simple`, `moderate`, `complex` |
 
-**Valid node types (16 total: 13 structural + 3 domain):**
-`file`, `function`, `class`, `module`, `concept`, `config`, `document`, `service`, `table`, `endpoint`, `pipeline`, `schema`, `resource`, `domain`, `flow`, `step`
+**Valid node types (21 total: 7 codebase + 8 knowledge + 6 structural):**
+
+*Codebase nodes (7):* `file`, `function`, `class`, `module`, `config`, `table`, `endpoint`
+
+*Knowledge nodes (8):* `domain`, `feature`, `actor`, `business-rule`, `operation`, `entity`, `decision`, `constraint`
+
+*Structural nodes (6):* `concept`, `document`, `service`, `pipeline`, `schema`, `resource`
 
 **Valid node ID prefixes:**
-`file:`, `function:`, `class:`, `module:`, `concept:`, `config:`, `document:`, `service:`, `table:`, `endpoint:`, `pipeline:`, `schema:`, `resource:`, `domain:`, `flow:`, `step:`
+`file:`, `function:`, `class:`, `module:`, `config:`, `table:`, `endpoint:`, `domain:`, `feature:`, `actor:`, `business-rule:`, `operation:`, `entity:`, `decision:`, `constraint:`, `concept:`, `document:`, `service:`, `pipeline:`, `schema:`, `resource:`
 
 Verify every **edge** has ALL required fields with correct types:
 
@@ -53,12 +58,15 @@ Verify every **edge** has ALL required fields with correct types:
 |---|---|---|
 | `source` | string | Non-empty, references an existing node ID |
 | `target` | string | Non-empty, references an existing node ID |
-| `type` | string | One of the 29 valid edge types (see below) |
+| `type` | string | One of the 36 valid edge types (see below) |
 | `direction` | string | One of: `forward`, `backward`, `bidirectional` |
 | `weight` | number | Between 0.0 and 1.0 inclusive |
 
-**Valid edge types (29 total: 26 structural + 3 domain):**
-`imports`, `exports`, `contains`, `inherits`, `implements`, `calls`, `subscribes`, `publishes`, `middleware`, `reads_from`, `writes_to`, `transforms`, `validates`, `depends_on`, `tested_by`, `configures`, `related`, `similar_to`, `deploys`, `serves`, `migrates`, `documents`, `provisions`, `routes`, `defines_schema`, `triggers`, `contains_flow`, `flow_step`, `cross_domain`
+**Valid edge types (36 total: 26 structural + 10 knowledge):**
+
+*Structural (26):* `imports`, `exports`, `contains`, `inherits`, `implements`, `calls`, `subscribes`, `publishes`, `middleware`, `reads_from`, `writes_to`, `transforms`, `validates`, `depends_on`, `tested_by`, `configures`, `related`, `similar_to`, `deploys`, `serves`, `migrates`, `documents`, `provisions`, `routes`, `defines_schema`, `triggers`
+
+*Knowledge (10):* `has_feature`, `has_operation`, `sequence`, `performed_by`, `restricted_for`, `governs`, `uses_entity`, `implemented_by`, `constrained_by`, `decides`
 
 **Check 2 -- Referential Integrity (Critical)**
 
@@ -75,12 +83,12 @@ Verify every **edge** has ALL required fields with correct types:
 - At least 1 layer exists (warning-only for domain graphs — domain graphs may have empty layers)
 - At least 1 tour step exists (warning-only for domain graphs — domain graphs may have empty tours)
 
-**Domain graph detection:** If the graph contains nodes of type `domain`, `flow`, or `step`, treat it as a domain graph and relax the layers/tour requirements to warnings instead of critical issues.
+**Domain graph detection:** If the graph contains nodes of type `domain`, `feature`, `actor`, `business-rule`, `operation`, `entity`, `decision`, or `constraint`, treat it as a domain graph and relax the layers/tour requirements to warnings instead of critical issues.
 
 **Check 4 -- Layer Coverage (Critical)**
 
 - For structural graphs: every node with a file-level type (`file`, `config`, `document`, `service`, `pipeline`, `table`, `schema`, `resource`, `endpoint`) MUST appear in exactly one layer's `nodeIds`
-- For domain graphs (detected by presence of `domain`/`flow`/`step` nodes): skip this check if layers are empty
+- For domain graphs (detected by presence of `domain`/`feature`/`actor`/`business-rule`/`operation`/`entity`/`decision`/`constraint` nodes): skip this check if layers are empty
 - No layer should have an empty `nodeIds` array
 - Log any file-level nodes missing from all layers, and any file-level nodes appearing in multiple layers
 
@@ -110,8 +118,9 @@ Only warn about missing edges for nodes that have a clear expected relationship.
 - Pipeline nodes (type: `pipeline`) should have at least one `triggers` edge — warn if missing
 - Table nodes (type: `table`) should have at least one `migrates` or `defines_schema` edge — warn if missing
 - Schema nodes (type: `schema`) should have at least one `defines_schema` edge — warn if missing
-- Domain nodes (type: `domain`) should have at least one `contains_flow` edge — warn if missing
-- Flow nodes (type: `flow`) should have at least one `flow_step` edge — warn if missing
+- Domain nodes (type: `domain`) should have at least one `has_feature` edge — warn if missing
+- Feature nodes (type: `feature`) should have at least one `has_operation` edge (or have `status: planned`) — warn if missing
+- Actor nodes (type: `actor`) should have at least one `performed_by` or `restricted_for` edge — warn if missing
 
 **Check 9 -- Node Type / ID Prefix Consistency (Warning)**
 
@@ -120,6 +129,17 @@ Only warn about missing edges for nodes that have a clear expected relationship.
   - A node with `type: "document"` should have an ID starting with `document:`
   - A node with `type: "file"` should have an ID starting with `file:`
 - Log any mismatches as warnings
+
+**Check 10 -- IMPLEMENTED_BY Status Validation (Warning)**
+
+- Every `implemented_by` edge MUST have a `status` property with one of: `"legacy"`, `"target"`, `"shared"`, `"planned"`
+
+**Check 11 -- Knowledge Node Status Enums (Warning)**
+
+Validate status values when present on knowledge nodes:
+- `Feature.status` and `Operation.status`: one of `"planned"`, `"partial"`, `"implemented"`
+- `BusinessRule.status`: one of `"active"`, `"deprecated"`, `"proposed"`
+- `Decision.status`: one of `"draft"`, `"accepted"`, `"deprecated"`
 
 ### Script Output Format
 
