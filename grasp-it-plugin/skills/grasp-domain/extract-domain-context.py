@@ -35,12 +35,14 @@ SOURCE_EXTENSIONS = {
     ".py", ".pyi",
     ".go",
     ".rs",
+    ".groovy", ".gvy", ".gy", ".gsh",
     ".java", ".kt", ".scala",
     ".rb",
     ".cs",
     ".php",
     ".swift",
     ".c", ".cpp", ".h", ".hpp",
+    ".gsp",
     ".ex", ".exs",
     ".hs",
     ".lua",
@@ -80,6 +82,21 @@ ENTRY_POINT_PATTERNS: list[tuple[str, str, re.Pattern[str]]] = [
     ("http", "Next.js/Remix route handler", re.compile(
         r"""export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b""",
     )),
+    # Grails controller action methods
+    ("http", "Grails controller action", re.compile(
+        r"""def\s+(\w+)\s*\(""")),
+    # Spring/Grails HTTP mapping annotations
+    ("http", "Spring/Grails HTTP mapping", re.compile(
+        r"""@(?:GetMapping|PostMapping|PutMapping|PatchMapping|DeleteMapping)\s*\(""")),
+    # Grails URL mappings DSL
+    ("http", "Grails URL mapping", re.compile(
+        r'''["']\/[^'"]*["']\s*\{''')),
+    # Grails job triggers
+    ("cron", "Grails job trigger", re.compile(
+        r"""static\s+triggers\s*=""")),
+    # Grails service transactional methods
+    ("service", "Grails transactional method", re.compile(
+        r"""@Transactional""")),
     # CLI
     ("cli", "CLI command", re.compile(
         r"""\.command\s*\(\s*['"]([\w\-:]+)['"]""",
@@ -252,6 +269,7 @@ def extract_file_signatures(root: Path, file_paths: list[str]) -> list[dict[str,
         "command", "query", "event", "subscriber", "listener",
         "middleware", "guard", "interceptor", "resolver",
         "workflow", "flow", "process", "pipeline", "job", "task",
+        "domain", "taglib",
     ]
 
     def priority_score(path: str) -> int:

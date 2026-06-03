@@ -9,6 +9,7 @@ import { expressConfig } from "./express.js";
 import { vueConfig } from "./vue.js";
 import { springConfig } from "./spring.js";
 import { railsConfig } from "./rails.js";
+import { grailsConfig } from "./grails.js";
 import { ginConfig } from "./gin.js";
 
 export const builtinFrameworkConfigs: FrameworkConfig[] = [
@@ -21,6 +22,7 @@ export const builtinFrameworkConfigs: FrameworkConfig[] = [
   vueConfig,
   springConfig,
   railsConfig,
+  grailsConfig,
   ginConfig,
 ];
 
@@ -34,5 +36,6 @@ export {
   vueConfig,
   springConfig,
   railsConfig,
+  grailsConfig,
   ginConfig,
 };

@@ -3,7 +3,7 @@ import type { FrameworkConfig } from "../types.js";
 export const springConfig = {
   id: "spring",
   displayName: "Spring Boot",
-  languages: ["java", "kotlin"],
+  languages: ["java", "kotlin", "groovy"],
   detectionKeywords: [
     "spring-boot",
     "spring-boot-starter",

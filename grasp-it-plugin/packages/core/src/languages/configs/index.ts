@@ -13,6 +13,7 @@ import { cConfig } from "./c.js";
 import { cppConfig } from "./cpp.js";
 import { csharpConfig } from "./csharp.js";
 import { luaConfig } from "./lua.js";
+import { groovyConfig } from "./groovy.js";
 // Non-code language configs
 import { markdownConfig } from "./markdown.js";
 import { yamlConfig } from "./yaml.js";
@@ -34,6 +35,7 @@ import { openapiConfig } from "./openapi.js";
 import { kubernetesConfig } from "./kubernetes.js";
 import { dockerComposeConfig } from "./docker-compose.js";
 import { jsonSchemaConfig } from "./json-schema.js";
+import { gspConfig } from "./gsp.js";
 import { csvConfig } from "./csv.js";
 import { restructuredtextConfig } from "./restructuredtext.js";
 import { powershellConfig } from "./powershell.js";
@@ -54,6 +56,7 @@ export const builtinLanguageConfigs: LanguageConfig[] = [
   swiftConfig,
   kotlinConfig,
   luaConfig,
+  groovyConfig,
   cConfig,
   cppConfig,
   csharpConfig,
@@ -82,6 +85,7 @@ export const builtinLanguageConfigs: LanguageConfig[] = [
   restructuredtextConfig,
   powershellConfig,
   batchConfig,
+  gspConfig,
   jenkinsfileConfig,
   plaintextConfig,
 ];
@@ -99,6 +103,7 @@ export {
   swiftConfig,
   kotlinConfig,
   luaConfig,
+  groovyConfig,
   cConfig,
   cppConfig,
   csharpConfig,
@@ -127,6 +132,7 @@ export {
   restructuredtextConfig,
   powershellConfig,
   batchConfig,
+  gspConfig,
   jenkinsfileConfig,
   plaintextConfig,
 };

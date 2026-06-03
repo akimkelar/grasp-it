@@ -326,10 +326,11 @@ function buildResolutionContext(projectRoot, files) {
   }
 
   // Build per-extension suffix indices for dotted-FQN resolvers (Java,
-  // Kotlin, C#). Indexed once; reused for every import dispatch.
+  // Kotlin, C#, Groovy). Indexed once; reused for every import dispatch.
   const javaIndex = buildSuffixIndex(files, p => p.endsWith('.java'));
   const kotlinIndex = buildSuffixIndex(files, p => p.endsWith('.kt'));
   const csIndex = buildSuffixIndex(files, p => p.endsWith('.cs'));
+  const groovyIndex = buildSuffixIndex(files, p => p.endsWith('.groovy'));
 
   const phpAutoloads = loadPhpAutoloads(projectRoot, files);
 
@@ -342,6 +343,7 @@ function buildResolutionContext(projectRoot, files) {
     javaIndex,
     kotlinIndex,
     csIndex,
+    groovyIndex,
     phpAutoloads,
     // Dedupe Sets for one-time-per-file warnings. Keyed by importer file
     // path. Mutated by resolvers.
@@ -883,6 +885,21 @@ export function resolveCSharpImport(rawImport, _file, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Groovy resolver
+//
+// Groovy imports use the same dotted-package convention as Java/Kotlin.
+// The resolver probes .groovy first (Grails convention), then falls back
+// to .java for cross-language imports within a mixed project.
+// ---------------------------------------------------------------------------
+
+export function resolveGroovyImport(rawImport, _file, ctx) {
+  const groovyMatches = resolveDottedFqn(rawImport, '.groovy', ctx.groovyIndex);
+  if (groovyMatches.length > 0) return groovyMatches;
+  // Fallback to .java for cross-language imports
+  return resolveDottedFqn(rawImport, '.java', ctx.javaIndex);
+}
+
+// ---------------------------------------------------------------------------
 // Ruby resolver
 //
 // Two distinct Ruby import forms, with different resolution semantics:
@@ -1340,6 +1357,9 @@ function resolveImport(imp, file, ctx) {
   }
   if (lang === 'csharp') {
     return resolveCSharpImport(src, file, ctx);
+  }
+  if (lang === 'groovy') {
+    return resolveGroovyImport(src, file, ctx);
   }
   if (lang === 'php') {
     return resolvePhpImport(src, file, ctx);
