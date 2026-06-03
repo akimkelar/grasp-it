@@ -725,4 +725,235 @@ describe("Extended node/edge types", () => {
     const result = validateGraph(graph);
     expect(result.success).toBe(true);
   });
+
+  it("validates all 20 node types are accepted by the schema", () => {
+    const allTypes = [
+      "file", "function", "class", "module", "config", "table", "endpoint",
+      "document", "service", "pipeline", "schema", "resource",
+      "domain", "feature", "operation", "actor", "business-rule", "entity",
+      "decision", "constraint",
+    ];
+    for (const type of allTypes) {
+      const graph = structuredClone(validGraph);
+      (graph.nodes[0] as any).type = type;
+      const result = validateGraph(graph);
+      expect(result.success, `type "${type}" should be accepted`).toBe(true);
+      expect(result.data!.nodes[0].type).toBe(type);
+    }
+  });
+
+  it("accepts knowledge provenance node types (article, topic, claim, source) — restriction is at agent level", () => {
+    const knowledgeTypes = ["article", "topic", "claim", "source"];
+    for (const type of knowledgeTypes) {
+      const graph = structuredClone(validGraph);
+      (graph.nodes[0] as any).type = type;
+      const result = validateGraph(graph);
+      expect(result.success, `type "${type}" should be accepted by schema`).toBe(true);
+      expect(result.data!.nodes[0].type).toBe(type);
+    }
+  });
+
+  it("validates constraint node type", () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "constraint";
+    (graph.nodes[0] as any).condition = "user.authenticated === true";
+    (graph.nodes[0] as any).invariant = "balance >= 0";
+
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("constraint");
+    expect((result.data!.nodes[0] as any).condition).toBe("user.authenticated === true");
+    expect((result.data!.nodes[0] as any).invariant).toBe("balance >= 0");
+  });
+
+  it("validates decision node type", () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "decision";
+    (graph.nodes[0] as any).status = "accepted";
+    (graph.nodes[0] as any).rationale = "Chosen for performance reasons";
+
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("decision");
+    expect((result.data!.nodes[0] as any).status).toBe("accepted");
+    expect((result.data!.nodes[0] as any).rationale).toBe("Chosen for performance reasons");
+  });
+});
+
+describe("NODE_TYPE_ALIASES — all documented aliases", () => {
+  it('resolves "job" → "pipeline"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "job";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("pipeline");
+  });
+
+  it('resolves "ci" → "pipeline"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "ci";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("pipeline");
+  });
+
+  it('resolves "proto" → "schema"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "proto";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("schema");
+  });
+
+  it('resolves "protobuf" → "schema"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "protobuf";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("schema");
+  });
+
+  it('resolves "terraform" → "resource"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "terraform";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("resource");
+  });
+
+  it('resolves "infrastructure" → "resource"', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "infrastructure";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("resource");
+  });
+
+  it('resolves "note" → "article" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "note";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("article");
+  });
+
+  it('resolves "person" → "entity" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "person";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("entity");
+  });
+
+  it('resolves "organization" → "entity" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "organization";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("entity");
+  });
+
+  it('resolves "tag" → "topic" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "tag";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("topic");
+  });
+
+  it('resolves "category" → "topic" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "category";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("topic");
+  });
+
+  it('resolves "assertion" → "claim" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "assertion";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("claim");
+  });
+
+  it('resolves "thesis" → "claim" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "thesis";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("claim");
+  });
+
+  it('resolves "reference" → "source" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "reference";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("source");
+  });
+
+  it('resolves "paper" → "source" (knowledge alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "paper";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("source");
+  });
+
+  it('resolves "businessrule" → "business-rule" (casing fix)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "businessrule";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("business-rule");
+  });
+
+  it('resolves "rule" → "business-rule" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "rule";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("business-rule");
+  });
+
+  it('resolves "business_rule" → "business-rule" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "business_rule";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("business-rule");
+  });
+
+  it('resolves "agreement" → "decision" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "agreement";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("decision");
+  });
+
+  it('resolves "resolution" → "decision" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "resolution";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("decision");
+  });
+
+  it('resolves "commitment" → "decision" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "commitment";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("decision");
+  });
+
+  it('resolves "design_decision" → "decision" (alias)', () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).type = "design_decision";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.nodes[0].type).toBe("decision");
+  });
 });
