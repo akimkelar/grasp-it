@@ -550,6 +550,26 @@ function extractKotlinSources(content) {
 }
 
 // ---------------------------------------------------------------------------
+// Groovy import source extraction
+//
+// Groovy has no tree-sitter extractor in this project, so its import sources
+// are collected via a focused regex pass (identical pattern to Kotlin).
+// ---------------------------------------------------------------------------
+
+const GROOVY_IMPORT_RE =
+  /^\s*import\s+(\w+(?:\.\w+)*(?:\.\*)?)(?:\s+as\s+\w+)?\s*$/gm;
+
+function extractGroovySources(content) {
+  const sources = [];
+  let m;
+  GROOVY_IMPORT_RE.lastIndex = 0;
+  while ((m = GROOVY_IMPORT_RE.exec(content)) !== null) {
+    sources.push(m[1]);
+  }
+  return sources;
+}
+
+// ---------------------------------------------------------------------------
 // Python resolver
 //
 // Tree-sitter's Python extractor emits one entry per import statement:
@@ -1387,6 +1407,9 @@ function extractExtraImportSources(file, content) {
   }
   if (file.language === 'kotlin') {
     return extractKotlinSources(content);
+  }
+  if (file.language === 'groovy') {
+    return extractGroovySources(content);
   }
   if (file.language === 'rust') {
     // `mod x;` declarations aren't in tree-sitter's `imports` field, but they

@@ -49,10 +49,10 @@ describe("LanguageRegistry", () => {
   });
 
   describe("createDefault", () => {
-    it("registers all 40 built-in language configs", () => {
+    it("registers all 42 built-in language configs", () => {
       const registry = LanguageRegistry.createDefault();
       const all = registry.getAllLanguages();
-      expect(all.length).toBe(40);
+      expect(all.length).toBe(42);
     });
 
     it("maps all expected extensions", () => {
@@ -72,6 +72,14 @@ describe("LanguageRegistry", () => {
       expect(registry.getByExtension(".h")?.id).toBe("c");
       expect(registry.getByExtension(".lua")?.id).toBe("lua");
       expect(registry.getByExtension(".js")?.id).toBe("javascript");
+      expect(registry.getByExtension(".groovy")?.id).toBe("groovy");
+      expect(registry.getByExtension(".gvy")?.id).toBe("groovy");
+      expect(registry.getByExtension(".gsp")?.id).toBe("gsp");
+    });
+
+    it("resolves grails-app controller files to groovy", () => {
+      const registry = LanguageRegistry.createDefault();
+      expect(registry.getForFile("grails-app/controllers/MyController.groovy")?.id).toBe("groovy");
     });
 
     it("has no duplicate extension mappings across configs", () => {

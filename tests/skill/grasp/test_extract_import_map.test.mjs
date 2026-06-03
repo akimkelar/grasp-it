@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/understand/extract-import-map.mjs');
+const SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/extract-import-map.mjs');
 
 /**
  * Helper: write a source tree from a `files` object: { 'a/b.ts': '...', ... }.
@@ -682,6 +682,134 @@ describe('extract-import-map.mjs — Java resolver', () => {
     // java.util/java.io are external (no project file matches the suffix);
     // x.Local maps via suffix to src/x/Local.java.
     expect(result.output.importMap['src/x/App.java']).toEqual(['src/x/Local.java']);
+  });
+});
+
+describe('extract-import-map.mjs — Groovy resolver', () => {
+  let projectRoot;
+
+  afterEach(() => {
+    if (projectRoot) {
+      rmSync(projectRoot, { recursive: true, force: true });
+      projectRoot = null;
+    }
+  });
+
+  it('resolves groovy dotted imports via suffix probe', () => {
+    projectRoot = setupTree({
+      'src/main/groovy/com/example/InterviewController.groovy':
+        `package com.example\n\nimport com.example.service.InterviewService\n` +
+        `import com.example.domain.Interview\n\nclass InterviewController { }\n`,
+      'src/main/groovy/com/example/service/InterviewService.groovy':
+        `package com.example.service\n\nclass InterviewService { }\n`,
+      'src/main/groovy/com/example/domain/Interview.groovy':
+        `package com.example.domain\n\nclass Interview { }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'src/main/groovy/com/example/InterviewController.groovy',
+          language: 'groovy', fileCategory: 'code' },
+        { path: 'src/main/groovy/com/example/service/InterviewService.groovy',
+          language: 'groovy', fileCategory: 'code' },
+        { path: 'src/main/groovy/com/example/domain/Interview.groovy',
+          language: 'groovy', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.output.importMap[
+      'src/main/groovy/com/example/InterviewController.groovy'
+    ]).toEqual([
+      'src/main/groovy/com/example/domain/Interview.groovy',
+      'src/main/groovy/com/example/service/InterviewService.groovy',
+    ]);
+  });
+
+  it('falls back to .java when groovy import has no matching .groovy file', () => {
+    projectRoot = setupTree({
+      'src/main/groovy/com/example/OfferController.groovy':
+        `package com.example\n\nimport com.example.util.JavaHelper\n\nclass OfferController { }\n`,
+      // JavaHelper exists only as a .java file, not .groovy
+      'src/main/java/com/example/util/JavaHelper.java':
+        `package com.example.util;\npublic class JavaHelper { }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'src/main/groovy/com/example/OfferController.groovy',
+          language: 'groovy', fileCategory: 'code' },
+        { path: 'src/main/java/com/example/util/JavaHelper.java',
+          language: 'java', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.output.importMap[
+      'src/main/groovy/com/example/OfferController.groovy'
+    ]).toEqual([
+      'src/main/java/com/example/util/JavaHelper.java',
+    ]);
+  });
+
+  it('drops external groovy and grails imports', () => {
+    projectRoot = setupTree({
+      'src/main/groovy/com/example/MyService.groovy':
+        `package com.example\n\n` +
+        `import grails.gorm.transactions.Transactional\n` +
+        `import org.springframework.beans.factory.annotation.Autowired\n` +
+        `import com.example.domain.LocalDomain\n\n` +
+        `class MyService { }\n`,
+      'src/main/groovy/com/example/domain/LocalDomain.groovy':
+        `package com.example.domain\nclass LocalDomain { }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'src/main/groovy/com/example/MyService.groovy',
+          language: 'groovy', fileCategory: 'code' },
+        { path: 'src/main/groovy/com/example/domain/LocalDomain.groovy',
+          language: 'groovy', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    // grails.gorm and org.springframework are external; only LocalDomain resolves.
+    expect(result.output.importMap[
+      'src/main/groovy/com/example/MyService.groovy'
+    ]).toEqual([
+      'src/main/groovy/com/example/domain/LocalDomain.groovy',
+    ]);
+  });
+
+  it('resolves grails controller importing a service', () => {
+    projectRoot = setupTree({
+      'grails-app/controllers/com/example/InterviewController.groovy':
+        `package com.example\n\nimport com.example.InterviewService\n\n` +
+        `class InterviewController {\n    InterviewService interviewService\n}\n`,
+      'grails-app/services/com/example/InterviewService.groovy':
+        `package com.example\n\nclass InterviewService { }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'grails-app/controllers/com/example/InterviewController.groovy',
+          language: 'groovy', fileCategory: 'code' },
+        { path: 'grails-app/services/com/example/InterviewService.groovy',
+          language: 'groovy', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.output.importMap[
+      'grails-app/controllers/com/example/InterviewController.groovy'
+    ]).toEqual([
+      'grails-app/services/com/example/InterviewService.groovy',
+    ]);
   });
 });
 
