@@ -162,8 +162,10 @@ The simplified Neo4j schema uses two label groups:
 **Knowledge nodes** (business and domain):
 
 - `Domain` - business domain
-- `Flow` - workflow or process
-- `Step` - workflow step
+- `Feature` - workflow or process
+- `Operation` - workflow step
+- `Actor` - person or role that performs operations
+- `BusinessRule` - business rule or policy
 - `Article` - documentation or article
 - `Entity` - domain entity
 - `Topic` - topic or subject
@@ -175,8 +177,10 @@ The simplified Neo4j schema uses two label groups:
 **Key relationships**:
 
 ```
-Domain -[:HAS_FLOW]-> Flow
-Flow -[:HAS_STEP]-> Step
+Domain -[:HAS_FEATURE]-> Feature
+Feature -[:HAS_OPERATION]-> Operation
+Operation -[:PERFORMED_BY]-> Actor
+Feature -[:GOVERNED_BY]-> BusinessRule
 Entity -[:RELATED_TO]-> Entity
 Concept -[:DEFINED_IN]-> File
 Function -[:PART_OF]-> Class
@@ -263,7 +267,7 @@ Use `kind` property filtering to narrow to specific node types when the topic is
 ```cypher
 WITH ['notification settings'] AS terms
 MATCH (seed)
-WHERE seed.kind IN ['Domain', 'Flow', 'Entity', 'Concept']
+WHERE seed.kind IN ['Domain', 'Feature', 'Entity', 'Concept']
   AND any(t IN terms WHERE
     toLower(coalesce(seed.name, '')) CONTAINS t
     OR toLower(coalesce(seed.summary, '')) CONTAINS t)
@@ -315,8 +319,8 @@ It is better to leave a possible extra gap for a later request than to widen the
 
 Good additions usually include some combination of:
 
-- one missing `Domain` or `Flow`
-- missing `Step` nodes
+- one missing `Domain` or `Feature`
+- missing `Operation` nodes
 - missing `Entity`, `Concept`, or `Constraint` nodes
 - missing implementation or evidence links
 - refreshed metadata on stale nodes that are still the right nodes
@@ -392,8 +396,8 @@ Generic relationship pattern:
 
 ```cypher
 MATCH (a:Domain {key: 'a.key'}),
-      (b:Flow {key: 'b.key'})
-MERGE (a)-[:HAS_FLOW]->(b);
+      (b:Feature {key: 'b.key'})
+MERGE (a)-[:HAS_FEATURE]->(b);
 ```
 
 When updating existing knowledge, prefer augmenting the right nodes over replacing them with new ones.

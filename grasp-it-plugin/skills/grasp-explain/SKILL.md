@@ -15,10 +15,10 @@ The knowledge graph JSON has this structure:
 - `nodes[]` — each has {id, type, name, filePath?, summary, tags[], complexity, languageNotes?}
   - Code node types: file, function, class, module, concept
   - Non-code node types: config, document, service, table, endpoint, pipeline, schema, resource
-  - Domain/knowledge node types: domain, flow, step, article, entity, topic, claim, source
+  - Domain/knowledge node types: domain, feature, operation, actor, business_rule, article, entity, topic, claim, source
   - IDs use the node type as prefix, e.g. `file:path`, `function:path:name`, `config:path`, `article:path`
 - `edges[]` — each has {source, target, type, direction, weight}
-  - Key types: imports, contains, calls, depends_on, configures, documents, deploys, triggers, contains_flow, flow_step, related, cites
+  - Key types: imports, contains, calls, depends_on, configures, documents, deploys, triggers, has_feature, has_operation, performed_by, governed_by, implemented_by, related, cites
 - `layers[]` — each has {id, name, description, nodeIds[]}
 - `tour[]` — each has {order, title, description, nodeIds[]}
 

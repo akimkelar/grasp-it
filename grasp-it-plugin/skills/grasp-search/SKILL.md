@@ -98,8 +98,10 @@ The simplified Neo4j schema uses two label groups:
 | Type | Purpose | `kind` value |
 |---|---|---|
 | `Domain` | Business domain | `Domain` |
-| `Flow` | Workflow or process | `Flow` |
-| `Step` | Workflow step | `Step` |
+| `Feature` | Workflow or process | `Feature` |
+| `Operation` | Workflow step | `Operation` |
+| `Actor` | Person or role that performs operations | `Actor` |
+| `BusinessRule` | Business rule or policy | `BusinessRule` |
 | `Article` | Documentation or article | `Article` |
 | `Entity` | Domain entity | `Entity` |
 | `Topic` | Topic or subject | `Topic` |
@@ -111,8 +113,11 @@ The simplified Neo4j schema uses two label groups:
 **Key relationships**:
 
 ```
-Domain -[:HAS_FLOW]-> Flow
-Flow -[:HAS_STEP]-> Step
+Domain -[:HAS_FEATURE]-> Feature
+Feature -[:HAS_OPERATION]-> Operation
+Operation -[:PERFORMED_BY]-> Actor
+Feature -[:GOVERNED_BY]-> BusinessRule
+Feature -[:IMPLEMENTED_BY]-> Code
 Entity -[:RELATED_TO]-> Entity
 Concept -[:DEFINED_IN]-> File
 Function -[:PART_OF]-> Class
@@ -125,7 +130,7 @@ File -[:DEFINES]-> Class
 **Searchable text fields per node**:
 - All nodes: `name`, `summary`, `key`
 - `kind` property for filtering by node category
-- Domain/Flow/Step: `description`, `flowType`
+- Domain/Feature/Operation: `description`, `featureType`
 - Entity: `entityType`, `description`
 - Constraint: `constraintType`, `rule`
 
@@ -207,7 +212,7 @@ LIMIT 50;
 ```cypher
 WITH ['working period', 'period', 'update'] AS terms
 MATCH (seed)
-WHERE seed.kind IN ['Domain', 'Flow', 'Entity', 'Step', 'Concept', 'Constraint']
+WHERE seed.kind IN ['Domain', 'Feature', 'Entity', 'Operation', 'Concept', 'Constraint']
   AND any(t IN terms WHERE
       toLower(seed.name) CONTAINS t
       OR toLower(seed.summary) CONTAINS t
@@ -244,7 +249,7 @@ Always anchor by node name(s) from Approach 1 results. Choose a **goal** to keep
 ### Full picture
 
 ```cypher
-WITH ['Working Period Domain', 'Invoice Period Flow'] AS nodeNames
+WITH ['Working Period Domain', 'Invoice Period Feature'] AS nodeNames
 MATCH (seed) WHERE seed.name IN nodeNames
 OPTIONAL MATCH (seed)-[r]-(n)
 WHERE n <> seed
@@ -255,19 +260,22 @@ RETURN seed.name AS name,
 ORDER BY name;
 ```
 
-### Domain/Flow detail (specific to knowledge nodes)
+### Domain/Feature detail (specific to knowledge nodes)
 
 ```cypher
 WITH ['Working Period Domain'] AS domains
 MATCH (d:Domain) WHERE d.name IN domains
-OPTIONAL MATCH (d)-[:HAS_FLOW]->(f:Flow)
-OPTIONAL MATCH (f)-[:HAS_STEP]->(s:Step)
-OPTIONAL MATCH (s)-[:RELATED_TO]->(e:Entity)
+OPTIONAL MATCH (d)-[:HAS_FEATURE]->(f:Feature)
+OPTIONAL MATCH (f)-[:HAS_OPERATION]->(op:Operation)
+OPTIONAL MATCH (op)-[:PERFORMED_BY]->(a:Actor)
+OPTIONAL MATCH (f)-[:GOVERNED_BY]->(br:BusinessRule)
+OPTIONAL MATCH (f)-[:IMPLEMENTED_BY]->(code)
 RETURN d.name AS domain,
        d.summary AS description,
-       collect(DISTINCT f.name) AS flows,
-       collect(DISTINCT s.name) AS steps,
-       collect(DISTINCT e.name) AS entities
+       collect(DISTINCT f.name) AS features,
+       collect(DISTINCT op.name) AS operations,
+       collect(DISTINCT a.name) AS actors,
+       collect(DISTINCT br.name) AS businessRules
 ```
 
 ### Codebase detail (specific to codebase nodes)
@@ -319,14 +327,14 @@ LIMIT 50;
 
 ## Approach 4 - Dependency disclosure (deep traversal)
 
-**Use when**: text search returned good seeds but you suspect connected nodes are missing - constraints, steps, or relations that share no keyword with the search terms but are structurally linked.
+**Use when**: text search returned good seeds but you suspect connected nodes are missing - constraints, operations, or relations that share no keyword with the search terms but are structurally linked.
 
 Start from known node(s), traverse outward 1-2 hops to all connected nodes. **Use 1 hop first** to avoid result explosion.
 
 **1 hop** (direct connections only):
 ```cypher
 MATCH (start)
-WHERE start.name IN ['Working Period Domain', 'Invoice Period Flow']
+WHERE start.name IN ['Working Period Domain', 'Invoice Period Feature']
 MATCH (start)-[r]-(neighbor)
 WHERE neighbor <> start
 RETURN DISTINCT labels(neighbor)[0] AS type,
@@ -405,7 +413,7 @@ Partial file name fragments are enough - the query uses `CONTAINS`. The result s
 To list all node names by kind (useful for exact name lookup):
 ```cypher
 MATCH (n)
-WHERE n.kind IN ['Domain', 'Flow', 'Entity', 'Concept', 'Function', 'Class']
+WHERE n.kind IN ['Domain', 'Feature', 'Entity', 'Concept', 'Function', 'Class']
 RETURN n.kind AS kind, collect(n.name) AS names
 ORDER BY kind
 ```
@@ -420,10 +428,10 @@ To list all domains:
 MATCH (n:Domain) RETURN n.key AS key, n.name AS name, n.summary AS summary
 ```
 
-To list all flows for a domain:
+To list all features for a domain:
 ```cypher
-MATCH (d:Domain {name: 'Working Period Domain'})-[:HAS_FLOW]->(f:Flow)
-RETURN f.key AS key, f.name AS name, f.flowType AS type
+MATCH (d:Domain {name: 'Working Period Domain'})-[:HAS_FEATURE]->(f:Feature)
+RETURN f.key AS key, f.name AS name, f.featureType AS type
 ```
 
 ---
