@@ -120,6 +120,43 @@ Determine whether to run a full analysis or incremental update.
 
    If `pnpm` is missing, report to the user: "Install Node.js ≥ 22 and pnpm ≥ 10, then re-run `/grasp`."
 
+1.6. **Neo4j configuration check:**
+   Check if Neo4j credentials are available by looking for a `.env` file at the project root:
+   ```bash
+   if [ -f "$PROJECT_ROOT/.env" ] && grep -q "NEO4J_URI" "$PROJECT_ROOT/.env"; then
+     echo "[grasp-it] Neo4j configuration found in $PROJECT_ROOT/.env"
+   else
+     # Check global config
+     if [ -f "$HOME/.grasp-it/neo4j.env" ] && grep -q "NEO4J_URI" "$HOME/.grasp-it/neo4j.env"; then
+       echo "[grasp-it] Neo4j configuration found in global config"
+     else
+       # Check environment variables
+       if [ -n "$NEO4J_URI" ] && [ -n "$NEO4J_USERNAME" ]; then
+         echo "[grasp-it] Neo4j configuration found in environment"
+       else
+         echo "[grasp-it] No Neo4j configuration found"
+         echo "[grasp-it] Please configure Neo4j credentials before using graph features"
+       fi
+     fi
+   fi
+   ```
+   Load the configuration for use by subsequent phases:
+   ```bash
+   if [ -f "$PROJECT_ROOT/.env" ]; then
+     set -a
+     source "$PROJECT_ROOT/.env" 2>/dev/null
+     set +a
+   elif [ -f "$HOME/.grasp-it/neo4j.env" ]; then
+     set -a
+     source "$HOME/.grasp-it/neo4j.env" 2>/dev/null
+     set +a
+   fi
+   ```
+   Neo4j configuration is used by:
+   - `/grasp-search` — queries the knowledge graph
+   - `/grasp-gaps` — updates the knowledge graph
+   - `/grasp-domain` — may write to the knowledge graph
+
 2. Get the current git commit hash:
    ```bash
    git rev-parse HEAD

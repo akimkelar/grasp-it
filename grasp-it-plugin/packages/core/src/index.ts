@@ -121,4 +121,19 @@ export {
   DEFAULT_IGNORE_PATTERNS,
   type IgnoreFilter,
 } from "./ignore-filter.js";
+export {
+  loadConfig,
+  saveConfig,
+  saveGlobalConfig,
+  hasConfig,
+  buildCypherShellCommand,
+  getConnectionTypeDescription,
+  getRequiredConfigKeys,
+  SETUP_PROMPTS,
+  type Neo4jConfig,
+  type ConfigLoadResult,
+  type ConnectionType,
+  ENV_VARS,
+  DEFAULTS,
+} from "./neo4j-config.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
