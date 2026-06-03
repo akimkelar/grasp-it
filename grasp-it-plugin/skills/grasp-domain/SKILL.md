@@ -6,13 +6,14 @@ argument-hint: [--full]
 
 # /grasp-domain
 
-Extracts business domain knowledge — domains, business flows, and process steps — from a codebase and produces an interactive horizontal flow graph in the dashboard.
+Extracts business domain knowledge — domains, features, operations, actors, business rules, and entities — from a codebase and produces an interactive domain flow graph in the dashboard.
 
 ## How It Works
 
 - If a knowledge graph already exists (`.grasp-it/knowledge-graph.json`), derives domain knowledge from it (cheap, no file scanning)
 - If no knowledge graph exists, performs a lightweight scan: file tree + entry point detection + sampled files
 - Use `--full` flag to force a fresh scan even if a knowledge graph exists
+- Groovy/Grails entry point patterns (controllers, services, domain classes) are automatically recognized
 
 ## Instructions
 
@@ -129,7 +130,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 ### Phase 5: Validate and Save
 
 1. Read the domain analysis output
-2. Validate using the standard graph validation pipeline (the schema now supports domain/flow/step types)
+2. Validate using the standard graph validation pipeline (the schema now supports domain/feature/operation types)
 3. If validation fails, log warnings but save what's valid (error tolerance)
 4. Save to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
 5. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`

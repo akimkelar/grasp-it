@@ -1,22 +1,24 @@
-// Node types (23 total: 5 code + 8 non-code + 3 domain + 5 knowledge + 2 extended)
+// Node types (27 total: 5 code + 8 non-code + 6 domain + 5 knowledge + 2 extended + 1 legacy)
 export type NodeType =
   | "file" | "function" | "class" | "module" | "concept"
   | "config" | "document" | "service" | "table" | "endpoint"
   | "pipeline" | "schema" | "resource"
-  | "domain" | "flow" | "step"
-  | "article" | "entity" | "topic" | "claim" | "source"
+  | "domain" | "feature" | "operation" | "actor" | "business-rule" | "entity"
+  | "article" | "topic" | "claim" | "source"
   | "decision" | "constraint";
 
-// Edge types (41 total in 10 categories: Structural, Behavioral, Data flow, Dependencies, Semantic, Infrastructure/Schema, Domain, Knowledge, Conversation)
+// Edge types (45 total in 11 categories: Structural, Behavioral, Data flow, Dependencies, Semantic, Infrastructure, Schema, Domain, Business, Bridge, Knowledge, Conversation)
 export type EdgeType =
   | "imports" | "exports" | "contains" | "inherits" | "implements"  // Structural
   | "calls" | "subscribes" | "publishes" | "middleware"              // Behavioral
   | "reads_from" | "writes_to" | "transforms" | "validates"         // Data flow
   | "depends_on" | "tested_by" | "configures"                       // Dependencies
   | "related" | "similar_to"                                         // Semantic
-  | "deploys" | "serves" | "provisions" | "triggers"                // Infrastructure
-  | "migrates" | "documents" | "routes" | "defines_schema"          // Schema/Data
-  | "contains_flow" | "flow_step" | "cross_domain"                  // Domain
+  | "deploys" | "serves" | "provisions" | "triggers"               // Infrastructure
+  | "migrates" | "documents" | "routes" | "defines_schema"         // Schema/Data
+  | "has_feature" | "has_operation" | "sequence"                    // Domain
+  | "performed_by" | "restricted_for" | "governs" | "uses_entity"  // Business
+  | "implemented_by"                                                // Bridge
   | "cites" | "contradicts" | "builds_on" | "exemplifies" | "categorized_under" | "authored_by" // Knowledge
   | "decides" | "constrained_by" | "supports" | "applies_in" | "sub_concept_of"; // Conversation
 
@@ -28,7 +30,7 @@ export interface KnowledgeMeta {
   content?: string;
 }
 
-// Optional domain metadata for domain/flow/step nodes
+// Optional domain metadata for domain nodes
 export interface DomainMeta {
   entities?: string[];
   businessRules?: string[];
@@ -52,13 +54,17 @@ export interface GraphNode {
   knowledgeMeta?: KnowledgeMeta;
   // Extended properties
   rationale?: string;                              // Decision, Claim
-  status?: "proposed" | "accepted" | "implemented"; // Decision
+  status?: "proposed" | "accepted" | "implemented" | "planned" | "partial" | "deprecated" | "draft" | "active"; // Decision, Feature, Operation, BusinessRule
   scope?: string[];                                 // Decision, Constraint
   condition?: string;                             // Constraint
   invariant?: string;                             // Constraint
   confidence?: "tentative" | "agreed";            // Claim
   subConcepts?: string[];                         // Concept (composition)
   constrainedBy?: string[];                       // Concept (constraint refs)
+  // Business node properties
+  permissions?: string[];                          // Actor
+  restrictions?: string[];                        // Actor
+  ruleText?: string;                              // BusinessRule
 }
 
 // GraphEdge with rich relationship modeling

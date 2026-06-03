@@ -19,7 +19,12 @@ Conduct a structured interview with a Product Specialist to extract product requ
 
 Product requirements knowledge uses these node types:
 
-- `decision` — a commitment or resolved question (`status: proposed | accepted | implemented`)
+- `feature` — a named product capability
+- `operation` — a meaningful action within a feature
+- `actor` — a user role or system agent
+- `business-rule` — a business policy or constraint
+- `entity` — a named business object
+- `decision` — a commitment or resolved question (`status: draft | accepted | deprecated`)
 - `constraint` — a rule, invariant, or condition the implementation must respect
 - `concept` — a topic or subject (extended with `subConcepts[]`, `constrainedBy[]`)
 - `claim` — an assertion (extended with `confidence: tentative | agreed`)
@@ -27,15 +32,19 @@ Product requirements knowledge uses these node types:
 Key relationship types for product requirements knowledge:
 
 - `sub_concept_of` — concept composition (part-of hierarchy)
-- `constrained_by` — a rule applies to a concept or decision
-- `decides` — a claim leads to a decision
+- `constrained_by` — a rule applies to a concept, decision, feature, or business rule
+- `decides` — a claim leads to a decision, which resolves a feature or business rule
 - `implements` — a decision fulfills a concept
 - `supports` — evidence chain between claims
 - `applies_in` — scope/context binding
+- `governs` — a business rule applies to a feature or operation
+- `uses_entity` — a feature or operation works with an entity
+- `performed_by` — an operation is performed by an actor
+- `restricted_for` — an operation is forbidden for an actor
 
-Node IDs use prefixes: `decision:<kebab-name>`, `constraint:<kebab-name>`, `concept:<kebab-name>`, `claim:<uuid-short>`.
+Node IDs use prefixes: `feature:<kebab-name>`, `operation:<kebab-name>`, `actor:<kebab-name>`, `business-rule:<kebab-name>`, `entity:<kebab-name>`, `decision:<kebab-name>`, `constraint:<kebab-name>`, `concept:<kebab-name>`, `claim:<uuid-short>`.
 
-Status lifecycle: `proposed` → `accepted` → `implemented`.
+Decision status lifecycle: `draft` → `accepted` → `deprecated`.
 
 ---
 

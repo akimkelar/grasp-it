@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Edge types (41 values across 10 categories)
+// Edge types (45 values across 11 categories)
 export const EdgeTypeSchema = z.enum([
   "imports", "exports", "contains", "inherits", "implements",  // Structural
   "calls", "subscribes", "publishes", "middleware",             // Behavioral
@@ -9,7 +9,9 @@ export const EdgeTypeSchema = z.enum([
   "related", "similar_to",                                      // Semantic
   "deploys", "serves", "provisions", "triggers",               // Infrastructure
   "migrates", "documents", "routes", "defines_schema",         // Schema/Data
-  "contains_flow", "flow_step", "cross_domain",                // Domain
+  "has_feature", "has_operation", "sequence",                   // Domain (replaces flow/step)
+  "performed_by", "restricted_for", "governs", "uses_entity",   // Business
+  "implemented_by",                                             // Bridge (knowledge→codebase)
   "cites", "contradicts", "builds_on", "exemplifies", "categorized_under", "authored_by", // Knowledge
   "decides", "constrained_by", "supports", "applies_in", "sub_concept_of", // Conversation
 ]);
@@ -53,27 +55,21 @@ export const NODE_TYPE_ALIASES: Record<string, string> = {
   typedef: "schema",
   // Domain aliases — "process" intentionally excluded (ambiguous with OS/Node.js process)
   business_domain: "domain",
-  business_flow: "flow",
-  business_process: "flow",
-  task: "step",
-  business_step: "step",
   // Knowledge aliases
   note: "article",
   page: "article",
   wiki_page: "article",
   person: "entity",
-  actor: "entity",
   organization: "entity",
   tag: "topic",
   category: "topic",
   theme: "topic",
   assertion: "claim",
-  decision: "claim",
   thesis: "claim",
   reference: "source",
   raw: "source",
   paper: "source",
-  // Conversation aliases (PO chat extraction)
+  // Conversation aliases (PO chat extraction) — decision is a valid node type, no mapping needed
   rule: "constraint",
   invariant: "constraint",
   business_rule: "constraint",
@@ -110,10 +106,10 @@ export const EDGE_TYPE_ALIASES: Record<string, string> = {
   triggers_on: "triggers",
   fires: "triggers",
   defines: "defines_schema",
-  // Domain aliases
-  has_flow: "contains_flow",
-  next_step: "flow_step",
-  interacts_with: "cross_domain",
+  // Domain/Business aliases
+  // Note: "implemented_by" is intentionally NOT aliased to "implements" —
+  // it inverts edge direction (see commit fd0df15). The LLM should use
+  // "implements" with correct source/target instead.
   // Knowledge aliases
   references: "cites",
   cites_source: "cites",
@@ -129,17 +125,12 @@ export const EDGE_TYPE_ALIASES: Record<string, string> = {
   written_by: "authored_by",
   created_by: "authored_by",
   // Conversation aliases
-  constrained_by: "constrained_by",
   restrict: "constrained_by",
   enforce: "constrained_by",
-  sub_concept_of: "sub_concept_of",
   part_of: "sub_concept_of",
   composition: "sub_concept_of",
   applies_to: "applies_in",
   scoped_by: "applies_in",
-  // Note: "implemented_by" is intentionally NOT aliased to "implements" —
-  // it inverts edge direction (see commit fd0df15). The LLM should use
-  // "implements" with correct source/target instead.
 };
 
 // Aliases for complexity values LLMs commonly generate
@@ -389,8 +380,8 @@ export const GraphNodeSchema = z.object({
     "file", "function", "class", "module", "concept",
     "config", "document", "service", "table", "endpoint",
     "pipeline", "schema", "resource",
-    "domain", "flow", "step",
-    "article", "entity", "topic", "claim", "source",
+    "domain", "feature", "operation", "actor", "business-rule", "entity",
+    "article", "topic", "claim", "source",
     "decision", "constraint",
   ]),
   name: z.string(),
@@ -404,7 +395,7 @@ export const GraphNodeSchema = z.object({
   knowledgeMeta: KnowledgeMetaSchema.optional(),
   // Extended properties
   rationale: z.string().optional(),
-  status: z.enum(["proposed", "accepted", "implemented"]).optional(),
+  status: z.enum(["proposed", "accepted", "implemented", "planned", "partial", "deprecated", "draft", "active"]).optional(),
   scope: z.array(z.string()).optional(),
   condition: z.string().optional(),
   invariant: z.string().optional(),
