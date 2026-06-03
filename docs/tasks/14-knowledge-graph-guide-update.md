@@ -1,5 +1,10 @@
 # Task 14: Update knowledge-graph-guide Agent for New Schema
 
+## Reference documents
+
+- Canonical schema (all node types, relationship types, ID patterns): `docs/architecture/neo4j-schema.md`
+- Settled decisions (what was dropped, what was added): `docs/architecture/schema-evolution-plan.md`
+
 ## Description
 
 The `knowledge-graph-guide` agent (`grasp-it-plugin/agents/knowledge-graph-guide.md`) is

@@ -38,15 +38,28 @@ rebuild. Knowledge nodes survive.
 `Flow` and `Step` are redundant with `Operation + SEQUENCE`. An ordered chain of operations is
 a flow. Keeping both would split the same concept across two node types with no query benefit.
 
+### Structural non-code nodes
+
+`Document`, `Service`, `Pipeline`, `Schema`, `Resource` are **part of the codebase subgraph** —
+extracted deterministically by parsers for non-source-code files (YAML, IaC, OpenAPI, etc.).
+They have script signals and belong alongside `File`, `Function`, and `Class`. They were
+incorrectly included in the deferred list in earlier drafts. See `docs/architecture/neo4j-schema.md`.
+
 ### Deferred nodes
 
-The following nodes from earlier drafts and the `docs/architecture/approaches/feature-development-graph-design.md` document
-are **deferred** — they have no script signal, require speculative LLM extraction, and can be
-modeled as `tags[]`, `scope[]`, or `BusinessRule` text until a concrete use case justifies them:
+The following nodes from earlier drafts are **deferred** — they have no script signal, require
+speculative LLM extraction, and can be modeled as `tags[]`, `scope[]`, or `BusinessRule` text
+until a concrete use case justifies them:
 
 `Risk`, `Impact`, `Context`, `StateTransition`, `ViewArtifact`, `DataArtifact`, `Evidence`,
-`Process`, `RuleAssessment`, `Claim`, `Article`, `Topic`, `Source`, `Pipeline`, `Schema`,
-`Resource`, `Service`, `Concept`, `SubFeature`
+`Process`, `RuleAssessment`, `SubFeature`
+
+The following nodes exist in `schema.ts` for future use by `/grasp-knowledge` (wiki ingestion)
+but must **not** be created by codebase analysis or PO interview agents:
+
+`Article`, `Topic`, `Claim`, `Source`
+
+`Concept` — LLM-speculative; no script signal. Optional catch-all; not an active extraction target.
 
 ### Final node set
 
@@ -270,11 +283,15 @@ This allows queries like:
 
 ## What to Keep Unchanged
 
-- `Domain`, `Flow`, `Step` — process flow representation, unchanged
-- `Decision`, `Constraint`, `Claim` — PO interview output, unchanged and still useful
-- `Concept` — abstract concepts, unchanged
-- All codebase nodes — completely unchanged
+- `Domain` — top-level domain node; unchanged
+- `Decision`, `Constraint` — PO interview output; unchanged and still useful
+- All codebase nodes (`File`, `Function`, `Class`, `Module`, `Config`, `Table`, `Endpoint`,
+  `Document`, `Service`, `Pipeline`, `Schema`, `Resource`) — completely unchanged
 - All existing codebase relationships — unchanged
+
+**Note:** `Flow` and `Step` are **dropped** (see "Drop `Flow` and `Step`" in Final Decisions above).
+`Claim` is deferred to the knowledge provenance layer (`/grasp-knowledge`); it is not a PO interview
+output in the current schema. `Concept` is deferred/optional.
 
 ---
 
@@ -329,9 +346,10 @@ the product concept of a "feature" — a named, versioned, deliverable slice of 
 | `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-requirements` accepted |
 | `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-requirements` |
 | `Domain` | Entry point groupings (existing) | Yes (existing) | `/grasp-domain` (existing) |
-| `Flow` / `Step` | Nothing | Yes (existing) | `/grasp-domain` (existing) |
-| `Decision` / `Constraint` / `Claim` | Nothing | Yes (existing) | `/grasp-requirements` (existing) |
+| `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-requirements` (existing) |
 | `File`, `Function`, `Class` | Full structural facts | Yes — summaries only | `/grasp` (existing) |
+| `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | Non-code file parsers (zero LLM cost) | No — structure only | `/grasp` (existing) |
+| `Article`, `Topic`, `Claim`, `Source` | Nothing from codebase | Yes — wiki/knowledge-base extraction | `/grasp-knowledge` (future) |
 
 **Key principle:** Scripts run once at zero LLM cost, produce deterministic facts, and reduce
 the context the LLM needs to read. The LLM never has to rediscover what the script already

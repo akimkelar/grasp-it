@@ -49,14 +49,27 @@ codebase counterparts (matched by `id`).
 
 ## Labeling Convention
 
-Node labels are simple, Neo4j-friendly strings. Each node carries a `kind` property
-(`"codebase"` or `"knowledge"`) to distinguish its subgraph origin.
+Node labels are Neo4j-friendly PascalCase strings (e.g. `File`, `BusinessRule`).
+Relationship types are UPPER_SNAKE_CASE (e.g. `:CONTAINS`, `:IMPLEMENTED_BY`).
+
+Each node's subgraph origin is tracked by the `kind` property (`"codebase"` or `"knowledge"`).
 
 **Codebase nodes** use labels: `File`, `Function`, `Class`, `Module`, `Config`,
-`Table`, `Endpoint`.
+`Table`, `Endpoint`, `Document`, `Service`, `Pipeline`, `Schema`, `Resource`.
 
 **Knowledge nodes** use labels: `Domain`, `Feature`, `Actor`, `BusinessRule`, `Operation`,
 `Entity`, `Decision`, `Constraint`.
+
+### Internal type representation
+
+The JSON graph format and `schema.ts` enum use **lowercase** internal type strings (e.g. `"file"`,
+`"domain"`, `"business-rule"`). When writing to Neo4j, the persistence layer converts these to
+PascalCase labels and UPPER_SNAKE_CASE relationship types.
+
+**Known inconsistency:** the `schema.ts` enum currently uses `"BusinessRule"` (PascalCase) instead of
+`"business-rule"` (kebab-case) as the canonical internal value. This is handled via an alias roundtrip
+(`sanitizeGraph` lowercases input → `normalizeGraph` maps `businessrule` alias → `"BusinessRule"`).
+Task 17 tracks fixing this to `"business-rule"` for consistency with all other type values.
 
 ---
 
@@ -98,22 +111,39 @@ Business concepts, domain models, and LLM-facts extracted from wikis and intervi
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
 | `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
 
-### Additional Non-code Node Types
+### Structural Non-code Nodes (codebase subgraph)
 
-Produced by parsers and extractors for non-code files. Not all have Cypher uniqueness constraints — treat them as optional labels.
+Produced deterministically by parsers and extractors for non-source-code files. These belong to
+the codebase subgraph (`kind = "codebase"`) and are rebuilt on every `/grasp` run alongside
+`File`, `Function`, and `Class` nodes. They can be linked to `Feature` and `Operation` nodes
+via `IMPLEMENTED_BY`.
 
 | Label | Description | Source | ID pattern |
 |-------|-------------|--------|------------|
-| `concept` | Abstract concept or idea | LLM analysis of docs | `concept:<name>` |
-| `document` | Documentation file | `extract-structure.mjs` for md/txt | `file:<path>` |
-| `service` | Container/service definition | YAML/JSON parsers (k8s) | `<kind>:<name>` |
-| `pipeline` | CI/CD pipeline or target | YAML/JSON parsers | `<kind>:<name>` |
-| `schema` | Protobuf/OpenAPI/GraphQL schema | Specialized parsers | `<kind>:<name>` |
-| `resource` | Infrastructure-as-code resource | Terraform parser | `<kind>:<name>` |
-| `article` | Wiki/knowledge-base article | `/grasp-knowledge` | `article:<slug>` |
-| `topic` | Topic or category | `/grasp-knowledge` | `topic:<slug>` |
-| `claim` | Assertion or thesis | `/grasp-knowledge` | `claim:<slug>` |
-| `source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
+| `Document` | Documentation file (README, docs/) | `extract-structure.mjs` | `document:<relative-path>` |
+| `Service` | Container/service definition (Dockerfile, docker-compose, k8s) | YAML/JSON parsers | `service:<name>` |
+| `Pipeline` | CI/CD pipeline or build target | YAML/JSON parsers (GitHub Actions, GitLab CI) | `pipeline:<name>` |
+| `Schema` | Protobuf/OpenAPI/GraphQL schema definition | Specialized parsers | `schema:<relative-path>` |
+| `Resource` | Infrastructure-as-code resource (Terraform, CloudFormation) | IaC parsers | `resource:<name>` |
+
+### Knowledge Provenance Nodes (future — `/grasp-knowledge` only)
+
+These nodes are produced exclusively by the `/grasp-knowledge` skill from wikis, Confluence, or
+external knowledge-base sources. They are **not** extracted from codebases. Domain analysis and
+PO interview agents must not create these types. They exist in the schema for future wiki ingestion.
+
+| Label | Description | Source | ID pattern |
+|-------|-------------|--------|------------|
+| `Article` | Wiki/knowledge-base article | `/grasp-knowledge` | `article:<slug>` |
+| `Topic` | Topic or category node | `/grasp-knowledge` | `topic:<slug>` |
+| `Claim` | Assertion or thesis | `/grasp-knowledge` | `claim:<slug>` |
+| `Source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
+
+### Deferred Node Types
+
+`Concept` — abstract concept or idea. LLM-speculative; no script extraction signal. May appear
+when an LLM produces one during analysis but it is not a primary extraction target and should not
+be actively sought. Remains in the schema as an optional catch-all.
 
 ### Key Property Values
 
@@ -136,19 +166,18 @@ Produced by parsers and extractors for non-code files. Not all have Cypher uniqu
 Every node carries:
 - `id: string` — unique identifier (e.g. `feature:interview-scheduling`, `file:src/utils.ts`)
 - `name: string` — human-readable label
-- `type: string` — node category (e.g. `"function"`, `"BusinessRule"`, `"domain"`)
+- `type: string` — internal node category in lowercase/kebab-case (e.g. `"function"`, `"business-rule"`, `"domain"`)
+- `kind: string` — subgraph origin: `"codebase"` or `"knowledge"`
 - `summary: string` — LLM-generated description
 - `tags: string[]` — arbitrary tags
 - `complexity: "simple" | "moderate" | "complex"` — optional
 - `lineRange: [number, number]` — optional; code nodes only
 
-The subgraph origin (`"codebase"` vs `"knowledge"`) is stored on the root `KnowledgeGraph.kind` field, not on individual nodes. Use this to scope wipe queries:
+The `kind` property separates the two subgraphs. Use it to scope wipe queries:
 
 ```cypher
--- Wipe only the codebase subgraph
-MATCH (n)
-WHERE n.id STARTS WITH "file:" OR n.id STARTS WITH "function:" OR n.id STARTS WITH "class:"
-DETACH DELETE n
+-- Wipe only the codebase subgraph before a /grasp rebuild
+MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 ```
 
 ---
@@ -410,18 +439,29 @@ The script is idempotent — all constraints and indexes use `IF NOT EXISTS` gua
 
 ## Node ID Conventions
 
-| Label | ID format | Example |
-|-------|-----------|---------|
-| `File` | `file:<relative-path>` | `file:src/auth/login.ts` |
-| `Function` | `function:<path>:<name>` | `function:src/auth/login.ts:validate` |
-| `Class` | `class:<path>:<name>` | `class:src/auth/AuthService.ts:AuthService` |
-| `Endpoint` | `endpoint:<method>:<path>` | `endpoint:POST:/api/interviews` |
-| `Table` | `table:<name>` | `table:users` |
-| `Domain` | `domain:<kebab-name>` | `domain:auth` |
-| `Feature` | `feature:<kebab-name>` | `feature:interview-scheduling` |
-| `Operation` | `operation:<kebab-name>` | `operation:send-invitation` |
-| `Actor` | `actor:<kebab-name>` | `actor:agency-user` |
-| `BusinessRule` | `business-rule:<kebab-name>` | `business-rule:manager-approval-only` |
-| `Entity` | `entity:<kebab-name>` | `entity:interview` |
-| `Decision` | `decision:<kebab-name>` | `decision:jwt-memory-only` |
-| `Constraint` | `constraint:<kebab-name>` | `constraint:no-localstorage` |
+Internal `type` values (JSON / schema.ts) are lowercase or kebab-case. Neo4j labels are PascalCase.
+
+| Neo4j Label | Internal `type` | ID format | Example |
+|-------------|-----------------|-----------|---------|
+| `File` | `file` | `file:<relative-path>` | `file:src/auth/login.ts` |
+| `Function` | `function` | `function:<path>:<name>` | `function:src/auth/login.ts:validate` |
+| `Class` | `class` | `class:<path>:<name>` | `class:src/auth/AuthService.ts:AuthService` |
+| `Module` | `module` | `module:<name>` | `module:auth` |
+| `Config` | `config` | `config:<relative-path>` | `config:.env.example` |
+| `Endpoint` | `endpoint` | `endpoint:<method>:<path>` | `endpoint:POST:/api/interviews` |
+| `Table` | `table` | `table:<name>` | `table:users` |
+| `Document` | `document` | `document:<relative-path>` | `document:docs/README.md` |
+| `Service` | `service` | `service:<name>` | `service:api` |
+| `Pipeline` | `pipeline` | `pipeline:<name>` | `pipeline:ci` |
+| `Schema` | `schema` | `schema:<relative-path>` | `schema:openapi.yaml` |
+| `Resource` | `resource` | `resource:<name>` | `resource:aws_s3_bucket.uploads` |
+| `Domain` | `domain` | `domain:<kebab-name>` | `domain:auth` |
+| `Feature` | `feature` | `feature:<kebab-name>` | `feature:interview-scheduling` |
+| `Operation` | `operation` | `operation:<kebab-name>` | `operation:send-invitation` |
+| `Actor` | `actor` | `actor:<kebab-name>` | `actor:agency-user` |
+| `BusinessRule` | `business-rule` ¹ | `business-rule:<kebab-name>` | `business-rule:manager-approval-only` |
+| `Entity` | `entity` | `entity:<kebab-name>` | `entity:interview` |
+| `Decision` | `decision` | `decision:<kebab-name>` | `decision:jwt-memory-only` |
+| `Constraint` | `constraint` | `constraint:<kebab-name>` | `constraint:no-localstorage` |
+
+¹ Currently stored as `"BusinessRule"` in schema.ts enum (not yet `"business-rule"`). See Task 17.
