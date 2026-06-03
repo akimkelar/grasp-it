@@ -416,6 +416,60 @@ describe('scan-project.mjs — .graspignore handling', () => {
     }
   });
 
+  it('.grasp-it/.graspignore is respected in addition to root .graspignore', () => {
+    // The hasUserIgnoreFile check looks at both paths; verify the nested one
+    // is actually honoured by the combined filter.
+    projectRoot = setupTree({
+      'src/index.ts': 'export const x = 1;\n',
+      'private/secret.ts': 'export const s = 2;\n',
+    });
+    mkdirSync(join(projectRoot, '.grasp-it'), { recursive: true });
+    writeFileSync(join(projectRoot, '.grasp-it', '.graspignore'), 'private/\n', 'utf-8');
+    const r = runScript(projectRoot);
+    expect(r.status).toBe(0);
+    expect(byPath(r.output, 'src/index.ts')).toBeDefined();
+    expect(byPath(r.output, 'private/secret.ts')).toBeUndefined();
+    // private/ is user-driven; the default filter would have kept it.
+    expect(r.output.filteredByIgnore).toBe(1);
+  });
+
+  it('filteredByIgnore counts only user-driven drops, not default-dropped files', () => {
+    // Use a pattern that is explicitly in the user ignore AND a file that
+    // the defaults would already have dropped — only the net-new drops count.
+    projectRoot = setupTree({
+      // .graspignore adds `generated/` (not in hardcoded defaults).
+      // The defaults would drop `*.log` on their own.
+      '.graspignore': 'generated/\n',
+      'src/app.ts': 'const a = 1;\n',
+      'generated/output.ts': 'const g = 1;\n',
+      'noise.log': 'log data\n',
+    });
+    const r = runScript(projectRoot);
+    expect(r.status).toBe(0);
+    expect(byPath(r.output, 'src/app.ts')).toBeDefined();
+    expect(byPath(r.output, 'generated/output.ts')).toBeUndefined();
+    expect(byPath(r.output, 'noise.log')).toBeUndefined();
+    // Only generated/output.ts is a user-driven drop; noise.log is a default drop.
+    expect(r.output.filteredByIgnore).toBe(1);
+  });
+
+  it('filteredByIgnore is 0 when no .graspignore file exists (defaults-only path)', () => {
+    // Without any .graspignore, buildDefaultsOnlyFilter fallback path fires.
+    // All drops are baseline-default; user-driven count stays 0.
+    projectRoot = setupTree({
+      'src/index.ts': 'const x = 1;\n',
+      'noise.log': 'log\n',
+    });
+    // Confirm no .graspignore exists.
+    expect(existsSync(join(projectRoot, '.graspignore'))).toBe(false);
+    expect(existsSync(join(projectRoot, '.grasp-it', '.graspignore'))).toBe(false);
+    const r = runScript(projectRoot);
+    expect(r.status).toBe(0);
+    expect(r.output.filteredByIgnore).toBe(0);
+    // noise.log dropped by defaults but not counted as user-driven.
+    expect(byPath(r.output, 'noise.log')).toBeUndefined();
+  });
+
   it('respects .graspignore patterns and increments filteredByIgnore', () => {
     // `**/*.log` is NOT in the hardcoded defaults at the recursive level
     // — wait, `*.log` is. Use a custom pattern to exercise user-driven drops.
@@ -643,6 +697,50 @@ describe('scan-project.mjs — estimatedComplexity thresholds', () => {
     expect(r.status).toBe(0);
     expect(r.output.totalFiles).toBe(501);
     expect(r.output.estimatedComplexity).toBe('very-large');
+  });
+});
+
+describe('scan-project.mjs — enumerateFiles fallback (no git)', () => {
+  let projectRoot;
+
+  afterEach(() => {
+    if (projectRoot) {
+      rmSync(projectRoot, { recursive: true, force: true });
+      projectRoot = null;
+    }
+  });
+
+  it('falls back to recursive walk when there is no git repo', () => {
+    // setupTree with gitInit=false creates a plain directory — git ls-files
+    // returns non-zero, triggering the walker fallback path.
+    projectRoot = setupTree({
+      'src/a.ts': 'const a = 1;\n',
+      'src/b.ts': 'const b = 2;\n',
+      'README.md': '# project\n',
+    }, { gitInit: false });
+    const r = runScript(projectRoot);
+    expect(r.status).toBe(0);
+    expect(r.output.scriptCompleted).toBe(true);
+    // All three files should appear (none dropped by defaults).
+    expect(r.output.totalFiles).toBe(3);
+    expect(byPath(r.output, 'src/a.ts')).toBeDefined();
+    expect(byPath(r.output, 'src/b.ts')).toBeDefined();
+    expect(byPath(r.output, 'README.md')).toBeDefined();
+    // Walker fallback message appears on stderr.
+    expect(r.stderr).toMatch(/git ls-files unavailable/);
+    expect(r.stderr).toMatch(/falling back to recursive walk/);
+  });
+
+  it('walker skips node_modules hard-coded fast-path', () => {
+    projectRoot = setupTree({
+      'src/index.ts': 'const x = 1;\n',
+      'node_modules/lodash/index.js': 'module.exports = {};\n',
+    }, { gitInit: false });
+    const r = runScript(projectRoot);
+    expect(r.status).toBe(0);
+    // node_modules is hard-skipped before the ignore filter even runs.
+    expect(byPath(r.output, 'node_modules/lodash/index.js')).toBeUndefined();
+    expect(byPath(r.output, 'src/index.ts')).toBeDefined();
   });
 });
 

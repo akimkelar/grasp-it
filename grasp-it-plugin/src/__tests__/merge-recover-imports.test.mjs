@@ -57,6 +57,173 @@ afterEach(() => {
   rmSync(projectRoot, { recursive: true, force: true });
 });
 
+// ── Helper builders ──────────────────────────────────────────────────────
+function funcNode(filePath, name) {
+  return {
+    id: `func:${filePath}:${name}`,
+    type: "function",
+    name,
+    filePath,
+    summary: "",
+    tags: [],
+    complexity: "simple",
+  };
+}
+
+function writeBatch(n, data) {
+  writeFileSync(
+    join(intermediateDir, `batch-${n}.json`),
+    JSON.stringify(data),
+  );
+}
+
+// ── Core merge logic ─────────────────────────────────────────────────────
+
+describe("merge-batch-graphs.py — node deduplication", () => {
+  it("keeps the LAST occurrence when two batches emit the same node id", () => {
+    writeBatch(0, {
+      nodes: [{ id: "file:src/a.py", type: "file", name: "a.py", filePath: "src/a.py", summary: "first", tags: [], complexity: "simple" }],
+      edges: [],
+    });
+    writeBatch(1, {
+      nodes: [{ id: "file:src/a.py", type: "file", name: "a.py", filePath: "src/a.py", summary: "second (updated)", tags: [], complexity: "moderate" }],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.nodes).toHaveLength(1);
+    expect(assembled.nodes[0].summary).toBe("second (updated)");
+    expect(assembled.nodes[0].complexity).toBe("moderate");
+    expect(stderr).toContain("duplicate node IDs removed");
+  });
+});
+
+describe("merge-batch-graphs.py — edge deduplication and dangling edge drops", () => {
+  it("deduplicates edges with the same (source, target, type, direction), keeping higher weight", () => {
+    const nodeA = fileNode("src/a.py");
+    const nodeB = fileNode("src/b.py");
+    writeBatch(0, {
+      nodes: [nodeA, nodeB],
+      edges: [
+        { source: "file:src/a.py", target: "file:src/b.py", type: "imports", direction: "forward", weight: 0.3 },
+        { source: "file:src/a.py", target: "file:src/b.py", type: "imports", direction: "forward", weight: 0.9 },
+      ],
+    });
+    const { assembled } = runMerge();
+    const imp = assembled.edges.filter((e) => e.type === "imports");
+    expect(imp).toHaveLength(1);
+    expect(imp[0].weight).toBe(0.9);
+  });
+
+  it("drops edges where the source node is missing from the graph", () => {
+    writeBatch(0, {
+      nodes: [fileNode("src/b.py")],
+      edges: [
+        { source: "file:src/missing.py", target: "file:src/b.py", type: "imports", direction: "forward", weight: 0.5 },
+      ],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.edges).toHaveLength(0);
+    expect(stderr).toContain("missing source 'file:src/missing.py'");
+  });
+
+  it("drops edges where the target node is missing from the graph", () => {
+    writeBatch(0, {
+      nodes: [fileNode("src/a.py")],
+      edges: [
+        { source: "file:src/a.py", target: "file:src/gone.py", type: "imports", direction: "forward", weight: 0.5 },
+      ],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.edges).toHaveLength(0);
+    expect(stderr).toContain("missing target 'file:src/gone.py'");
+  });
+});
+
+describe("merge-batch-graphs.py — nodes without IDs (unfixable)", () => {
+  it("reports nodes with no id field in the could-not-fix section and excludes them from output", () => {
+    writeBatch(0, {
+      nodes: [
+        fileNode("src/a.py"),
+        { type: "file", name: "no-id.py", filePath: "src/no-id.py", summary: "", tags: [], complexity: "simple" },
+      ],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    // The no-id node is excluded.
+    expect(assembled.nodes).toHaveLength(1);
+    expect(assembled.nodes[0].id).toBe("file:src/a.py");
+    expect(stderr).toContain("Could not fix");
+    expect(stderr).toMatch(/Node\[\d+\] has no 'id' field/);
+  });
+});
+
+describe("merge-batch-graphs.py — ID normalization", () => {
+  it("strips double prefixes: file:file:src/a.py → file:src/a.py", () => {
+    writeBatch(0, {
+      nodes: [{ id: "file:file:src/a.py", type: "file", name: "a.py", filePath: "src/a.py", summary: "", tags: [], complexity: "simple" }],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.nodes[0].id).toBe("file:src/a.py");
+    expect(stderr).toContain("double prefix");
+  });
+
+  it("strips project-name prefixes: my-project:file:src/a.py → file:src/a.py", () => {
+    writeBatch(0, {
+      nodes: [{ id: "my-project:file:src/a.py", type: "file", name: "a.py", filePath: "src/a.py", summary: "", tags: [], complexity: "simple" }],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.nodes[0].id).toBe("file:src/a.py");
+    expect(stderr).toContain("project-name prefix");
+  });
+
+  it("canonicalizes legacy func: prefix to function:", () => {
+    writeBatch(0, {
+      nodes: [
+        fileNode("src/a.py"),
+        { id: "func:src/a.py:myFunc", type: "function", name: "myFunc", filePath: "src/a.py", summary: "", tags: [], complexity: "simple" },
+      ],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    const fn = assembled.nodes.find((n) => n.name === "myFunc");
+    expect(fn.id).toBe("function:src/a.py:myFunc");
+    expect(stderr).toContain("func: → function:");
+  });
+});
+
+describe("merge-batch-graphs.py — complexity normalization", () => {
+  it("maps alias values (low, medium, high) to canonical (simple, moderate, complex)", () => {
+    writeBatch(0, {
+      nodes: [
+        { id: "file:src/a.py", type: "file", name: "a.py", filePath: "src/a.py", summary: "", tags: [], complexity: "low" },
+        { id: "file:src/b.py", type: "file", name: "b.py", filePath: "src/b.py", summary: "", tags: [], complexity: "medium" },
+        { id: "file:src/c.py", type: "file", name: "c.py", filePath: "src/c.py", summary: "", tags: [], complexity: "high" },
+      ],
+      edges: [],
+    });
+    const { assembled } = runMerge();
+    const byId = Object.fromEntries(assembled.nodes.map((n) => [n.id, n]));
+    expect(byId["file:src/a.py"].complexity).toBe("simple");
+    expect(byId["file:src/b.py"].complexity).toBe("moderate");
+    expect(byId["file:src/c.py"].complexity).toBe("complex");
+  });
+
+  it("defaults unrecognized complexity strings to moderate and reports them", () => {
+    writeBatch(0, {
+      nodes: [
+        { id: "file:src/x.py", type: "file", name: "x.py", filePath: "src/x.py", summary: "", tags: [], complexity: "banana" },
+      ],
+      edges: [],
+    });
+    const { assembled, stderr } = runMerge();
+    expect(assembled.nodes[0].complexity).toBe("moderate");
+    expect(stderr).toContain("Could not fix");
+    expect(stderr).toContain("banana");
+  });
+});
+
 describe("merge-batch-graphs.py imports recovery", () => {
   it("recovers imports edges that batches dropped despite importMap having them", () => {
     // Batch contains all the file nodes but only emits ONE of three imports edges.

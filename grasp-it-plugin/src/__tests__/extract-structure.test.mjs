@@ -89,6 +89,164 @@ describe("extract-structure buildResult", () => {
     });
   });
 
+  describe("null analysis", () => {
+    it("returns base metrics only when analysis is null", () => {
+      const result = buildResult(file(), 10, 8, null, null, {});
+      expect(result.metrics).toEqual({});
+      expect(result.functions).toBeUndefined();
+      expect(result.classes).toBeUndefined();
+      expect(result.exports).toBeUndefined();
+    });
+  });
+
+  describe("functions mapping", () => {
+    it("maps functions with name, startLine, endLine, params", () => {
+      const a = analysis({ functions: [{ name: "foo", lineRange: [1, 5], params: ["x"] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.functions).toEqual([{ name: "foo", startLine: 1, endLine: 5, params: ["x"] }]);
+    });
+
+    it("omits functions when array is empty", () => {
+      const result = buildResult(file(), 10, 8, analysis({ functions: [] }), null, {});
+      expect(result.functions).toBeUndefined();
+    });
+  });
+
+  describe("classes mapping", () => {
+    it("maps classes with name, startLine, endLine, methods, properties", () => {
+      const a = analysis({ classes: [{ name: "Bar", lineRange: [2, 10], methods: ["m"], properties: ["p"] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.classes).toEqual([{ name: "Bar", startLine: 2, endLine: 10, methods: ["m"], properties: ["p"] }]);
+    });
+  });
+
+  describe("exports mapping", () => {
+    it("maps exports with name, line, isDefault", () => {
+      const a = analysis({ exports: [{ name: "foo", lineNumber: 3, isDefault: true }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.exports).toEqual([{ name: "foo", line: 3, isDefault: true }]);
+    });
+  });
+
+  describe("sections mapping", () => {
+    it("maps sections with heading, level, line", () => {
+      const a = analysis({ sections: [{ name: "Intro", level: 1, lineRange: [1, 5] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.sections).toEqual([{ heading: "Intro", level: 1, line: 1 }]);
+    });
+  });
+
+  describe("definitions mapping", () => {
+    it("maps definitions with name, kind, fields, startLine, endLine", () => {
+      const a = analysis({ definitions: [{ name: "MyType", kind: "interface", fields: ["id"], lineRange: [3, 7] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.definitions).toEqual([{ name: "MyType", kind: "interface", fields: ["id"], startLine: 3, endLine: 7 }]);
+    });
+  });
+
+  describe("services mapping", () => {
+    it("maps services with name, image, ports, startLine, endLine when lineRange present", () => {
+      const a = analysis({ services: [{ name: "db", image: "postgres", ports: [5432], lineRange: [1, 4] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.services).toEqual([{ name: "db", image: "postgres", ports: [5432], startLine: 1, endLine: 4 }]);
+    });
+
+    it("maps services without startLine/endLine when lineRange absent", () => {
+      const a = analysis({ services: [{ name: "web", image: "nginx", ports: [80] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.services[0].startLine).toBeUndefined();
+    });
+  });
+
+  describe("endpoints mapping", () => {
+    it("maps endpoints with method, path, startLine, endLine", () => {
+      const a = analysis({ endpoints: [{ method: "GET", path: "/api", lineRange: [2, 3] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.endpoints).toEqual([{ method: "GET", path: "/api", startLine: 2, endLine: 3 }]);
+    });
+  });
+
+  describe("steps mapping", () => {
+    it("maps steps with name, startLine, endLine", () => {
+      const a = analysis({ steps: [{ name: "build", lineRange: [1, 2] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.steps).toEqual([{ name: "build", startLine: 1, endLine: 2 }]);
+    });
+  });
+
+  describe("resources mapping", () => {
+    it("maps resources with name, kind, startLine, endLine", () => {
+      const a = analysis({ resources: [{ name: "Pod", kind: "pod", lineRange: [5, 10] }] });
+      const result = buildResult(file(), 10, 8, a, null, {});
+      expect(result.resources).toEqual([{ name: "Pod", kind: "pod", startLine: 5, endLine: 10 }]);
+    });
+  });
+
+  describe("callGraph", () => {
+    it("includes callGraph when non-empty", () => {
+      const cg = [{ caller: "a", callee: "b", lineNumber: 3 }];
+      const result = buildResult(file(), 10, 8, analysis(), cg, {});
+      expect(result.callGraph).toEqual(cg);
+    });
+
+    it("omits callGraph when null", () => {
+      const result = buildResult(file(), 10, 8, analysis(), null, {});
+      expect(result.callGraph).toBeUndefined();
+    });
+
+    it("omits callGraph when empty array", () => {
+      const result = buildResult(file(), 10, 8, analysis(), [], {});
+      expect(result.callGraph).toBeUndefined();
+    });
+  });
+
+  describe("metric counts", () => {
+    it("sets exportCount", () => {
+      const a = analysis({ exports: [{ name: "x", lineNumber: 1, isDefault: false }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.exportCount).toBe(1);
+    });
+
+    it("sets functionCount", () => {
+      const a = analysis({ functions: [{ name: "f", lineRange: [1, 2], params: [] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.functionCount).toBe(1);
+    });
+
+    it("sets classCount", () => {
+      const a = analysis({ classes: [{ name: "C", lineRange: [1, 5], methods: [], properties: [] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.classCount).toBe(1);
+    });
+
+    it("sets sectionCount", () => {
+      const a = analysis({ sections: [{ name: "S", level: 1, lineRange: [1, 2] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.sectionCount).toBe(1);
+    });
+
+    it("sets definitionCount", () => {
+      const a = analysis({ definitions: [{ name: "D", kind: "type", fields: [], lineRange: [1, 2] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.definitionCount).toBe(1);
+    });
+
+    it("sets serviceCount", () => {
+      const a = analysis({ services: [{ name: "svc", image: "img", ports: [] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.serviceCount).toBe(1);
+    });
+
+    it("sets endpointCount", () => {
+      const a = analysis({ endpoints: [{ method: "POST", path: "/x", lineRange: [1, 2] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.endpointCount).toBe(1);
+    });
+
+    it("sets stepCount", () => {
+      const a = analysis({ steps: [{ name: "step1", lineRange: [1, 2] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.stepCount).toBe(1);
+    });
+
+    it("sets resourceCount", () => {
+      const a = analysis({ resources: [{ name: "res", kind: "pod", lineRange: [1, 2] }] });
+      expect(buildResult(file(), 10, 8, a, null, {}).metrics.resourceCount).toBe(1);
+    });
+  });
+
   describe("totalLines", () => {
     // Documents the off-by-one fix: `wc -l` reports N for a POSIX text file
     // with N lines + trailing \n; the extractor must match.
