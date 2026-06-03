@@ -1,4 +1,4 @@
-# Understand Anything
+# grasp-it
 
 ## Project Overview
 An open-source tool combining LLM intelligence + static analysis to produce a knowledge graph stored in Neo4j for understanding codebases.
@@ -43,14 +43,12 @@ The project analyzes codebases and produces a structured knowledge graph stored 
 - **tree-sitter**: Uses `web-tree-sitter` (WASM) instead of native `tree-sitter` — native bindings fail on darwin/arm64 + Node 24
 
 ## Versioning
-When pushing to remote, bump the version in **all five** of these files (keep them in sync):
-- `grasp-it-plugin/package.json` → `"version"` field
-- `grasp-it-plugin/.claude-plugin/plugin.json` → `"version"` field
-- `.claude-plugin/plugin.json` → `"version"` field
-- `.cursor-plugin/plugin.json` → `"version"` field
-- `.copilot-plugin/plugin.json` → `"version"` field
 
-Note: `.claude-plugin/marketplace.json` does **not** carry a version — the `plugins[]` entry only supports `name` and `source`, and adding other fields causes marketplace schema validation failures.
+Versions are tracked in the individual package.json files:
+- `grasp-it-plugin/package.json` → `"version"` field
+- `grasp-it-plugin/packages/core/package.json` → `"version"` field
+
+At this early stage, versioning is not yet formalized. All packages start at `0.1.0`.
 
 ## Testing Local Plugin Changes
 
