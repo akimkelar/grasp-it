@@ -659,6 +659,51 @@ describe("mergeGraphUpdate", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("file nodes in the incremental update carry analyzedAtCommit matching the new commit", () => {
+    // existing graph: file:src/a.ts with old analyzedAtCommit
+    const existingGraph = makeGraph({
+      nodes: [
+        makeNode({
+          id: "file:src/a.ts",
+          name: "a.ts",
+          filePath: "src/a.ts",
+          type: "file",
+          analyzedAtCommit: "oldHash",
+        }),
+        makeNode({
+          id: "file:src/b.ts",
+          name: "b.ts",
+          filePath: "src/b.ts",
+          type: "file",
+        }),
+      ],
+    });
+
+    // new analysis: file:src/a.ts with new analyzedAtCommit
+    const newNodes = [
+      makeNode({
+        id: "file:src/a.ts-v2",
+        name: "a.ts",
+        filePath: "src/a.ts",
+        type: "file",
+        analyzedAtCommit: "newHash",
+      }),
+    ];
+
+    const result = mergeGraphUpdate(
+      existingGraph,
+      ["src/a.ts"],
+      newNodes,
+      [],
+      "newHash",
+    );
+
+    // The new file node should have analyzedAtCommit === "newHash"
+    const newFileNode = result.nodes.find((n) => n.filePath === "src/a.ts");
+    expect(newFileNode).toBeDefined();
+    expect(newFileNode!.analyzedAtCommit).toBe("newHash");
+  });
 });
 
 describe("findStaleImplementedBy", () => {

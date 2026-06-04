@@ -497,4 +497,93 @@ describe("merge-subdomain-graphs.py", () => {
     // Hash should be the same (since all graphs have the same hash)
     expect(out.project.gitCommitHash).toBe("samehash");
   });
+
+  // ── Gap 4: empty/null gitCommitHash should not emit false staleness warning ──
+  it("handles subdomain graph with empty gitCommitHash without emitting staleness warning", () => {
+    const g1 = makeGraph({
+      nodes: [makeNode("n1")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "First subdomain",
+        analyzedAt: "2024-01-01T10:00:00Z",
+        gitCommitHash: "abc123",
+      },
+    });
+    // g2 has empty string gitCommitHash — should be excluded from staleness comparison
+    const g2 = makeGraph({
+      nodes: [makeNode("n2")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "Second subdomain",
+        analyzedAt: "2024-01-02T10:00:00Z",
+        gitCommitHash: "", // empty hash — should be skipped
+      },
+    });
+
+    const f1 = join(graspDir, "sub1-knowledge-graph.json");
+    const f2 = join(graspDir, "sub2-knowledge-graph.json");
+    writeFileSync(f1, JSON.stringify(g1));
+    writeFileSync(f2, JSON.stringify(g2));
+
+    const result = runScript(f1, f2);
+    expect(result.status).toBe(0);
+
+    // No staleness warning should be emitted (only one non-empty hash)
+    expect(result.stderr).not.toContain("Warning: subdomain graphs were built at different commits:");
+
+    const out = readOutput();
+    // The resolved hash should be "abc123" (the non-empty one)
+    expect(out.project.gitCommitHash).toBe("abc123");
+  });
+
+  it("handles subdomain graph with missing gitCommitHash field without emitting staleness warning", () => {
+    const g1 = makeGraph({
+      nodes: [makeNode("n1")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "First subdomain",
+        analyzedAt: "2024-01-01T10:00:00Z",
+        gitCommitHash: "abc123",
+      },
+    });
+    // g2 is missing gitCommitHash entirely
+    const g2 = {
+      version: "1.0.0",
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "Second subdomain",
+        analyzedAt: "2024-01-02T10:00:00Z",
+        // no gitCommitHash field
+      },
+      nodes: [makeNode("n2")],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    const f1 = join(graspDir, "sub1-knowledge-graph.json");
+    const f2 = join(graspDir, "sub2-knowledge-graph.json");
+    writeFileSync(f1, JSON.stringify(g1));
+    writeFileSync(f2, JSON.stringify(g2));
+
+    const result = runScript(f1, f2);
+    expect(result.status).toBe(0);
+
+    // No staleness warning should be emitted (only one non-empty hash)
+    expect(result.stderr).not.toContain("Warning: subdomain graphs were built at different commits:");
+
+    const out = readOutput();
+    expect(out.project.gitCommitHash).toBe("abc123");
+  });
 });

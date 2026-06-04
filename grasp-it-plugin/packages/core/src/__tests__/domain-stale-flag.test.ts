@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { saveMeta, loadMeta } from "../persistence/index.js";
+import { saveMeta, loadMeta, loadDomainGraph } from "../persistence/index.js";
 import type { AnalysisMeta } from "../types.js";
 
 const testRoot = join(tmpdir(), "ua-domain-stale-flag-test");
@@ -171,5 +171,46 @@ describe("domainGraphStale flag cycle", () => {
     const exists = existsSync(domainGraphPath);
     expect(exists).toBe(false);
     // When domain-graph.json does not exist, skip staleness check entirely
+  });
+
+  it("throws JSON parse error on malformed domain-graph.json (invalid JSON) — no validation occurs", () => {
+    const domainGraphDir = join(testRoot, ".grasp-it");
+    mkdirSync(domainGraphDir, { recursive: true });
+    writeFileSync(join(domainGraphDir, "domain-graph.json"), "not valid json", "utf-8");
+
+    // JSON.parse throws before any validation can occur
+    // The caller must wrap in try-catch to skip the staleness check gracefully
+    expect(() => loadDomainGraph(testRoot)).toThrow();
+    expect(() => loadDomainGraph(testRoot)).toThrow(/Unexpected token|not valid JSON/);
+  });
+
+  it("throws Error when domain-graph.json is missing project.gitCommitHash (validation fails)", () => {
+    const domainGraphDir = join(testRoot, ".grasp-it");
+    mkdirSync(domainGraphDir, { recursive: true });
+    writeFileSync(
+      join(domainGraphDir, "domain-graph.json"),
+      JSON.stringify({ nodes: [], edges: [], project: { name: "test" } }),
+      "utf-8",
+    );
+
+    // Valid JSON but missing required gitCommitHash field → validation fails
+    // Throws "Invalid domain graph" because validateGraph returns success: false
+    expect(() => loadDomainGraph(testRoot)).toThrow(/Invalid domain graph/);
+  });
+
+  it("returns raw data when domain-graph.json is missing project.gitCommitHash (validate: false bypasses schema check)", () => {
+    const domainGraphDir = join(testRoot, ".grasp-it");
+    mkdirSync(domainGraphDir, { recursive: true });
+    writeFileSync(
+      join(domainGraphDir, "domain-graph.json"),
+      JSON.stringify({ nodes: [], edges: [], project: { name: "test" } }),
+      "utf-8",
+    );
+
+    // With validate: false, loadDomainGraph skips schema validation
+    // Returns the raw parsed object — caller can safely check for absence of gitCommitHash
+    const result = loadDomainGraph(testRoot, { validate: false });
+    expect(result).not.toBeNull();
+    expect(result!.project.gitCommitHash).toBeUndefined();
   });
 });
