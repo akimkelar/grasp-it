@@ -272,6 +272,42 @@ describe("checkGraphFreshness", () => {
       commitsBehind: 0,
     });
   });
+
+  it("falls back gracefully when knowledge-graph.json contains invalid JSON", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue("not-valid-json{{");
+
+    const result = checkGraphFreshness("/project");
+
+    // Should not throw; should fall back to stale=true with empty lastCommit
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
+
+  it("falls back gracefully when knowledge-graph.json is missing project.gitCommitHash", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(JSON.stringify({ nodes: [], edges: [] }));
+
+    const result = checkGraphFreshness("/project");
+
+    // Should fall back gracefully, not throw
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
 });
 
 describe("mergeGraphUpdate", () => {
@@ -544,6 +580,85 @@ describe("mergeGraphUpdate", () => {
       ),
     ).toBeDefined();
   });
+
+  it("removes outbound edges from a source node whose ID changed after re-analysis", () => {
+    // Scenario: function foo in src/a.ts is renamed to baz after re-analysis.
+    // File A is in changed set; foo's node ID changes from function:src/a.ts:foo
+    // to function:src/a.ts:baz. Outbound edges from foo should be removed.
+    const existingGraph = makeGraph({
+      nodes: [
+        makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
+        makeNode({ id: "file:b", name: "b.ts", filePath: "src/b.ts" }),
+        makeNode({
+          id: "function:src/a.ts:foo",
+          name: "foo",
+          type: "function",
+          filePath: "src/a.ts",
+        }),
+        makeNode({
+          id: "function:src/b.ts:bar",
+          name: "bar",
+          type: "function",
+          filePath: "src/b.ts",
+        }),
+      ],
+      edges: [
+        // Edge from old function foo to bar - should be removed (source gone)
+        makeEdge({
+          source: "function:src/a.ts:foo",
+          target: "function:src/b.ts:bar",
+          type: "calls",
+        }),
+      ],
+    });
+
+    // Re-analysis: foo renamed to baz, bar unchanged (still in b.ts)
+    const newNodes = [
+      makeNode({
+        id: "file:a-v2",
+        name: "a.ts",
+        filePath: "src/a.ts",
+      }),
+      makeNode({
+        id: "function:src/a.ts:baz",
+        name: "baz",
+        type: "function",
+        filePath: "src/a.ts",
+      }),
+      makeNode({
+        id: "function:src/b.ts:bar",
+        name: "bar",
+        type: "function",
+        filePath: "src/b.ts",
+      }),
+    ];
+
+    const result = mergeGraphUpdate(
+      existingGraph,
+      ["src/a.ts"],
+      newNodes,
+      [],
+      "def456",
+    );
+
+    // Old node should not exist
+    expect(
+      result.nodes.find((n) => n.id === "function:src/a.ts:foo"),
+    ).toBeUndefined();
+
+    // New node should exist
+    expect(
+      result.nodes.find((n) => n.id === "function:src/a.ts:baz"),
+    ).toBeDefined();
+
+    // Old edge from foo to bar should NOT exist (source removed, no re-created edge)
+    expect(
+      result.edges.find(
+        (e) =>
+          e.source === "function:src/a.ts:foo" && e.target === "function:src/b.ts:bar",
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("findStaleImplementedBy", () => {
@@ -670,5 +785,27 @@ describe("findStaleImplementedBy", () => {
     expect(result.staleEdges).toHaveLength(1);
     // filePath is the file node's filePath (which file was re-analyzed)
     expect(result.staleEdges[0].filePath).toBe("src/a.ts");
+  });
+
+  it("returns only stale edges when a knowledge node has multiple IMPLEMENTED_BY edges and only some are stale", () => {
+    // feature:auth has two IMPLEMENTED_BY edges; one file is stale, one is fresh
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/auth.ts", type: "file", name: "auth.ts", filePath: "src/auth.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        { id: "file:src/auth-utils.ts", type: "file", name: "auth-utils.ts", filePath: "src/auth-utils.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "newCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/auth.ts", type: "implemented_by" }),
+        makeEdge({ source: "feature:auth", target: "file:src/auth-utils.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "newCommit");
+    // Only one edge should be stale (src/auth.ts), not both and not zero
+    expect(result.staleEdges).toHaveLength(1);
+    expect(result.staleEdges[0].nodeId).toBe("feature:auth");
+    expect(result.staleEdges[0].filePath).toBe("src/auth.ts");
+    expect(result.staleEdges[0].analyzedAtCommit).toBe("oldCommit");
   });
 });
