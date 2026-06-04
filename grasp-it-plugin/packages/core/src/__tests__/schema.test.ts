@@ -726,9 +726,9 @@ describe("Extended node/edge types", () => {
     expect(result.success).toBe(true);
   });
 
-  it("validates all 20 node types are accepted by the schema", () => {
+  it("validates all 21 canonical node types are accepted by the schema", () => {
     const allTypes = [
-      "file", "function", "class", "module", "config", "table", "endpoint",
+      "file", "function", "class", "module", "concept", "config", "table", "endpoint",
       "document", "service", "pipeline", "schema", "resource",
       "domain", "feature", "operation", "actor", "business-rule", "entity",
       "decision", "constraint",
