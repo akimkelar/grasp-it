@@ -1,8 +1,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, isAbsolute, relative, basename } from "node:path";
-import type { KnowledgeGraph, AnalysisMeta, ProjectConfig } from "../types.js";
+import type { KnowledgeGraph, AnalysisMeta, ProjectConfig, ProjectSingletonMeta } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 import { validateGraph } from "../schema.js";
+
+const PROJECT_SINGLETON_ID = "project:singleton";
 
 const UA_DIR = ".grasp-it";
 const GRAPH_FILE = "knowledge-graph.json";
@@ -179,4 +181,73 @@ export function loadDomainGraph(
   }
 
   return data as KnowledgeGraph;
+}
+
+// ── Neo4j Project Singleton ──────────────────────────────────────────────────
+
+/**
+ * Persist project-level metadata to the shared Project singleton node in Neo4j.
+ * This node is the authoritative source of the last-analyzed commit hash in
+ * multi-user setups, replacing the local-only `.grasp-it/meta.json`.
+ *
+ * Requires a Neo4j driver session (from neo4j-driver).
+ *
+ * @example
+ * import { driver } from "neo4j-driver";
+ * const session = driver.session();
+ * await saveProjectMeta(session, meta);
+ * await session.close();
+ */
+export async function saveProjectMeta(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+  meta: AnalysisMeta,
+): Promise<void> {
+  await session.run(
+    `MERGE (p:Project {id: $id})
+     SET p.gitCommitHash  = $gitCommitHash,
+         p.lastAnalyzedAt = $lastAnalyzedAt,
+         p.version        = $version,
+         p.analyzedFiles  = $analyzedFiles,
+         p.kind           = "project"`,
+    {
+      id: PROJECT_SINGLETON_ID,
+      gitCommitHash: meta.gitCommitHash,
+      lastAnalyzedAt: meta.lastAnalyzedAt,
+      version: meta.version,
+      analyzedFiles: meta.analyzedFiles,
+    },
+  );
+}
+
+/**
+ * Load project-level metadata from the Project singleton node in Neo4j.
+ * Returns null if the node does not exist yet (first run).
+ *
+ * Requires a Neo4j driver session (from neo4j-driver).
+ *
+ * @example
+ * import { driver } from "neo4j-driver";
+ * const session = driver.session();
+ * const meta = await loadProjectMeta(session);
+ * await session.close();
+ */
+export async function loadProjectMeta(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+): Promise<ProjectSingletonMeta | null> {
+  const result = await session.run(
+    `MATCH (p:Project {id: $id}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`,
+    { id: PROJECT_SINGLETON_ID },
+  );
+
+  const record = result.records[0] as unknown as Record<string, unknown> | undefined;
+  if (!record) return null;
+
+  return {
+    gitCommitHash: record["gitCommitHash"] as string,
+    lastAnalyzedAt: record["lastAnalyzedAt"] as string,
+    version: record["version"] as string,
+    analyzedFiles: record["analyzedFiles"] as number,
+  };
 }

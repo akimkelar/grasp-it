@@ -123,6 +123,14 @@ export interface ThemeConfig {
   accentId: string;
 }
 
+// Project singleton meta — written to Neo4j as a singleton node (kind: "project")
+export interface ProjectSingletonMeta {
+  gitCommitHash: string;
+  lastAnalyzedAt: string;
+  version: string;
+  analyzedFiles: number;
+}
+
 // AnalysisMeta (for persistence)
 export interface AnalysisMeta {
   lastAnalyzedAt: string;

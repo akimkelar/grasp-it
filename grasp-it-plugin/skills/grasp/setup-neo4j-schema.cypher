@@ -22,8 +22,8 @@ CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT decision_id IF NOT EXISTS FOR (n:Decision) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT constraint_id IF NOT EXISTS FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
 
--- =============================================================================
--- KIND SEPARATION INDEX
+-- Project singleton — single node per database, holds shared gitCommitHash across users
+CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE;
 -- Distinguishes codebase vs knowledge subgraphs
 -- =============================================================================
 

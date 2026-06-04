@@ -122,6 +122,19 @@ Business concepts, domain models, and LLM-facts extracted from wikis and intervi
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
 | `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
 
+### Project Singleton Node
+
+A single `(p:Project {id: "project:singleton", kind: "project"})` node holds project-level
+metadata and is the shared authoritative source of the last-analyzed commit hash in multi-user
+Neo4j setups. It is excluded from the codebase wipe (`WHERE n.kind = "codebase"`) and therefore
+persists across all `/grasp` runs.
+
+| Label | Description | ID | Properties |
+|-------|-------------|-------|------------|
+| `Project` | Project-level metadata singleton | `project:singleton` | `gitCommitHash`, `lastAnalyzedAt`, `version`, `analyzedFiles`, `kind` |
+
+See Task 22 for implementation details.
+
 ### Structural Non-code Nodes (codebase subgraph)
 
 Produced deterministically by parsers and extractors for non-source-code files. These belong to
@@ -392,6 +405,8 @@ CREATE CONSTRAINT actor_id FOR (n:Actor) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT businessrule_id FOR (n:BusinessRule) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT decision_id FOR (n:Decision) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT constraint_id FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
+-- Project singleton — single node per database, holds shared gitCommitHash across users
+CREATE CONSTRAINT project_id FOR (p:Project) REQUIRE p.id IS UNIQUE;
 ```
 
 ### Recommended Indexes

@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeFileSync } from "node:fs";
-import { saveGraph, loadGraph, saveMeta, loadMeta, saveFingerprints, loadFingerprints, saveConfig, loadConfig } from "./index.js";
+import {
+  saveGraph, loadGraph, saveMeta, loadMeta,
+  saveFingerprints, loadFingerprints, saveConfig, loadConfig,
+  saveProjectMeta, loadProjectMeta,
+} from "./index.js";
 import type { KnowledgeGraph, AnalysisMeta } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 
@@ -199,6 +203,78 @@ describe("persistence", () => {
 
       const loaded = loadConfig(tempDir);
       expect(loaded).toEqual({ autoUpdate: false, outputLanguage: "en" });
+    });
+  });
+
+  describe("saveProjectMeta / loadProjectMeta", () => {
+    it("should call session.run with correct MERGE query and params", async () => {
+      const sampleMeta: AnalysisMeta = {
+        lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
+        gitCommitHash: "abc123def456",
+        version: "1.0.0",
+        analyzedFiles: 42,
+      };
+
+      let ranQuery = "";
+      let ranParams: Record<string, unknown> = {};
+
+      const mockSession = {
+        run: async (query: string, params: Record<string, unknown>) => {
+          ranQuery = query;
+          ranParams = params;
+          return { records: [] };
+        },
+      };
+
+      await saveProjectMeta(mockSession as never, sampleMeta);
+
+      expect(ranQuery).toContain("MERGE (p:Project");
+      expect(ranQuery).toContain("SET");
+      expect(ranQuery).toContain("p.gitCommitHash");
+      expect(ranQuery).toContain("p.lastAnalyzedAt");
+      expect(ranQuery).toContain("p.version");
+      expect(ranQuery).toContain("p.analyzedFiles");
+      expect(ranQuery).toContain("p.kind");
+      expect(ranParams.id).toBe("project:singleton");
+      expect(ranParams.gitCommitHash).toBe("abc123def456");
+      expect(ranParams.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
+      expect(ranParams.version).toBe("1.0.0");
+      expect(ranParams.analyzedFiles).toBe(42);
+    });
+
+    it("should return null when no Project singleton exists", async () => {
+      const mockSession = {
+        run: async (_query: string, _params: Record<string, unknown>) => {
+          return { records: [] };
+        },
+      };
+
+      const result = await loadProjectMeta(mockSession as never);
+      expect(result).toBeNull();
+    });
+
+    it("should return ProjectSingletonMeta when node exists", async () => {
+      const mockRecord = {
+        gitCommitHash: "abc123def456",
+        lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
+        version: "1.0.0",
+        analyzedFiles: 42,
+      };
+
+      const mockSession = {
+        run: async (_query: string, _params: Record<string, unknown>) => {
+          return {
+            records: [mockRecord],
+          };
+        },
+      };
+
+      const result = await loadProjectMeta(mockSession as never);
+      expect(result).not.toBeNull();
+      expect(result!.gitCommitHash).toBe("abc123def456");
+      expect(result!.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
+      expect(result!.version).toBe("1.0.0");
+      expect(result!.analyzedFiles).toBe(42);
     });
   });
 });
