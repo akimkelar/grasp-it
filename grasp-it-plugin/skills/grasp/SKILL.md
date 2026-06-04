@@ -808,14 +808,44 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
    **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 3 (writing `meta.json`).**
 
-3. Write metadata to `$PROJECT_ROOT/.grasp-it/meta.json` (only after step 2 succeeded):
-   ```json
+3. Write metadata to `$PROJECT_ROOT/.grasp-it/meta.json` (only after step 2 succeeded), then check domain graph staleness:
+   ```bash
+   # First write the base meta.json
+   cat > $PROJECT_ROOT/.grasp-it/meta.json <<EOF
    {
      "lastAnalyzedAt": "<ISO 8601 timestamp>",
      "gitCommitHash": "<commit hash>",
      "version": "1.0.0",
      "analyzedFiles": <number of files analyzed>
    }
+   EOF
+
+   # Check if domain-graph.json exists and is out of sync
+   DOMAIN_GRAPH_PATH="$PROJECT_ROOT/.grasp-it/domain-graph.json"
+   if [ -f "$DOMAIN_GRAPH_PATH" ]; then
+     DOMAIN_COMMIT=$(node -e "try{const g=JSON.parse(require('fs').readFileSync('$DOMAIN_GRAPH_PATH','utf8'));console.log(g.project?.gitCommitHash||'')}catch(e){console.log('')}")
+     if [ -n "$DOMAIN_COMMIT" ] && [ "$DOMAIN_COMMIT" != "<commit hash>" ]; then
+       # Domain graph is stale — add the flag to meta.json
+       node -e "
+       const fs=require('fs');
+       const meta=JSON.parse(fs.readFileSync('$PROJECT_ROOT/.grasp-it/meta.json','utf8'));
+       meta.domainGraphStale=true;
+       fs.writeFileSync('$PROJECT_ROOT/.grasp-it/meta.json',JSON.stringify(meta,null,2));
+       "
+       echo ""
+       echo "⚠ Domain graph is out of sync with the updated codebase. Re-run \`/grasp-domain\` to refresh domain links."
+       echo ""
+     fi
+   fi
+   ```
+
+   **Optional auto-trigger:** If `$PROJECT_ROOT/.grasp-it/config.json` contains `"autoUpdate": true`, invoke `/grasp-domain` automatically after Phase 7 completes instead of just printing the warning:
+   ```bash
+   AUTO_UPDATE_ENABLED=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/.grasp-it/config.json','utf8'));console.log(c.autoUpdate===true?'true':'false')}catch(e){console.log('false')}")
+   if [ "$AUTO_UPDATE_ENABLED" = "true" ]; then
+     echo "[grasp-it] Auto-updating domain graph (autoUpdate enabled)..."
+     /grasp-domain
+   fi
    ```
 
 4. Clean up intermediate files:

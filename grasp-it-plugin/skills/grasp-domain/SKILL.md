@@ -87,11 +87,28 @@ fi
 
 Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases.
 
-### Phase 1: Detect Existing Graph
+### Phase 1: Detect Existing Graph and Preflight Staleness
 
 1. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists
-2. If it exists AND `--full` was NOT passed → proceed to Phase 3 (derive from graph)
-3. Otherwise → proceed to Phase 2 (lightweight scan)
+2. Check if `$PROJECT_ROOT/.grasp-it/meta.json` exists and read it for `domainGraphStale`
+3. If `domainGraphStale` is `false` AND `--full` was NOT passed:
+   - The domain graph is current — report "Domain graph is up to date" and STOP
+4. If `domainGraphStale` is `true` OR `--full` was passed:
+   - Proceed to Phase 2 or Phase 3 as appropriate
+5. After successful derivation, clear `domainGraphStale` by writing `meta.json` with `domainGraphStale` removed (or set to `false`):
+   ```bash
+   node -e "
+   const fs=require('fs');
+   const metaPath='$PROJECT_ROOT/.grasp-it/meta.json';
+   if (fs.existsSync(metaPath)) {
+     const meta=JSON.parse(fs.readFileSync(metaPath,'utf8'));
+     meta.domainGraphStale=false;
+     fs.writeFileSync(metaPath,JSON.stringify(meta,null,2));
+   }
+   "
+   ```
+
+**Note:** Phase 1 in the original skill description is replaced by this Phase 1 (preflight staleness check). The "Detect Existing Graph" logic now integrates the staleness check. Proceed to Phase 2 (lightweight scan) or Phase 3 (derive from graph) as determined by step 3.
 
 ### Phase 2: Lightweight Scan (Path 1)
 

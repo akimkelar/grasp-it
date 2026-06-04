@@ -138,6 +138,7 @@ export interface AnalysisMeta {
   version: string;
   analyzedFiles: number;
   theme?: ThemeConfig;
+  domainGraphStale?: boolean;
 }
 
 // Project config (for auto-update opt-in and language preference)
