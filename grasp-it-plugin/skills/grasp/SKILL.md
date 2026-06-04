@@ -865,10 +865,16 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    After `meta.json` is written (step 3), also persist the project metadata to the Neo4j `Project` singleton:
    ```bash
    node <SKILL_DIR>/save-project-meta.mjs "$PROJECT_ROOT" <number of files analyzed>
+   EXIT_CODE=$?
+   if [ $EXIT_CODE -ne 0 ]; then
+     echo ""
+     echo "Warning: Neo4j Project singleton could not be updated (see above). Other users may see a stale commit hash until the next successful \`/grasp\` run."
+     echo ""
+   fi
    ```
    
-   - If Neo4j is configured and the write succeeds → the Project singleton holds the authoritative `gitCommitHash` for all users
-   - If Neo4j is not configured or the write fails → the script exits 0 silently (graceful degradation; local `meta.json` remains the source of truth)
+   - Exit code 0 → Neo4j write succeeded, or Neo4j not configured (graceful skip)
+   - Exit code 1 → Neo4j was configured but the write failed — print the warning above; the skill itself still exits 0 (the local graph was saved successfully; this is a sync warning, not a local failure)
    
    **Note:** The `analyzedFiles` count should be the total number of source files scanned in Phase 1 (not just the files that had structural changes in an incremental run).
 

@@ -55,6 +55,8 @@ Before querying the graph, check whether it is stale relative to the current HEA
    > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
+> **Note:** This check compares the local graph against the current git HEAD — it does not query Neo4j. To check whether your local graph is in sync with the shared Neo4j database, run `check-sync.mjs` separately.
+
 ### Quick health check
 
 Run this before broader graph exploration when using the skill in a fresh environment:

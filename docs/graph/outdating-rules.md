@@ -142,6 +142,15 @@ RETURN p.gitCommitHash AS graphCommit, p.lastAnalyzedAt AS lastAnalyzedAt
 
 Compare `graphCommit` against the local `git rev-parse HEAD` using `git merge-base` to determine ancestry (not just equality) — the graph may be ahead of the local clone, behind it, or at the same commit.
 
+**Two separate checks serve different purposes:**
+
+| Check | Compares | Answers |
+|-------|----------|---------|
+| **Phase 0 staleness check** (per-skill) | Local graph `gitCommitHash` vs. local git HEAD | "Do I need to re-run `/grasp`?" |
+| **`check-sync.mjs`** | Local graph `gitCommitHash` vs. Neo4j `Project` singleton | "Is my analysis in sync with the shared Neo4j database?" |
+
+In single-user setups, both checks often agree. In multi-user setups, they can diverge: your local graph may be up-to-date with HEAD while Neo4j still holds an older commit hash (because another user pushed their analysis more recently).
+
 ## Resolving Staleness
 
 | Condition | Resolution |

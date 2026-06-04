@@ -40,6 +40,8 @@ Before reading the graph, check whether it is stale relative to the current HEAD
    > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
+> **Note:** This check compares the local graph against the current git HEAD — it does not query Neo4j. To check whether your local graph is in sync with the shared Neo4j database, run `check-sync.mjs` separately.
+
 ### Phase 1: Verify Graph Exists
 
 1. Check that `.grasp-it/knowledge-graph.json` exists. If not, tell the user to run `/grasp` first.

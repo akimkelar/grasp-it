@@ -97,6 +97,8 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
    > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
+> **Note:** This check compares the local graph against the current git HEAD — it does not query Neo4j. To check whether your local graph is in sync with the shared Neo4j database, run `check-sync.mjs` separately.
+
 ### Phase 2: Detect Existing Graph and Preflight Staleness
 
 1. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists
