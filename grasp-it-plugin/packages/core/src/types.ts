@@ -109,7 +109,7 @@ export interface ProjectMeta {
 // Root KnowledgeGraph
 export interface KnowledgeGraph {
   version: string;
-  kind?: "codebase" | "knowledge";
+  kind?: "codebase" | "knowledge" | "project";
   project: ProjectMeta;
   nodes: GraphNode[];
   edges: GraphEdge[];

@@ -439,7 +439,7 @@ export const ProjectMetaSchema = z.object({
 
 export const KnowledgeGraphSchema = z.object({
   version: z.string(),
-  kind: z.enum(["codebase", "knowledge"]).optional(),
+  kind: z.enum(["codebase", "knowledge", "project"]).optional(),
   project: ProjectMetaSchema,
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),

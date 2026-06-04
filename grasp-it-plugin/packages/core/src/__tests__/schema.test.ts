@@ -66,6 +66,16 @@ describe("schema validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  it("accepts kind 'project' for Project singleton nodes", () => {
+    const graph = structuredClone(validGraph);
+    (graph as any).kind = "project";
+
+    // Validation should pass — kind "project" is now a valid enum value
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.issues).toEqual([]);
+  });
+
   it("rejects graph with missing required fields", () => {
     const incomplete = { version: "1.0.0" };
     const result = validateGraph(incomplete);
