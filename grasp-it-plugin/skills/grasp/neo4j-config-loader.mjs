@@ -41,6 +41,16 @@ function parseEnvFile(content) {
  * @returns {{ NEO4J_URI: string, NEO4J_USERNAME: string, NEO4J_PASSWORD: string } | null}
  */
 export function getNeo4jConfig(projectRoot) {
+  // TEST MOCK: If CHECK_SYNC_MOCK_NEO4J_COMMIT is set, return a minimal config
+  // so the Neo4j query path is entered (loadNeo4jCommit reads the mock env var).
+  if (process.env.CHECK_SYNC_MOCK_NEO4J_COMMIT !== undefined) {
+    return {
+      NEO4J_URI: process.env.NEO4J_URI || "neo4j://localhost:7687",
+      NEO4J_USERNAME: process.env.NEO4J_USERNAME || "neo4j",
+      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
+    };
+  }
+
   // 1. Check environment variables first
   if (process.env.NEO4J_URI && process.env.NEO4J_USERNAME) {
     return {
