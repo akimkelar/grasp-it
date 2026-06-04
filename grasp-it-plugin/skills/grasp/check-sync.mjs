@@ -22,6 +22,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "child_process";
 import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 
 const PROJECT_SINGLETON_ID = "project:singleton";
 const GRAPH_FILE = "knowledge-graph.json";
@@ -93,17 +94,111 @@ function loadLocalCommit(projectRoot) {
   }
 }
 
+// ── Config loader ──────────────────────────────────────────────────────────────
+
+/**
+ * Parse a .env file content and return key-value pairs.
+ */
+function parseEnvFile(content) {
+  const result = {};
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+    const key = trimmed.slice(0, eqIndex).trim();
+    const value = trimmed.slice(eqIndex + 1).trim();
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Try to get Neo4j config from environment or .env file.
+ * Implements three-level priority: env vars -> <projectRoot>/.env -> ~/.grasp-it/neo4j.env
+ *
+ * @param {string} projectRoot - The project root directory
+ * @returns {{ NEO4J_URI: string, NEO4J_USERNAME: string, NEO4J_PASSWORD: string } | null}
+ */
+function getNeo4jConfig(projectRoot) {
+  // TEST MOCK: If CHECK_SYNC_MOCK_NEO4J_COMMIT is set, return a minimal config
+  // so the Neo4j query path is entered (loadNeo4jCommit reads the mock env var).
+  if (process.env.CHECK_SYNC_MOCK_NEO4J_COMMIT !== undefined) {
+    return {
+      NEO4J_URI: process.env.NEO4J_URI || "neo4j://localhost:7687",
+      NEO4J_USERNAME: process.env.NEO4J_USERNAME || "neo4j",
+      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
+    };
+  }
+
+  // 1. Check environment variables first
+  if (process.env.NEO4J_URI && process.env.NEO4J_USERNAME) {
+    return {
+      NEO4J_URI: process.env.NEO4J_URI,
+      NEO4J_USERNAME: process.env.NEO4J_USERNAME,
+      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
+    };
+  }
+
+  // 2. Try .env in project root (use projectRoot, not cwd — bug fix)
+  if (projectRoot) {
+    const projectEnvPath = join(projectRoot, ".env");
+    if (existsSync(projectEnvPath)) {
+      try {
+        const content = readFileSync(projectEnvPath, "utf-8");
+        const config = parseEnvFile(content);
+        if (config.NEO4J_URI && config.NEO4J_USERNAME) {
+          return {
+            NEO4J_URI: config.NEO4J_URI,
+            NEO4J_USERNAME: config.NEO4J_USERNAME,
+            NEO4J_PASSWORD: config.NEO4J_PASSWORD || "password",
+          };
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // 3. Try global config ~/.grasp-it/neo4j.env
+  const globalConfigPath = join(homedir(), ".grasp-it", "neo4j.env");
+  if (existsSync(globalConfigPath)) {
+    try {
+      const content = readFileSync(globalConfigPath, "utf-8");
+      const config = parseEnvFile(content);
+      if (config.NEO4J_URI && config.NEO4J_USERNAME) {
+        return {
+          NEO4J_URI: config.NEO4J_URI,
+          NEO4J_USERNAME: config.NEO4J_USERNAME,
+          NEO4J_PASSWORD: config.NEO4J_PASSWORD || "password",
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the connection type from environment variable or default to "driver".
+ */
+function getConnectionType() {
+  return process.env.NEO4J_CONNECTION_TYPE || "driver";
+}
+
 // ── Neo4j ─────────────────────────────────────────────────────────────────────
 
 /**
- * Query Neo4j for the Project singleton's gitCommitHash.
+ * Query Neo4j for the Project singleton's gitCommitHash via neo4j-driver.
  * Returns null if Neo4j is unavailable or the node doesn't exist yet.
  *
  * TEST MOCK: If CHECK_SYNC_MOCK_NEO4J_COMMIT is set in the environment, it
  * is used as the Neo4j commit hash directly, bypassing the driver call.
  * This allows tests to simulate Neo4j responses without a real database.
  */
-async function loadNeo4jCommit(neo4jConfig) {
+async function loadNeo4jCommitViaDriver(neo4jConfig) {
   // Allow test override via environment variable
   if (process.env.CHECK_SYNC_MOCK_NEO4J_COMMIT !== undefined) {
     const val = process.env.CHECK_SYNC_MOCK_NEO4J_COMMIT;
@@ -141,60 +236,70 @@ async function loadNeo4jCommit(neo4jConfig) {
 }
 
 /**
- * Try to get Neo4j config from environment or .env file.
- *
- * TEST MOCK: If CHECK_SYNC_MOCK_NEO4J_COMMIT is set, return a minimal config
- * so the Neo4j query path is entered (loadNeo4jCommit reads the mock env var).
+ * Query Neo4j for the Project singleton's gitCommitHash via cypher-shell.
+ * Returns null if Neo4j is unavailable or the node doesn't exist yet.
  */
-function getNeo4jConfig() {
-  // Test override — allow CHECK_SYNC_MOCK_NEO4J_COMMIT alone to enable the mock
-  if (process.env.CHECK_SYNC_MOCK_NEO4J_COMMIT !== undefined) {
-    return {
-      NEO4J_URI: process.env.NEO4J_URI || "neo4j://localhost:7687",
-      NEO4J_USERNAME: process.env.NEO4J_USERNAME || "neo4j",
-      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
-    };
-  }
+function loadNeo4jCommitViaCypherShell(neo4jConfig) {
+  const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
+  const uri = NEO4J_URI || "neo4j://localhost:7687";
+  const username = NEO4J_USERNAME || "neo4j";
+  const password = NEO4J_PASSWORD || "password";
 
-  // First check environment variables
-  if (process.env.NEO4J_URI && process.env.NEO4J_USERNAME) {
-    return {
-      NEO4J_URI: process.env.NEO4J_URI,
-      NEO4J_USERNAME: process.env.NEO4J_USERNAME,
-      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
-    };
-  }
+  // Extract host/port from URI for cypher-shell -a argument
+  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
 
-  // Try .env in project root
-  const envPath = join(process.cwd(), ".env");
-  if (existsSync(envPath)) {
-    try {
-      const content = readFileSync(envPath, "utf-8");
-      const config = {};
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-        const eqIndex = trimmed.indexOf("=");
-        if (eqIndex === -1) continue;
-        const key = trimmed.slice(0, eqIndex).trim();
-        const value = trimmed.slice(eqIndex + 1).trim();
-        if (key === "NEO4J_URI" || key === "NEO4J_USERNAME" || key === "NEO4J_PASSWORD") {
-          config[key] = value;
-        }
-      }
-      if (config.NEO4J_URI && config.NEO4J_USERNAME) {
-        return {
-          NEO4J_URI: config.NEO4J_URI,
-          NEO4J_USERNAME: config.NEO4J_USERNAME,
-          NEO4J_PASSWORD: config.NEO4J_PASSWORD || "password",
-        };
-      }
-    } catch {
-      // ignore
+  const query = `MATCH (p:Project {id: '${PROJECT_SINGLETON_ID}'}) RETURN p.gitCommitHash AS gitCommitHash`;
+
+  try {
+    const output = execFileSync(
+      "cypher-shell",
+      [
+        "-a", cypherUri,
+        "-u", username,
+        "-p", password,
+        "--format", "plain",
+      ],
+      { input: query, encoding: "utf-8" },
+    );
+
+    // cypher-shell outputs CSV-style results. Parse the first row.
+    const lines = output.trim().split("\n");
+    if (lines.length < 2) return null; // no data
+    const headers = lines[0].split(",");
+    const values = lines[1].split(",");
+
+    const record = {};
+    headers.forEach((h, i) => {
+      record[h.trim()] = values[i]?.trim() ?? null;
+    });
+
+    return record.gitCommitHash ?? null;
+  } catch (err) {
+    // If cypher-shell binary not found, return null (graceful skip)
+    if (err.code === "ENOENT" || err.message.includes("ENOENT")) {
+      return null;
     }
+    return null;
+  }
+}
+
+/**
+ * Query Neo4j for the Project singleton's gitCommitHash using configured connection type.
+ */
+async function loadNeo4jCommit(neo4jConfig, projectRoot) {
+  const connectionType = getConnectionType();
+
+  if (connectionType === "cypher-shell") {
+    return loadNeo4jCommitViaCypherShell(neo4jConfig);
   }
 
-  return null;
+  if (connectionType === "mcp") {
+    // MCP is out of scope for now — graceful skip
+    return null;
+  }
+
+  // Default: driver
+  return loadNeo4jCommitViaDriver(neo4jConfig);
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -214,10 +319,10 @@ if (!localCommit) {
 }
 
 // 2. Load Neo4j commit
-const neo4jConfig = getNeo4jConfig();
+const neo4jConfig = getNeo4jConfig(projectRoot);
 let neo4jCommit = null;
 if (neo4jConfig) {
-  neo4jCommit = await loadNeo4jCommit(neo4jConfig);
+  neo4jCommit = await loadNeo4jCommit(neo4jConfig, projectRoot);
 }
 
 // 3. No Neo4j analysis yet

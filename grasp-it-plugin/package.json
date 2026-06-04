@@ -13,6 +13,9 @@
     "graphology": "~0.26.0",
     "graphology-communities-louvain": "^2.0.2"
   },
+  "optionalDependencies": {
+    "neo4j-driver": "^6.0.1"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
