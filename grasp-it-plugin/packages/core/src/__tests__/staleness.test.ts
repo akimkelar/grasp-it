@@ -250,4 +250,134 @@ describe("mergeGraphUpdate", () => {
     expect(result.project.analyzedAt >= before).toBe(true);
     expect(result.project.analyzedAt <= after).toBe(true);
   });
+
+  it("removes cross-file dangling edges when target node is replaced", () => {
+    // Scenario: file A (unchanged) has a CALLS edge to function:fileB:oldFn
+    // file B is re-analyzed with oldFn renamed to newFn
+    // After merge, the CALLS edge should not exist
+    const existingGraph = makeGraph({
+      nodes: [
+        makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
+        makeNode({ id: "file:b", name: "b.ts", filePath: "src/b.ts" }),
+        makeNode({
+          id: "function:src/b.ts:oldFn",
+          name: "oldFn",
+          type: "function",
+          filePath: "src/b.ts",
+        }),
+      ],
+      edges: [
+        // Edge from unchanged file A to old function in changed file B
+        // This is the dangling edge that should be removed
+        makeEdge({
+          source: "file:a",
+          target: "function:src/b.ts:oldFn",
+          type: "calls",
+        }),
+      ],
+    });
+
+    // New analysis of file B: oldFn renamed to newFn
+    const newNodes = [
+      makeNode({
+        id: "file:b-v2",
+        name: "b.ts",
+        filePath: "src/b.ts",
+      }),
+      makeNode({
+        id: "function:src/b.ts:newFn",
+        name: "newFn",
+        type: "function",
+        filePath: "src/b.ts",
+      }),
+    ];
+
+    const result = mergeGraphUpdate(
+      existingGraph,
+      ["src/b.ts"],
+      newNodes,
+      [],
+      "def456",
+    );
+
+    // The dangling edge should be removed
+    expect(
+      result.edges.find(
+        (e) =>
+          e.source === "file:a" && e.target === "function:src/b.ts:oldFn",
+      ),
+    ).toBeUndefined();
+
+    // The new function should exist
+    expect(
+      result.nodes.find((n) => n.id === "function:src/b.ts:newFn"),
+    ).toBeDefined();
+
+    // The old function should not exist
+    expect(
+      result.nodes.find((n) => n.id === "function:src/b.ts:oldFn"),
+    ).toBeUndefined();
+  });
+
+  it("keeps cross-file edges when target still exists after merge", () => {
+    // Scenario: file A (unchanged) has a CALLS edge to function:fileB:existingFn
+    // file B is re-analyzed but existingFn is not changed
+    // After merge, the CALLS edge should still exist
+    const existingGraph = makeGraph({
+      nodes: [
+        makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
+        makeNode({ id: "file:b", name: "b.ts", filePath: "src/b.ts" }),
+        makeNode({
+          id: "function:src/b.ts:existingFn",
+          name: "existingFn",
+          type: "function",
+          filePath: "src/b.ts",
+        }),
+      ],
+      edges: [
+        makeEdge({
+          source: "file:a",
+          target: "function:src/b.ts:existingFn",
+          type: "calls",
+        }),
+      ],
+    });
+
+    // New analysis of file B: adds a new function but keeps existingFn
+    const newNodes = [
+      makeNode({
+        id: "file:b-v2",
+        name: "b.ts",
+        filePath: "src/b.ts",
+      }),
+      makeNode({
+        id: "function:src/b.ts:existingFn",
+        name: "existingFn",
+        type: "function",
+        filePath: "src/b.ts",
+      }),
+      makeNode({
+        id: "function:src/b.ts:newFn",
+        name: "newFn",
+        type: "function",
+        filePath: "src/b.ts",
+      }),
+    ];
+
+    const result = mergeGraphUpdate(
+      existingGraph,
+      ["src/b.ts"],
+      newNodes,
+      [],
+      "def456",
+    );
+
+    // The edge to existingFn should be kept
+    expect(
+      result.edges.find(
+        (e) =>
+          e.source === "file:a" && e.target === "function:src/b.ts:existingFn",
+      ),
+    ).toBeDefined();
+  });
 });

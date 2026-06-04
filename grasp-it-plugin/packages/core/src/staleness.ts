@@ -46,10 +46,12 @@ export function isStale(
  * Merge new analysis results into an existing knowledge graph.
  *
  * 1. Remove old nodes belonging to changed files (matched by filePath).
- * 2. Remove old edges where the SOURCE or TARGET node belongs to a changed file.
+ * 2. Remove old edges where the SOURCE node belongs to a changed file.
  * 3. Add new nodes and edges.
- * 4. Update project.gitCommitHash and project.analyzedAt.
- * 5. Return the merged graph.
+ * 4. Post-merge: remove edges whose target no longer exists in the merged graph
+ *    (handles cross-file dangling edges from unchanged files to renamed/deleted nodes).
+ * 5. Update project.gitCommitHash and project.analyzedAt.
+ * 6. Return the merged graph.
  */
 export function mergeGraphUpdate(
   existingGraph: KnowledgeGraph,
@@ -72,10 +74,24 @@ export function mergeGraphUpdate(
     (node) => !removedNodeIds.has(node.id),
   );
 
-  // Keep edges whose source or target node is not in the removed set
-  const retainedEdges = existingGraph.edges.filter(
-    (edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target),
-  );
+  // Build the set of new node IDs for the post-merge dangling edge check
+  const newNodeIds = new Set(newNodes.map((n) => n.id));
+
+  // Keep edges from unchanged sources, then remove any whose target truly doesn't
+  // exist after the merge (target was removed AND not re-created with the same ID).
+  // This handles cross-file edges from unchanged files to nodes that were
+  // renamed or deleted in a re-analyzed file.
+  const cleanedEdges = existingGraph.edges.filter((edge) => {
+    // Remove edges whose source was from a changed file (source no longer exists)
+    if (removedNodeIds.has(edge.source)) {
+      return false;
+    }
+    // Remove edges whose target no longer exists in the merged graph
+    if (removedNodeIds.has(edge.target) && !newNodeIds.has(edge.target)) {
+      return false;
+    }
+    return true;
+  });
 
   return {
     ...existingGraph,
@@ -85,6 +101,6 @@ export function mergeGraphUpdate(
       analyzedAt: new Date().toISOString(),
     },
     nodes: [...retainedNodes, ...newNodes],
-    edges: [...retainedEdges, ...newEdges],
+    edges: [...cleanedEdges, ...newEdges],
   };
 }
