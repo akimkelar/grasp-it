@@ -196,6 +196,19 @@ Determine whether to run a full analysis or incremental update.
 
 5. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists. If it does, read it.
 6. Check if `$PROJECT_ROOT/.grasp-it/meta.json` exists. If it does, read it to get `gitCommitHash`.
+6.5. **Read `gitCommitHash` from Neo4j (Phase 0 staleness check):**
+   Attempt to load the canonical `gitCommitHash` from the Neo4j `Project` singleton:
+   ```bash
+   node <SKILL_DIR>/load-project-meta.mjs "$PROJECT_ROOT"
+   ```
+   
+   - If the script outputs non-empty JSON containing a `gitCommitHash` field → use that as `lastCommitHash` (this is the authoritative multi-user hash)
+   - If the script outputs `{}` (no Neo4j, or no Project node yet yet) → use the `gitCommitHash` from `meta.json` or `knowledge-graph.json` as `lastCommitHash` (single-user local fallback)
+   - If neither source has a hash → treat as first run (full analysis)
+   
+   **Graceful degradation:** If Neo4j is not configured, this step outputs `{}` and the skill silently falls back to the local files. The behavior is identical to before this change.
+   
+   **Variable to set:** Store the resolved `lastCommitHash` (from Neo4j or local fallback) as `$LAST_COMMIT_HASH` for use in the decision logic below.
 7. **Decision logic:**
 
    | Condition | Action |
@@ -847,6 +860,17 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
      /grasp-domain
    fi
    ```
+
+3.5. **Persist project metadata to Neo4j (Phase 7):**
+   After `meta.json` is written (step 3), also persist the project metadata to the Neo4j `Project` singleton:
+   ```bash
+   node <SKILL_DIR>/save-project-meta.mjs "$PROJECT_ROOT" <number of files analyzed>
+   ```
+   
+   - If Neo4j is configured and the write succeeds → the Project singleton holds the authoritative `gitCommitHash` for all users
+   - If Neo4j is not configured or the write fails → the script exits 0 silently (graceful degradation; local `meta.json` remains the source of truth)
+   
+   **Note:** The `analyzedFiles` count should be the total number of source files scanned in Phase 1 (not just the files that had structural changes in an incremental run).
 
 4. Clean up intermediate files:
    ```bash
