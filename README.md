@@ -93,6 +93,40 @@ Connect to the Neo4j Browser at `localhost:7474` to explore the graph visually.
 
 ---
 
+### Quick Start for Codex/ChatGPT Platforms
+
+If you are using Grasp-It on Codex, ChatGPT, or any platform other than Claude Code:
+
+**1. Install with one command:**
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1 | iex
+```
+
+**2. Start analyzing:**
+
+```
+/grasp
+```
+
+**3. Explore your codebase:**
+
+```
+/grasp-domain     # understand business domains and features
+/grasp-search How does authentication work?   # query the graph
+/grasp-requirements "payments"    # capture product requirements
+```
+
+**First-time setup:** When `/grasp` runs for the first time, it will ask you a few questions to configure your Neo4j connection (URI, database, username, password). Your credentials are stored locally in a `.env` file and never shared.
+
+**No Node.js required:** The installer pre-builds the analysis engine so you do not need Node.js or pnpm on your machine.
+
+---
+
 ## Skills
 
 | Skill | Purpose | Output |

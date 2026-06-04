@@ -95,6 +95,26 @@ function Clone-Or-Update {
     }
 }
 
+function Build-Plugin {
+    # Pre-build core/dist so skill scripts don't need pnpm at runtime.
+    # This runs once after clone/update; subsequent skill invocations use the cached dist/.
+    $coreDist = Join-Path $RepoDir 'grasp-it-plugin\packages\core\dist\index.js'
+    if (-not (Test-Path $coreDist)) {
+        Write-Host "→ Building @grasp-it/core (pre-computed for skill runtime)"
+        $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+        if ($pnpm) {
+            Push-Location $RepoDir
+            try {
+                & pnpm install --frozen-lockfile 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { & pnpm install | Out-Null }
+                & pnpm --filter @grasp-it/core build
+            } finally { Pop-Location }
+        } else {
+            Write-Host "  warning: pnpm not found — skipping build. Skills may need Node.js ≥ 22 and pnpm ≥ 10."
+        }
+    }
+}
+
 function Get-SkillNames {
     $root = Get-SkillsRoot
     if (-not (Test-Path $root)) { Write-Error "Skills directory not found: $root" }
@@ -194,6 +214,7 @@ function Link-Plugin-Root {
 function Cmd-Install([string]$Id) {
     $cfg = Resolve-Platform $Id
     Clone-Or-Update
+    Build-Plugin
     Write-Host "→ Linking skills for $Id ($($cfg.Style) → $($cfg.Target))"
     Link-Skills $cfg.Target $cfg.Style
     Write-Host '→ Linking universal plugin root'

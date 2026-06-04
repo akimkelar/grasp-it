@@ -55,11 +55,9 @@ COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/
 
 PLUGIN_ROOT=""
 for candidate in \
-  "${CLAUDE_PLUGIN_ROOT}" \
   "$HOME/.grasp-it-plugin" \
   "$SELF_RELATIVE" \
   "$COPILOT_SELF_RELATIVE" \
-  "$HOME/.codex/grasp-it/grasp-it-plugin" \
   "$HOME/.opencode/grasp-it/grasp-it-plugin" \
   "$HOME/.pi/grasp-it/grasp-it-plugin" \
   "$HOME/grasp-it/grasp-it-plugin"; do
@@ -72,11 +70,9 @@ done
 if [ -z "$PLUGIN_ROOT" ]; then
   echo "Error: Cannot find the grasp-it plugin root."
   echo "Checked:"
-  echo "  - ${CLAUDE_PLUGIN_ROOT:-<unset CLAUDE_PLUGIN_ROOT>}"
   echo "  - $HOME/.grasp-it-plugin"
   echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/grasp-domain>}"
   echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/grasp-domain>}"
-  echo "  - $HOME/.codex/grasp-it/grasp-it-plugin"
   echo "  - $HOME/.opencode/grasp-it/grasp-it-plugin"
   echo "  - $HOME/.pi/grasp-it/grasp-it-plugin"
   echo "  - $HOME/grasp-it/grasp-it-plugin"

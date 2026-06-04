@@ -62,12 +62,29 @@ Before querying the graph, check whether it is stale relative to the current HEA
 Run this before broader graph exploration when using the skill in a fresh environment:
 
 ```bash
-java -version
 set -a
 source .env >/dev/null 2>&1
 set +a
-cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
-  "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3;"
+
+# Try driver-based query first (respected by run-query.mjs helpers)
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3"
+DRIVER_EXIT=$?
+
+if [ $DRIVER_EXIT -eq 0 ]; then
+  # Driver path succeeded
+  :
+elif [ $DRIVER_EXIT -eq 2 ]; then
+  # Driver signaled cypher-shell mode — fall back to cypher-shell
+  java -version
+  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
+    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3;"
+else
+  # Driver not available — try cypher-shell directly
+  java -version
+  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
+    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3;"
+fi
 ```
 
 If this fails:
@@ -79,7 +96,9 @@ If this fails:
 Basic query execution:
 
 ```bash
-cypher-shell -a $NEO4J_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD -d $NEO4J_DATABASE "MATCH (n) RETURN n.name LIMIT 5;"
+# Use run-query.mjs for driver path, or cypher-shell directly
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5;"
+# For cypher-shell, use: cypher-shell -a $NEO4J_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD -d $NEO4J_DATABASE "..."
 ```
 
 For multi-line queries, use a heredoc or pass a `.cypher` file with `-f`.

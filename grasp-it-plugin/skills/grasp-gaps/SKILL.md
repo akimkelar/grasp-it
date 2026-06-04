@@ -61,7 +61,7 @@ Only call `wait_agent(...)` when the delegated result is actually needed for the
 
 Default delegated profile:
 
-- model: `gpt-5.4-mini`
+- model: Use a fast, small model (e.g., GPT-4o-mini on OpenAI platforms, Claude 3.5 Haiku on Anthropic platforms). The specific model is platform-determined — delegate the choice to the platform's default for small/fast models rather than hardcoding a name.
 - reasoning: `medium`
 
 Escalate only when needed:
@@ -118,26 +118,44 @@ Do not hardcode graph paths up front.
 Start with a small health check:
 
 ```bash
-java -version
 set -a
 source .env >/dev/null 2>&1
 set +a
-cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
-  "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10;"
+
+# Try driver-based query first (respected by run-query.mjs helpers)
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10"
+DRIVER_EXIT=$?
+
+if [ $DRIVER_EXIT -eq 0 ]; then
+  # Driver path succeeded
+  :
+elif [ $DRIVER_EXIT -eq 2 ]; then
+  # Driver signaled cypher-shell mode — fall back to cypher-shell
+  java -version
+  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
+    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10;"
+else
+  # Driver not available — try cypher-shell directly
+  java -version
+  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
+    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10;"
+fi
 ```
 
 Then inspect the live schema shape:
 
 ```bash
-set -a
-source .env >/dev/null 2>&1
-set +a
-cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "
-MATCH (n)
-UNWIND labels(n) AS label
-RETURN DISTINCT label
-ORDER BY label;
-"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label"
+SCHEMA_EXIT=$?
+if [ $SCHEMA_EXIT -eq 2 ]; then
+  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "
+  MATCH (n)
+  UNWIND labels(n) AS label
+  RETURN DISTINCT label
+  ORDER BY label;
+  "
+fi
 ```
 
 Use the label families to determine the graph shape.

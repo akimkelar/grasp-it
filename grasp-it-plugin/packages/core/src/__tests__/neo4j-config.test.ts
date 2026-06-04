@@ -219,7 +219,7 @@ NEO4J_PASSWORD=secret
   describe("DEFAULTS", () => {
     it("has sensible defaults", () => {
       expect(DEFAULTS.DATABASE).toBe("neo4j");
-      expect(DEFAULTS.CONNECTION_TYPE).toBe("cypher-shell");
+      expect(DEFAULTS.CONNECTION_TYPE).toBe("driver");
       expect(DEFAULTS.URI).toBe("bolt://localhost:7687");
       expect(DEFAULTS.USERNAME).toBe("neo4j");
     });

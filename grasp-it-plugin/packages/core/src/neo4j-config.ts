@@ -31,7 +31,7 @@ export type ConnectionType = "driver" | "cypher-shell" | "mcp";
 // Default values
 export const DEFAULTS = {
   DATABASE: "neo4j",
-  CONNECTION_TYPE: "cypher-shell" as ConnectionType,
+  CONNECTION_TYPE: "driver" as ConnectionType,
   URI: "bolt://localhost:7687",
   USERNAME: "neo4j",
 };
@@ -293,16 +293,16 @@ export function getConnectionTypeDescription(type: ConnectionType): string {
 export const SETUP_PROMPTS = {
   CONNECTION_TYPE: `Which connection type would you like to use?
 
-  1. cypher-shell (default) - Use Neo4j CLI tool. Works with Neo4j Desktop, Aura, and self-managed.
+  1. Driver (default) - Direct connection using neo4j-driver.
+     Best for programmatic access. Requires Node.js integration.
+
+  2. cypher-shell - Use Neo4j CLI tool. Works with Neo4j Desktop, Aura, and self-managed.
      Suitable for most users. Requires Neo4j CLI to be installed.
 
-  2. MCP (Model Context Protocol) - Connect via neo4j-mcp server.
+  3. MCP (Model Context Protocol) - Connect via neo4j-mcp server.
      Works with all Neo4j deployment types. Requires neo4j-mcp binary.
 
-  3. Driver - Direct connection using neo4j-driver.
-     Requires Node.js integration. Best for programmatic access.
-
-Enter your choice (1, 2, or 3) or press Enter for default (cypher-shell):`,
+Enter your choice (1, 2, or 3) or press Enter for default (1 - Driver):`,
 
   NEO4J_URI: `Enter your Neo4j connection URI:
 

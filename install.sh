@@ -99,6 +99,20 @@ clone_or_update() {
   fi
 }
 
+build_plugin() {
+  # Pre-build core/dist so skill scripts don't need pnpm at runtime.
+  # This runs once after clone/update; subsequent skill invocations use the cached dist/.
+  local core_dist="$REPO_DIR/grasp-it-plugin/packages/core/dist"
+  if [[ ! -f "$core_dist/index.js" ]]; then
+    printf -- '→ Building @grasp-it/core (pre-computed for skill runtime)\n'
+    if command -v pnpm >/dev/null 2>&1; then
+      (cd "$REPO_DIR" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @grasp-it/core build
+    else
+      printf -- '  warning: pnpm not found — skipping build. Skills may need Node.js ≥ 22 and pnpm ≥ 10.\n'
+    fi
+  fi
+}
+
 skills_root() { printf '%s\n' "$REPO_DIR/grasp-it-plugin/skills"; }
 
 list_skills() {
@@ -184,6 +198,7 @@ cmd_install() {
   style="$(printf '%s\n' "$row" | cut -d'|' -f3)"
 
   clone_or_update
+  build_plugin
   printf -- '→ Linking skills for %s (%s → %s)\n' "$id" "$style" "$target"
   link_skills "$target" "$style"
   printf -- '→ Linking universal plugin root\n'

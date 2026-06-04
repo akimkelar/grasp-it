@@ -75,11 +75,9 @@ COPILOT_SELF_RELATIVE=$P([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL
 
 PLUGIN_ROOT=""
 for candidate in \
-  "${CLAUDE_PLUGIN_ROOT}" \
   "$HOME/.grasp-it-plugin" \
   "$SELF_RELATIVE" \
   "$COPILOT_SELF_RELATIVE" \
-  "$HOME/.codex/grasp-it/grasp-it-plugin" \
   "$HOME/.opencode/grasp-it/grasp-it-plugin" \
   "$HOME/.pi/grasp-it/grasp-it-plugin" \
   "$HOME/grasp-it/grasp-it-plugin"; do
