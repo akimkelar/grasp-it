@@ -36,7 +36,10 @@ export {
   getChangedFiles,
   isStale,
   mergeGraphUpdate,
+  findStaleImplementedBy,
   type StalenessResult,
+  type StaleImplementedByResult,
+  type StaleEdge,
 } from "./staleness.js";
 export {
   detectLayers,

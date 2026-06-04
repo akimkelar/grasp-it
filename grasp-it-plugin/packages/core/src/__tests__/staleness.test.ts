@@ -7,7 +7,7 @@ vi.mock("child_process", () => ({
 
 // Import after mocking
 import { execFileSync } from "child_process";
-import { getChangedFiles, isStale, mergeGraphUpdate } from "../staleness.js";
+import { getChangedFiles, isStale, mergeGraphUpdate, findStaleImplementedBy } from "../staleness.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -379,5 +379,132 @@ describe("mergeGraphUpdate", () => {
           e.source === "file:a" && e.target === "function:src/b.ts:existingFn",
       ),
     ).toBeDefined();
+  });
+});
+
+describe("findStaleImplementedBy", () => {
+  it("returns empty when no files have analyzedAtCommit", () => {
+    const graph = makeGraph({
+      nodes: [
+        makeNode({ id: "file:src/a.ts", name: "a.ts", filePath: "src/a.ts", type: "file" }),
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "abc123");
+    expect(result.staleEdges).toHaveLength(0);
+  });
+
+  it("returns empty when file analyzedAtCommit equals current commit", () => {
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "abc123" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "abc123");
+    expect(result.staleEdges).toHaveLength(0);
+  });
+
+  it("identifies stale edge when file was analyzed at an older commit", () => {
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "newCommit");
+    expect(result.staleEdges).toHaveLength(1);
+    expect(result.staleEdges[0].nodeId).toBe("feature:auth");
+    expect(result.staleEdges[0].nodeName).toBe("Auth Feature");
+    expect(result.staleEdges[0].nodeType).toBe("feature");
+    expect(result.staleEdges[0].analyzedAtCommit).toBe("oldCommit");
+  });
+
+  it("handles multiple stale edges correctly", () => {
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        { id: "file:src/b.ts", type: "file", name: "b.ts", filePath: "src/b.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+        makeNode({ id: "operation:login", name: "Login", type: "operation" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+        makeEdge({ source: "operation:login", target: "file:src/b.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "newCommit");
+    expect(result.staleEdges).toHaveLength(2);
+    expect(result.staleEdges.map(e => e.nodeId)).toContain("feature:auth");
+    expect(result.staleEdges.map(e => e.nodeId)).toContain("operation:login");
+  });
+
+  it("reports the changed file's filePath (not the knowledge node's)", () => {
+    // file:src/a.ts has no analyzedAtCommit — edge to it should be ignored
+    // file:src/b.ts has oldCommit != currentCommit — edge to it is stale
+    // The stale result's filePath should be the File node's filePath (src/b.ts),
+    // not the knowledge node's filePath (feature:auth has no filePath)
+    const testGraph = makeGraph({
+      nodes: [
+        makeNode({ id: "file:src/a.ts", name: "a.ts", filePath: "src/a.ts", type: "file" }),
+        { id: "file:src/b.ts", type: "file", name: "b.ts", filePath: "src/b.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+        makeEdge({ source: "feature:auth", target: "file:src/b.ts", type: "implemented_by" }),
+      ],
+    });
+    const result = findStaleImplementedBy(testGraph, "newCommit");
+    expect(result.staleEdges).toHaveLength(1);
+    expect(result.staleEdges[0].nodeId).toBe("feature:auth");
+    expect(result.staleEdges[0].filePath).toBe("src/b.ts");
+  });
+
+  it("returns empty when no implemented_by edges exist", () => {
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "has_feature" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "newCommit");
+    expect(result.staleEdges).toHaveLength(0);
+  });
+
+  it("reports the changed file's path in the stale edge result", () => {
+    // The filePath in StaleEdge is the target File node's path (which file changed)
+    // not the knowledge node's filePath (which may not exist)
+    const graph = makeGraph({
+      nodes: [
+        { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
+        makeNode({ id: "feature:auth", name: "Auth Feature", type: "feature" }),
+      ],
+      edges: [
+        makeEdge({ source: "feature:auth", target: "file:src/a.ts", type: "implemented_by" }),
+      ],
+    });
+
+    const result = findStaleImplementedBy(graph, "newCommit");
+    expect(result.staleEdges).toHaveLength(1);
+    // filePath is the file node's filePath (which file was re-analyzed)
+    expect(result.staleEdges[0].filePath).toBe("src/a.ts");
   });
 });

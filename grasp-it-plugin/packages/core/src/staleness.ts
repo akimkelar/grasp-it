@@ -1,6 +1,18 @@
 import { execFileSync } from "child_process";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "./types.js";
 
+export interface StaleImplementedByResult {
+  staleEdges: StaleEdge[];
+}
+
+export interface StaleEdge {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  filePath: string;
+  analyzedAtCommit: string;
+}
+
 export interface StalenessResult {
   stale: boolean;
   changedFiles: string[];
@@ -103,4 +115,61 @@ export function mergeGraphUpdate(
     nodes: [...retainedNodes, ...newNodes],
     edges: [...cleanedEdges, ...newEdges],
   };
+}
+
+/**
+ * Find knowledge nodes whose IMPLEMENTED_BY edges point to files that were
+ * re-analyzed at a different (older) commit than the current one.
+ *
+ * This detects staleness introduced by an incremental update: a knowledge node
+ * (Feature, Operation, BusinessRule, etc.) with an IMPLEMENTED_BY edge to a File
+ * node whose `analyzedAtCommit` differs from the current commit has stale links —
+ * the code it describes has changed since the knowledge was last reviewed.
+ *
+ * @param graph       The assembled knowledge graph (after merge)
+ * @param currentCommit  The git commit hash of the current analysis run
+ */
+export function findStaleImplementedBy(
+  graph: KnowledgeGraph,
+  currentCommit: string,
+): StaleImplementedByResult {
+  // Build a map: file node ID -> analyzedAtCommit
+  const fileAnalyzedAt = new Map<string, string | undefined>();
+  for (const node of graph.nodes) {
+    if (node.type === "file" && node.analyzedAtCommit !== undefined) {
+      fileAnalyzedAt.set(node.id, node.analyzedAtCommit);
+    }
+  }
+
+  // Collect all file node IDs
+  const fileNodeIds = new Set<string>(fileAnalyzedAt.keys());
+
+  const staleEdges: StaleEdge[] = [];
+
+  for (const edge of graph.edges) {
+    if (edge.type !== "implemented_by") continue;
+    // Target must be a file node
+    if (!fileNodeIds.has(edge.target)) continue;
+
+    const fileAnalyzed = fileAnalyzedAt.get(edge.target);
+    if (fileAnalyzed === undefined) continue; // no analyzedAtCommit on this file
+
+    // If the file was analyzed at a different commit than current, the edge is stale
+    if (fileAnalyzed !== currentCommit) {
+      const knowledgeNode = graph.nodes.find((n) => n.id === edge.source);
+      // Get the File node to report its filePath (which file changed)
+      const fileNode = graph.nodes.find((n) => n.id === edge.target);
+      if (knowledgeNode) {
+        staleEdges.push({
+          nodeId: knowledgeNode.id,
+          nodeName: knowledgeNode.name,
+          nodeType: knowledgeNode.type,
+          filePath: fileNode?.filePath ?? "",
+          analyzedAtCommit: fileAnalyzed,
+        });
+      }
+    }
+  }
+
+  return { staleEdges };
 }
