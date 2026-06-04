@@ -402,18 +402,29 @@ Write the changed-files list (one path per line) to a temp file:
 git diff <lastCommitHash>..HEAD --name-only > $PROJECT_ROOT/.grasp-it/tmp/changed-files.txt
 ```
 
-Run compute-batches with `--changed-files`:
+**Filter cosmetic vs. structural changes.** Load the fingerprint baseline and classify each changed file:
 ```bash
-node <SKILL_DIR>/compute-batches.mjs $PROJECT_ROOT \
-  --changed-files=$PROJECT_ROOT/.grasp-it/tmp/changed-files.txt
+node <SKILL_DIR>/filter-structural-changes.mjs $PROJECT_ROOT
 ```
 
-This produces a `batches.json` that contains only batches with changed files, but neighborMap entries still reference unchanged files (with their full-graph batchIndex) so cross-batch edges remain emittable.
+This writes two files:
+- `.grasp-it/tmp/structural-changed-files.txt` — files with STRUCTURAL or NEW changes (LLM re-analysis required)
+- `.grasp-it/tmp/cosmetic-only-files.txt` — files with COSMETIC or NONE changes (LLM re-analysis skipped)
+
+If `fingerprints.json` does not exist (first run after upgrade), the script falls back to treating all changed files as STRUCTURAL.
+
+Run compute-batches on the **structural** list only:
+```bash
+node <SKILL_DIR>/compute-batches.mjs $PROJECT_ROOT \
+  --changed-files=$PROJECT_ROOT/.grasp-it/tmp/structural-changed-files.txt
+```
+
+This produces a `batches.json` that contains only batches with structural changes, but neighborMap entries still reference unchanged files (with their full-graph batchIndex) so cross-batch edges remain emittable.
 
 Then dispatch file-analyzer subagents per the same template as the full path.
 
 After batches complete:
-1. Remove old nodes whose `filePath` matches any changed file from the existing graph
+1. Remove old nodes whose `filePath` matches any **structural** changed file from the existing graph
 2. Remove old edges whose `source` or `target` references a removed node
 3. Write the pruned existing nodes/edges as `batch-existing.json` in the intermediate directory
 4. Run the same merge script — it will combine `batch-existing.json` with the fresh `batch-*.json` files:
