@@ -2,7 +2,7 @@
 
 ## Overview
 
-The grasp-it plugin supports multiple Neo4j connection methods to accommodate different user environments, from local installations to cloud services. This document describes the configuration system, connection types, and first-use setup flow.
+The grasp-it plugin is designed primarily for non-developer users running it via **Codex (OpenAI) and ChatGPT**, including Windows users with no development background. It also supports Claude Code. The plugin supports multiple Neo4j connection methods to accommodate different user environments, from local installations to cloud services. This document describes the configuration system, connection types, and first-use setup flow.
 
 ## Connection Types
 
@@ -36,10 +36,10 @@ Uses the official `neo4j-mcp` server to connect via the MCP protocol.
 
 ### 3. Driver (neo4j-driver)
 
-Direct connection using the `neo4j-driver` Node.js package. Requires Node.js integration.
+Direct connection using the `neo4j-driver` Node.js package. If bundled as a plugin dependency, this requires **no manual installation** — making it the most accessible option for non-developer Codex/ChatGPT users on any platform including Windows (no Java, no extra CLI tools needed).
 
 **Requirements:**
-- `neo4j-driver` package installed
+- `neo4j-driver` package (bundled with the plugin as a dependency — no user action required)
 
 ## Configuration Files
 
@@ -152,7 +152,7 @@ Or via MCP, use the schema setup script in the configured MCP session.
 - Requires Neo4j CLI installation
 - Java version compatibility issues (use Java 21)
 
-**Recommendation:** Default choice — most user-friendly for non-developers.
+**Recommendation:** Suitable for users who already have Neo4j Desktop installed, but requires Java 21 and CLI knowledge — not ideal for non-developers.
 
 ## Windows Compatibility
 
