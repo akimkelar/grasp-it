@@ -19,6 +19,7 @@ Output:
 """
 
 import json
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
@@ -31,6 +32,57 @@ def _num(v: Any) -> float:
         return float(v)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _find_oldest_common_ancestor_hash(
+    hash_timestamps: list[tuple[str, str]], project_root: Path
+) -> tuple[str, bool]:
+    """
+    Find the oldest commit hash that is an ancestor of all others using git merge-base.
+
+    Returns (oldest_hash, was_ambiguous) where:
+    - oldest_hash: the hash to use as canonical, or empty if none found
+    - was_ambiguous: True if a warning was emitted (multiple hashes but no single ancestor)
+    """
+    if not hash_timestamps:
+        return "", False
+
+    distinct_hashes = list(dict.fromkeys(h for h, _ in hash_timestamps))  # preserve order, remove dups
+    if len(distinct_hashes) <= 1:
+        return distinct_hashes[0] if distinct_hashes else "", False
+
+    # Try to find a single commit that is an ancestor of all others
+    # using git merge-base
+    candidate = None
+    for h in distinct_hashes:
+        is_ancestor_of_all = True
+        for other in distinct_hashes:
+            if other == h:
+                continue
+            try:
+                result = subprocess.run(
+                    ["git", "-C", str(project_root), "merge-base", "--is-ancestor", h, other],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode != 0:
+                    # h is NOT an ancestor of other
+                    is_ancestor_of_all = False
+                    break
+            except Exception:
+                # git command failed - can't determine ancestry
+                is_ancestor_of_all = False
+                break
+        if is_ancestor_of_all:
+            candidate = h
+            break
+
+    if candidate:
+        return candidate, False
+
+    # No single commit is an ancestor of all others - fall back to oldest by analyzedAt
+    sorted_by_time = sorted(hash_timestamps, key=lambda x: x[1])
+    return sorted_by_time[0][0], True
 
 
 def load_graph(path: Path) -> dict[str, Any] | None:
@@ -49,7 +101,7 @@ def load_graph(path: Path) -> dict[str, Any] | None:
     return data
 
 
-def merge_graphs(graphs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+def merge_graphs(graphs: list[dict[str, Any]], project_root: Path) -> tuple[dict[str, Any], list[str]]:
     """Merge multiple knowledge graph dicts into one. Returns (merged, report_lines)."""
 
     # ── Pattern counters for "Fixed" report ──────────────────────────
@@ -160,8 +212,11 @@ def merge_graphs(graphs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str
     frameworks: list[str] = []
     descriptions: list[str] = []
     latest_at = ""
-    latest_hash = ""
     project_name = ""
+
+    # Collect all distinct non-empty git commit hashes with their analyzedAt timestamps
+    # for staleness detection
+    hash_timestamps: list[tuple[str, str]] = []  # (gitCommitHash, analyzedAt)
 
     for g in graphs:
         proj = g.get("project", {})
@@ -176,9 +231,29 @@ def merge_graphs(graphs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str
         if desc and desc not in descriptions:
             descriptions.append(desc)
         analyzed = proj.get("analyzedAt", "")
+        hash_val = proj.get("gitCommitHash", "")
         if analyzed > latest_at:
             latest_at = analyzed
-            latest_hash = proj.get("gitCommitHash", latest_hash)
+        if hash_val:
+            hash_timestamps.append((hash_val, analyzed))
+
+    # Determine the canonical gitCommitHash for the merged graph
+    # Use git merge-base to find the oldest common ancestor if multiple hashes exist
+    resolved_hash, hash_was_ambiguous = _find_oldest_common_ancestor_hash(hash_timestamps, project_root)
+
+    # Emit staleness warning if subdomain graphs were built at different commits
+    if hash_was_ambiguous:
+        distinct_entries: dict[str, str] = {}
+        for h, at in hash_timestamps:
+            if h not in distinct_entries:
+                distinct_entries[h] = at
+        warning_lines = ["Warning: subdomain graphs were built at different commits:"]
+        for h, at in distinct_entries.items():
+            warning_lines.append(f"  - {h} ({at})")
+        warning_lines.append(f"  The merged graph will use the oldest commit ({resolved_hash}) as the canonical hash.")
+        warning_lines.append("  Re-run /grasp on all subdomains at the same commit for a consistent merge.")
+        for line in warning_lines:
+            print(line, file=sys.stderr)
 
     # ── Build report ─────────────────────────────────────────────────
     report: list[str] = []
@@ -221,7 +296,7 @@ def merge_graphs(graphs: list[dict[str, Any]]) -> tuple[dict[str, Any], list[str
             "frameworks": frameworks,
             "description": " | ".join(descriptions) if len(descriptions) > 1 else (descriptions[0] if descriptions else ""),
             "analyzedAt": latest_at,
-            "gitCommitHash": latest_hash,
+            "gitCommitHash": resolved_hash,
         },
         "nodes": list(nodes_by_id.values()),
         "edges": valid_edges,
@@ -290,7 +365,7 @@ def main() -> None:
             graphs.insert(0, base)  # Base first — subdomain data wins on conflict
 
     # Merge
-    merged, report = merge_graphs(graphs)
+    merged, report = merge_graphs(graphs, project_root)
 
     # Print report
     print("", file=sys.stderr)

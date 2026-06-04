@@ -386,6 +386,115 @@ describe("merge-subdomain-graphs.py", () => {
     expect(proj.description).toBe("Frontend service | Backend service");
     // Latest analyzedAt wins
     expect(proj.analyzedAt).toBe("2024-02-01T10:00:00Z");
-    expect(proj.gitCommitHash).toBe("def456");
+    // With different commit hashes across subdomains, the oldest by analyzedAt is used
+    // (git merge-base falls back to analyzedAt comparison since the temp dir is not a git repo)
+    expect(proj.gitCommitHash).toBe("abc123");
+  });
+
+  // ── Test 14: Staleness detection — different commits emit warning and use oldest hash ──
+  it("emits warning and uses oldest hash when subdomain graphs have different git commits", () => {
+    const g1 = makeGraph({
+      nodes: [makeNode("n1")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "First subdomain",
+        analyzedAt: "2024-01-01T10:00:00Z",
+        gitCommitHash: "aaa111",
+      },
+    });
+    const g2 = makeGraph({
+      nodes: [makeNode("n2")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "Second subdomain",
+        analyzedAt: "2024-01-02T10:00:00Z",
+        gitCommitHash: "bbb222",
+      },
+    });
+    const g3 = makeGraph({
+      nodes: [makeNode("n3")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "Third subdomain",
+        analyzedAt: "2024-01-03T10:00:00Z",
+        gitCommitHash: "ccc333",
+      },
+    });
+
+    const f1 = join(graspDir, "sub1-knowledge-graph.json");
+    const f2 = join(graspDir, "sub2-knowledge-graph.json");
+    const f3 = join(graspDir, "sub3-knowledge-graph.json");
+    writeFileSync(f1, JSON.stringify(g1));
+    writeFileSync(f2, JSON.stringify(g2));
+    writeFileSync(f3, JSON.stringify(g3));
+
+    const result = runScript(f1, f2, f3);
+    expect(result.status).toBe(0);
+
+    const out = readOutput();
+
+    // Warning should be emitted about different commits
+    expect(result.stderr).toContain("Warning: subdomain graphs were built at different commits:");
+    expect(result.stderr).toContain("aaa111");
+    expect(result.stderr).toContain("bbb222");
+    expect(result.stderr).toContain("ccc333");
+    expect(result.stderr).toContain("aaa111");
+
+    // The oldest commit by analyzedAt should be used as canonical hash
+    expect(out.project.gitCommitHash).toBe("aaa111");
+    // analyzedAt should still be the latest
+    expect(out.project.analyzedAt).toBe("2024-01-03T10:00:00Z");
+  });
+
+  // ── Test 15: Single commit hash — no warning ─────────────────────────────────
+  it("does not emit warning when all subdomain graphs have the same git commit hash", () => {
+    const g1 = makeGraph({
+      nodes: [makeNode("n1")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "First subdomain",
+        analyzedAt: "2024-01-01T10:00:00Z",
+        gitCommitHash: "samehash",
+      },
+    });
+    const g2 = makeGraph({
+      nodes: [makeNode("n2")],
+      edges: [],
+      project: {
+        name: "test-project",
+        languages: ["TypeScript"],
+        frameworks: [],
+        description: "Second subdomain",
+        analyzedAt: "2024-01-02T10:00:00Z",
+        gitCommitHash: "samehash",
+      },
+    });
+
+    const f1 = join(graspDir, "sub1-knowledge-graph.json");
+    const f2 = join(graspDir, "sub2-knowledge-graph.json");
+    writeFileSync(f1, JSON.stringify(g1));
+    writeFileSync(f2, JSON.stringify(g2));
+
+    const result = runScript(f1, f2);
+    expect(result.status).toBe(0);
+
+    // No staleness warning should be emitted
+    expect(result.stderr).not.toContain("Warning: subdomain graphs were built at different commits:");
+
+    const out = readOutput();
+    // Hash should be the same (since all graphs have the same hash)
+    expect(out.project.gitCommitHash).toBe("samehash");
   });
 });
