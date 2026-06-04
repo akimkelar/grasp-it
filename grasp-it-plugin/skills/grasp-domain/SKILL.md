@@ -87,14 +87,24 @@ fi
 
 Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases.
 
-### Phase 1: Detect Existing Graph and Preflight Staleness
+### Phase 1: Git Staleness Check
+
+Before deriving domain knowledge, check whether the underlying knowledge graph is stale relative to the current HEAD:
+
+1. Read `gitCommitHash` from `.grasp-it/knowledge-graph.json` (or fall back to `.grasp-it/meta.json`)
+2. Compare it to `git rev-parse HEAD` — if they differ, the graph is stale
+3. If stale, print a warning:
+   > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
+4. **Continue execution regardless** — the warning is advisory only
+
+### Phase 2: Detect Existing Graph and Preflight Staleness
 
 1. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists
 2. Check if `$PROJECT_ROOT/.grasp-it/meta.json` exists and read it for `domainGraphStale`
 3. If `domainGraphStale` is `false` AND `--full` was NOT passed:
    - The domain graph is current — report "Domain graph is up to date" and STOP
 4. If `domainGraphStale` is `true` OR `--full` was passed:
-   - Proceed to Phase 2 or Phase 3 as appropriate
+   - Proceed to Phase 3 or Phase 4 as appropriate
 5. After successful derivation, clear `domainGraphStale` by writing `meta.json` with `domainGraphStale` removed (or set to `false`):
    ```bash
    node -e "
@@ -108,9 +118,9 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
    "
    ```
 
-**Note:** Phase 1 in the original skill description is replaced by this Phase 1 (preflight staleness check). The "Detect Existing Graph" logic now integrates the staleness check. Proceed to Phase 2 (lightweight scan) or Phase 3 (derive from graph) as determined by step 3.
+**Note:** Phase 2 in the original skill description is replaced by this Phase 2 (preflight staleness check). The "Detect Existing Graph" logic now integrates the staleness check. Proceed to Phase 3 (lightweight scan) or Phase 4 (derive from graph) as determined by step 3.
 
-### Phase 2: Lightweight Scan (Path 1)
+### Phase 3: Lightweight Scan (Path 1)
 
 The preprocessing script does NOT produce a domain graph — it produces **raw material** (file tree, entry points, exports/imports) so the domain-analyzer agent can focus on the actual domain analysis instead of spending dozens of tool calls exploring the codebase. Think of it as a cheat sheet: cheap Python preprocessing → expensive LLM gets a clean, small input → better results for less cost.
 
@@ -127,7 +137,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 2. Read the generated `domain-context.json` as context for Phase 4
 3. Proceed to Phase 4
 
-### Phase 3: Derive from Existing Graph (Path 2)
+### Phase 4: Derive from Existing Graph (Path 2)
 
 1. Read `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
 2. Format the graph data as structured context:
@@ -136,15 +146,15 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
    - All layers with their descriptions
    - Tour steps if available
 3. This is the context for the domain analyzer — no file reading needed
-4. Proceed to Phase 4
+4. Proceed to Phase 5
 
-### Phase 4: Domain Analysis
+### Phase 5: Domain Analysis
 
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
-2. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 2 or 3
+2. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 3 or 4
 3. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
 
-### Phase 5: Validate and Save
+### Phase 6: Validate and Save
 
 1. Read the domain analysis output
 2. Validate using the standard graph validation pipeline (the schema now supports domain/feature/operation types)
@@ -152,7 +162,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 4. Save to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
 5. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
 
-### Phase 6: Launch Dashboard
+### Phase 7: Launch Dashboard
 
 1. Auto-trigger `/grasp-dashboard` to visualize the domain graph
 2. The dashboard will detect `domain-graph.json` and show the domain view by default

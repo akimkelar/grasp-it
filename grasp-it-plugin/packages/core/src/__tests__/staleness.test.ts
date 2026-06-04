@@ -5,9 +5,19 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+vi.mock("node:path", () => ({
+  join: vi.fn((...args: string[]) => args.join("/")),
+}));
+
 // Import after mocking
 import { execFileSync } from "child_process";
-import { getChangedFiles, isStale, mergeGraphUpdate, findStaleImplementedBy } from "../staleness.js";
+import { existsSync, readFileSync } from "node:fs";
+import { getChangedFiles, isStale, checkGraphFreshness, mergeGraphUpdate, findStaleImplementedBy } from "../staleness.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -106,6 +116,160 @@ describe("isStale", () => {
     expect(result).toEqual({
       stale: false,
       changedFiles: [],
+    });
+  });
+});
+
+describe("checkGraphFreshness", () => {
+  const mockedExistsSync = vi.mocked(existsSync);
+  const mockedReadFileSync = vi.mocked(readFileSync);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns stale=true when neither knowledge-graph.json nor meta.json exists", () => {
+    mockedExistsSync.mockReturnValue(false);
+    mockedReadFileSync.mockReturnValue("{}");
+
+    const result = checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
+
+  it("returns stale=false when graph commit matches HEAD", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({
+        project: { gitCommitHash: "abc123", name: "test" },
+      }),
+    );
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("returns stale=true with correct commitsBehind when graph is behind HEAD", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({
+        project: { gitCommitHash: "abc123", name: "test" },
+      }),
+    );
+    mockedExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.[0] === "rev-parse") {
+        return "def456"; // HEAD
+      }
+      if (cmd === "git" && args?.[0] === "rev-list") {
+        return "5"; // 5 commits behind
+      }
+      return "";
+    });
+
+    const result = checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "abc123",
+      headCommit: "def456",
+      commitsBehind: 5,
+    });
+  });
+
+  it("falls back to meta.json when knowledge-graph.json is not available", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return false;
+      if (path === "/project/.grasp-it/meta.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ gitCommitHash: "abc123" }),
+    );
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("handles git error when getting HEAD gracefully", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({
+        project: { gitCommitHash: "abc123", name: "test" },
+      }),
+    );
+    mockedExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.[0] === "rev-parse") {
+        throw new Error("fatal: not a git repo");
+      }
+      return "";
+    });
+
+    const result = checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "abc123",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
+
+  it("handles git error when counting commits (e.g., rebased commit)", () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({
+        project: { gitCommitHash: "abc123", name: "test" },
+      }),
+    );
+    mockedExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.[0] === "rev-parse") {
+        return "def456"; // HEAD
+      }
+      if (cmd === "git" && args?.[0] === "rev-list") {
+        throw new Error("fatal: bad revision");
+      }
+      return "";
+    });
+
+    const result = checkGraphFreshness("/project");
+
+    // Should still detect staleness, but commitsBehind will be 0 due to error
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "abc123",
+      headCommit: "def456",
+      commitsBehind: 0,
     });
   });
 });

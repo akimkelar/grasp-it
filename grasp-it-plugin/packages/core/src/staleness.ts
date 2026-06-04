@@ -1,4 +1,6 @@
 import { execFileSync } from "child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "./types.js";
 
 export interface StaleImplementedByResult {
@@ -16,6 +18,13 @@ export interface StaleEdge {
 export interface StalenessResult {
   stale: boolean;
   changedFiles: string[];
+}
+
+export interface GraphFreshnessResult {
+  stale: boolean;
+  lastCommit: string;
+  headCommit: string;
+  commitsBehind: number;
 }
 
 /**
@@ -51,6 +60,105 @@ export function isStale(
   return {
     stale: changedFiles.length > 0,
     changedFiles,
+  };
+}
+
+/**
+ * Preflight check: determine whether the stored graph is stale relative to HEAD.
+ *
+ * Reads the last-analyzed git commit hash from `knowledge-graph.json` (preferred)
+ * or `.grasp-it/meta.json` (fallback), then compares it to the current HEAD.
+ *
+ * Returns a result indicating:
+ * - Whether the graph is stale
+ * - The last commit the graph was built from
+ * - The current HEAD commit
+ * - How many commits behind HEAD the graph is
+ *
+ * Does NOT account for whether files actually changed — use `isStale()` for
+ * that. This function is for pre-flight warnings only.
+ */
+export function checkGraphFreshness(
+  projectDir: string,
+): GraphFreshnessResult {
+  // Try to read gitCommitHash from knowledge-graph.json first
+  let lastCommit: string | null = null;
+
+  try {
+    const graphPath = join(projectDir, ".grasp-it", "knowledge-graph.json");
+    if (existsSync(graphPath)) {
+      const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as KnowledgeGraph;
+      lastCommit = graph.project?.gitCommitHash ?? null;
+    }
+  } catch {
+    // Ignore — fall through to meta.json
+  }
+
+  // Fall back to meta.json
+  if (!lastCommit) {
+    try {
+      const metaPath = join(projectDir, ".grasp-it", "meta.json");
+      if (existsSync(metaPath)) {
+        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as { gitCommitHash?: string };
+        lastCommit = meta.gitCommitHash ?? null;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  // If we still don't have a lastCommit, the graph doesn't exist yet
+  if (!lastCommit) {
+    return {
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    };
+  }
+
+  // Get current HEAD commit
+  let headCommit: string;
+  try {
+    headCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+  } catch {
+    headCommit = "";
+  }
+
+  // If already at the same commit, graph is fresh
+  if (lastCommit === headCommit) {
+    return {
+      stale: false,
+      lastCommit,
+      headCommit,
+      commitsBehind: 0,
+    };
+  }
+
+  // Calculate how many commits behind HEAD the graph is
+  let commitsBehind = 0;
+  try {
+    const output = execFileSync(
+      "git",
+      ["rev-list", "--count", `${lastCommit}..HEAD`],
+      { cwd: projectDir, encoding: "utf-8" },
+    );
+    commitsBehind = parseInt(output.trim(), 10);
+    if (isNaN(commitsBehind)) commitsBehind = 0;
+  } catch {
+    // If the lastCommit is not in history (e.g., rebased), the count fails
+    // Treat as stale anyway
+    commitsBehind = 0;
+  }
+
+  return {
+    stale: true,
+    lastCommit,
+    headCommit,
+    commitsBehind,
   };
 }
 

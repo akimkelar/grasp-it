@@ -45,6 +45,16 @@ java -version
 - Request escalation proactively before the first live `cypher-shell` query so the skill does not fail partway through on the first graph read.
 - If you still start sandboxed and hit connection or permission errors, rerun the same `cypher-shell` command with the required permissions instead of abandoning the skill.
 
+### Phase 0: Graph Freshness Check
+
+Before querying the graph, check whether it is stale relative to the current HEAD:
+
+1. Read `gitCommitHash` from `.grasp-it/knowledge-graph.json` (or fall back to `.grasp-it/meta.json`)
+2. Compare it to `git rev-parse HEAD` — if they differ, the graph is stale
+3. If stale, print a warning:
+   > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
+4. **Continue execution regardless** — the warning is advisory only
+
 ### Quick health check
 
 Run this before broader graph exploration when using the skill in a fresh environment:

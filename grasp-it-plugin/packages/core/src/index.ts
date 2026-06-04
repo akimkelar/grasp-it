@@ -35,11 +35,13 @@ export { SearchEngine, type SearchResult, type SearchOptions } from "./search.js
 export {
   getChangedFiles,
   isStale,
+  checkGraphFreshness,
   mergeGraphUpdate,
   findStaleImplementedBy,
   type StalenessResult,
   type StaleImplementedByResult,
   type StaleEdge,
+  type GraphFreshnessResult,
 } from "./staleness.js";
 export {
   detectLayers,
