@@ -28,6 +28,7 @@ describe("GraphBuilder", () => {
       summary: "Entry point",
       tags: ["entry"],
       complexity: "simple",
+      analyzedAtCommit: "abc123",
     });
     expect(graph.nodes[1]).toMatchObject({
       id: "file:src/utils.ts",
@@ -35,6 +36,7 @@ describe("GraphBuilder", () => {
       name: "utils.ts",
       filePath: "src/utils.ts",
       summary: "Utility functions",
+      analyzedAtCommit: "abc123",
     });
   });
 

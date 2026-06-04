@@ -99,6 +99,7 @@ export class GraphBuilder {
       summary: meta.summary,
       tags: meta.tags,
       complexity: meta.complexity,
+      analyzedAtCommit: this.gitHash,
     });
   }
 
@@ -125,6 +126,7 @@ export class GraphBuilder {
       summary: meta.fileSummary,
       tags: meta.tags,
       complexity: meta.complexity,
+      analyzedAtCommit: this.gitHash,
     });
 
     // Create function nodes with "contains" edges

@@ -65,6 +65,8 @@ export interface GraphNode {
   permissions?: string[];                          // Actor
   restrictions?: string[];                        // Actor
   ruleText?: string;                              // BusinessRule
+  // Codebase node properties
+  analyzedAtCommit?: string;                      // File (git commit hash at which file was last analyzed)
 }
 
 // GraphEdge with rich relationship modeling
