@@ -153,6 +153,85 @@ Determine whether to run a full analysis or incremental update.
    - `/grasp-gaps` — updates the knowledge graph
    - `/grasp-domain` — may write to the knowledge graph
 
+ 1.7. **Neo4j schema setup (first-use):**
+   On first use, the graph requires schema constraints and indexes before `MERGE` operations
+   and unique-constraint-dependent queries behave correctly. The schema definition lives at
+   `<SKILL_DIR>/setup-neo4j-schema.cypher`. Apply it automatically if not yet present.
+
+   **Detect already-applied schema:** Query for one well-known constraint (`project_id`) that
+   is created by the schema setup. If it exists, the schema is already applied.
+   ```bash
+   SCHEMA_APPLIED=0
+   if [ -n "$NEO4J_URI" ]; then
+     # Try driver path first
+     SCHEMA_CHECK=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+       "SHOW CONSTRAINTS YIELD name WHERE name = 'project_id' RETURN name AS name" 2>/dev/null)
+     if [ $? -eq 0 ]; then
+       if echo "$SCHEMA_CHECK" | grep -q '"name":"project_id"'; then
+         SCHEMA_APPLIED=1
+       fi
+     fi
+
+     # If driver failed with exit 2, try cypher-shell path
+     if [ $SCHEMA_APPLIED -eq 0 ]; then
+       if [ "$NEO4J_CONNECTION_TYPE" = "cypher-shell" ] || \
+          echo "$SCHEMA_CHECK" | grep -q "fallback\|cypher-shell\|not available" 2>/dev/null; then
+         if command -v cypher-shell >/dev/null 2>&1; then
+           URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+           URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+           [ -z "$URI_HOST" ] && URI_HOST="localhost"
+           [ -z "$URI_PORT" ] && URI_PORT="7687"
+           if cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" \
+             --format plain "SHOW CONSTRAINTS YIELD name WHERE name = 'project_id' RETURN name AS name" 2>/dev/null | grep -q "project_id"; then
+             SCHEMA_APPLIED=1
+           fi
+         fi
+       fi
+     fi
+   fi
+   ```
+
+   **Apply schema if missing:**
+   ```bash
+   if [ $SCHEMA_APPLIED -eq 0 ] && [ -n "$NEO4J_URI" ]; then
+     echo "[grasp-it] Applying Neo4j schema (first-use setup)..."
+     # Read and apply the schema Cypher file
+     if [ "$NEO4J_CONNECTION_TYPE" = "cypher-shell" ]; then
+       # cypher-shell path — run the schema file directly
+       if command -v cypher-shell >/dev/null 2>&1; then
+         URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+         URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+         [ -z "$URI_HOST" ] && URI_HOST="localhost"
+         [ -z "$URI_PORT" ] && URI_PORT="7687"
+         cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" \
+           --format plain -f "$SKILL_DIR/setup-neo4j-schema.cypher" 2>/dev/null && \
+           echo "[grasp-it] Neo4j schema applied successfully." || \
+           echo "[grasp-it] Warning: Schema application returned non-zero (constraints may already exist — this is usually fine)"
+       else
+         echo "[grasp-it] Warning: cypher-shell not available for schema setup"
+       fi
+     elif [ "$NEO4J_CONNECTION_TYPE" = "mcp" ]; then
+       echo "[grasp-it] MCP connection type — schema setup skipped (not yet supported)"
+     else
+       # Driver path — use run-query.mjs to apply schema line by line (driver doesn't support file input)
+       # Run the schema setup queries individually via run-query.mjs
+       while IFS= read -r line || [ -n "$line" ]; do
+         # Skip comments and empty lines
+         case "$line" in
+           ""|\#*) continue ;;
+           *) ;;
+         esac
+         # Apply each constraint/index statement
+         node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "$line" >/dev/null 2>&1
+       done < "$SKILL_DIR/setup-neo4j-schema.cypher"
+       echo "[grasp-it] Neo4j schema applied successfully."
+     fi
+   fi
+   ```
+
+   **Note:** The schema Cypher uses `IF NOT EXISTS` guards throughout, so re-running is safe.
+   The check above only avoids the overhead of running it on every `/grasp` invocation.
+
 2. Get the current git commit hash:
    ```bash
    git rev-parse HEAD
