@@ -186,11 +186,12 @@ Determine whether to run a full analysis or incremental update.
    Write the setup script to `$PROJECT_ROOT/.grasp-it/tmp/first-use-setup.mjs`:
    ```javascript
    #!/usr/bin/env node
-   import { writeFileSync, readFileSync } from 'node:fs';
+   import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
    import { join } from 'node:path';
    import { createInterface } from 'readline';
    import { fileURLToPath } from 'node:url';
    import { dirname } from 'node:path';
+   import os from 'node:os';
 
    const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -208,6 +209,10 @@ Determine whether to run a full analysis or incremental update.
      USERNAME: 'neo4j',
    };
    const SETUP_PROMPTS = {
+     ROLE: `What is your role?
+   1. Developer — I have the codebase locally and want to build/update the knowledge graph
+   2. Analyst/Non-developer — I only want to query the existing graph (no local codebase)
+   Enter your choice (1 or 2, default 1):`,
      CONNECTION_TYPE: `Which connection type would you like to use?
    1. Driver (default) - Direct connection using neo4j-driver.
    2. cypher-shell - Use Neo4j CLI tool.
@@ -257,6 +262,19 @@ Determine whether to run a full analysis or incremental update.
      ensureEnvInGitignore(projectRoot);
    }
 
+   function saveGlobalAppConfig(role) {
+     const configDir = join(os.homedir(), '.grasp-it');
+     const configPath = join(configDir, 'config.json');
+     let existing = {};
+     try {
+       existing = JSON.parse(readFileSync(configPath, 'utf-8'));
+     } catch {
+       // file doesn't exist yet or is invalid — start fresh
+     }
+     mkdirSync(configDir, { recursive: true });
+     writeFileSync(configPath, JSON.stringify({ ...existing, role }, null, 2) + '\n', 'utf-8');
+   }
+
    function ask(question) {
      return new Promise(resolve => {
        const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -266,7 +284,14 @@ Determine whether to run a full analysis or incremental update.
 
    async function main() {
      const projectRoot = process.argv[2];
-     console.log('\n[grasp-it] Welcome! Let\'s set up your Neo4j connection.\n');
+     console.log('\n[grasp-it] Welcome! Let\'s get you set up.\n');
+
+     // Step 1: Determine role — this is the most fundamental choice
+     const roleAnswer = await ask(SETUP_PROMPTS.ROLE);
+     const role = roleAnswer.trim() === '2' ? 'non-developer' : 'developer';
+
+     // Step 2: Collect Neo4j credentials (both roles need them to connect to the graph)
+     console.log('\n[grasp-it] Now let\'s configure your Neo4j connection.\n');
 
      let connType = DEFAULTS.CONNECTION_TYPE;
      const typeAnswer = await ask(SETUP_PROMPTS.CONNECTION_TYPE);
@@ -288,6 +313,7 @@ Determine whether to run a full analysis or incremental update.
 
      const config = { uri, database, username, password, connectionType: connType };
      saveConfig(projectRoot, config);
+     saveGlobalAppConfig(role);
 
      // Load the written .env into process.env so bash can source it
      const envPath = join(projectRoot, '.env');
@@ -305,6 +331,16 @@ Determine whether to run a full analysis or incremental update.
 
      console.log('\n[grasp-it] Neo4j credentials saved to .env');
      console.log('[grasp-it] Added .env to .gitignore');
+     console.log(`[grasp-it] Role saved to ~/.grasp-it/config.json: ${role}`);
+
+     if (role === 'non-developer') {
+       console.log('\n[grasp-it] You are set up for graph-query mode.');
+       console.log('[grasp-it] Use grasp-search, grasp-chat, grasp-knowledge, or grasp-requirements to explore the graph.');
+       console.log('[grasp-it] ROLE=non-developer');
+     } else {
+       console.log('\n[grasp-it] You are set up as a developer. Run /grasp to build or update the knowledge graph.');
+       console.log('[grasp-it] ROLE=developer');
+     }
    }
 
    main().catch(err => { console.error(err.message); process.exit(1); });
@@ -316,13 +352,47 @@ Determine whether to run a full analysis or incremental update.
      mkdir -p "$PROJECT_ROOT/.grasp-it/tmp"
      # Write the setup script (as shown above) to $PROJECT_ROOT/.grasp-it/tmp/first-use-setup.mjs
      # Then invoke it:
-     node "$PROJECT_ROOT/.grasp-it/tmp/first-use-setup.mjs" "$PROJECT_ROOT"
+     SETUP_OUTPUT=$(node "$PROJECT_ROOT/.grasp-it/tmp/first-use-setup.mjs" "$PROJECT_ROOT" 2>&1)
+     echo "$SETUP_OUTPUT"
      # After the script completes, source the written .env so bash phases have credentials
      if [ -f "$PROJECT_ROOT/.env" ]; then
        set -a
        source "$PROJECT_ROOT/.env" 2>/dev/null
        set +a
      fi
+     # Check if the user identified as non-developer
+     if echo "$SETUP_OUTPUT" | grep -q "ROLE=non-developer"; then
+       GRASP_ROLE="non-developer"
+     else
+       GRASP_ROLE="developer"
+     fi
+   else
+     # Config already exists — read role from global app config if present
+     GRASP_ROLE="developer"
+     if [ -f "$HOME/.grasp-it/config.json" ]; then
+       SAVED_ROLE=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$HOME/.grasp-it/config.json','utf-8'));process.stdout.write(c.role||'')}catch{}" 2>/dev/null)
+       if [ "$SAVED_ROLE" = "non-developer" ]; then
+         GRASP_ROLE="non-developer"
+       fi
+     fi
+   fi
+   ```
+
+   **Role check — stop early for non-developers:**
+   ```bash
+   if [ "$GRASP_ROLE" = "non-developer" ]; then
+     echo ""
+     echo "[grasp-it] You are configured as a non-developer (graph-query mode)."
+     echo "[grasp-it] Skipping codebase scanning — no local codebase is needed."
+     echo ""
+     echo "[grasp-it] To explore the knowledge graph, use:"
+     echo "  /grasp-search  — search nodes and relationships"
+     echo "  /grasp-chat    — ask questions about the codebase"
+     echo "  /grasp-knowledge — explore knowledge articles"
+     echo "  /grasp-requirements — analyze requirements against the graph"
+     echo ""
+     echo "[grasp-it] Your Neo4j credentials are saved and ready for graph queries."
+     exit 0
    fi
    ```
 
