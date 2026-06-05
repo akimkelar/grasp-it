@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { validateGraph } from "../schema.js";
-import type { KnowledgeGraph } from "../types.js";
+import { validateGraph, GraphNodeSchema, GraphEdgeSchema } from "../schema.js";
+import type { KnowledgeGraph, NodeType, EdgeType } from "../types.js";
 
 // Fixture: a minimal but complete knowledge graph exercising all new node types
 const knowledgeGraph: KnowledgeGraph = {
@@ -17,6 +17,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "domain:invoicing",
       type: "domain",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Invoicing",
       summary: "Handles invoicing lifecycle",
       tags: ["core"],
@@ -25,6 +27,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "feature:invoice-assignment",
       type: "feature",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Invoice Assignment",
       summary: "Assign invoices to managers",
       tags: ["write-path"],
@@ -34,6 +38,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "operation:assign-invoice",
       type: "operation",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Assign Invoice",
       summary: "Assigns an invoice to a manager",
       tags: ["assignment"],
@@ -43,6 +49,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "actor:manager",
       type: "actor",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Manager",
       summary: "Department manager",
       tags: ["user"],
@@ -53,6 +61,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "entity:invoice",
       type: "entity",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Invoice",
       summary: "Invoice record",
       tags: ["core"],
@@ -61,6 +71,8 @@ const knowledgeGraph: KnowledgeGraph = {
     {
       id: "business-rule:manager-approval",
       type: "business-rule",
+      kind: "knowledge",
+      source: "code-analysis",
       name: "Manager Approval Required",
       summary: "Invoices over $1000 require approval",
       tags: ["approval"],
@@ -399,6 +411,52 @@ describe("knowledge node types", () => {
       expect(result.issues).toContainEqual(
         expect.objectContaining({ level: "dropped", category: "invalid-edge" })
       );
+    });
+  });
+
+  describe("risk node type", () => {
+    it("accepts a risk node with all required properties", () => {
+      const node = {
+        id: "risk:invoice-rounding",
+        type: "risk" as NodeType,
+        kind: "knowledge",
+        source: "interview",
+        name: "Invoice rounding inconsistency",
+        summary: "Rounding applied per-line vs total produces different results",
+        complexity: "complex",
+        severity: "high",
+        probability: "medium",
+        mitigation: "Always round at total level, not per-line",
+        scope: ["invoicing"],
+        tags: ["calculation", "finance"],
+      };
+      expect(GraphNodeSchema.parse(node)).toBeDefined();
+    });
+
+    it("accepts risk severity enum values", () => {
+      for (const severity of ["low", "medium", "high", "critical"] as const) {
+        const node = { id: `risk:test-${severity}`, type: "risk" as NodeType, kind: "knowledge", source: "interview", name: "Test", summary: "Test", complexity: "simple" as const, severity, tags: [] };
+        expect(GraphNodeSchema.parse(node)).toBeDefined();
+      }
+    });
+
+    it("accepts risk probability enum values", () => {
+      for (const probability of ["low", "medium", "high"] as const) {
+        const node = { id: `risk:test-${probability}`, type: "risk" as NodeType, kind: "knowledge", source: "interview", name: "Test", summary: "Test", complexity: "simple" as const, probability, tags: [] };
+        expect(GraphNodeSchema.parse(node)).toBeDefined();
+      }
+    });
+  });
+
+  describe("has_risk and mitigated_by edge types", () => {
+    it("accepts has_risk edge type", () => {
+      const edge = { source: "feature:invoice-assignment", target: "risk:rounding", type: "has_risk" as EdgeType, direction: "forward" as const, weight: 1.0 };
+      expect(GraphEdgeSchema.parse(edge)).toBeDefined();
+    });
+
+    it("accepts mitigated_by edge type", () => {
+      const edge = { source: "risk:rounding", target: "decision:round-at-total", type: "mitigated_by" as EdgeType, direction: "forward" as const, weight: 0.9 };
+      expect(GraphEdgeSchema.parse(edge)).toBeDefined();
     });
   });
 });

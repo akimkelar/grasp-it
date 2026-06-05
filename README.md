@@ -35,11 +35,13 @@ The knowledge graph stores two kinds of knowledge:
 4. Use the graph    → create tasks, implementation plans, test cases, and drive implementation
 ```
 
-The `/grasp-requirements` interview is structured: the agent asks probing questions about features, actors
-(who can do what), business rules (what is allowed/forbidden), operations (what steps happen and
-in what order), decisions (what was chosen and why), and constraints (what must always hold).
-The interview continues until mutual confidence is reached. The result is a structured graph of
-`Feature`, `Actor`, `BusinessRule`, `Operation`, `Decision`, and `Constraint` nodes.
+The `/grasp-requirements` interview is relentless and structured: questions go one at a time,
+each aspect of the feature is explored in depth (actors, operations, entities, business rules,
+decisions, risks, integrations), and a gap-analysis loop runs after the initial interview to
+surface contradictions, undefined terms, and unmitigated risks before anything is written as
+final. The result is a structured knowledge graph of `Feature`, `Actor`, `Operation`, `Entity`,
+`BusinessRule`, `Decision`, `Constraint`, `Concept`, `Claim`, and `Risk` nodes — each tagged
+with `source: "interview"` to distinguish specialist intent from code-mined facts.
 
 ### Why This Matters
 

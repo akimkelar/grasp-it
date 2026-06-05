@@ -205,6 +205,8 @@ Goal: identify every role that interacts with this feature and what each can and
 
 Questions to ask:
 
+An **actor** is a user role or system agent — not an individual person. Name actors at the role level (`actor:agency-user`, `actor:manager`, `actor:background-job`, `actor:external-api`). A "user" is not an actor name — give it a precise business role.
+
 1. *"Who uses this feature? I'll list who I think is involved: [list from graph/context]. Who's missing, and who on that list actually isn't involved?"*
 2. For each actor: *"What exactly can [actor] do with this feature? Be specific — not just 'use it' but what actions they initiate."*
 3. *"Is there any role that can see this feature but cannot use it, or can use it but with restrictions?"*
@@ -317,7 +319,12 @@ Questions to ask:
 4. *"Is there anything about this feature that needs to be coordinated with another team or system owner?"*
 5. Scenario: *"If this feature is deployed but [downstream feature] hasn't been updated yet — what breaks? Is that a safe intermediate state?"*
 
-After this aspect, write `depends_on` / `used_by` edges between features, update `concept` and `decision` nodes with scope.
+After this aspect, record integration dependencies as:
+- A `constraint` node (e.g. "requires X service to be available") with an `applies_in` edge to the feature
+- A `concept` node for any shared integration point, linked with `sub_concept_of` to the owning feature's domain concept
+- `scope[]` fields on decisions and business rules that cross feature boundaries
+
+The knowledge schema has no direct feature-to-feature edge type. Cross-feature dependencies live in constraints and shared concepts.
 
 ---
 
@@ -344,7 +351,7 @@ After all eight aspects are complete, analyze the intermediate graph files (`pr-
 
 **Dangling operations** — are there `operation` nodes with no `performed_by` edge? Ask: *"Who initiates [operation]? I don't have that recorded."*
 
-**Unscoped rules** — are there `business-rule` or `constraint` nodes without a `scope[]`? Ask: *"Does [rule] apply everywhere in the product, or only within [feature]?"*
+**Unscoped rules** — are there `business-rule`, `constraint`, `decision`, or `risk` nodes without a `scope[]`? Ask: *"Does [rule/decision/risk] apply everywhere in the product, or only within [feature]?"*
 
 **Unmitigated high risks** — are there `risk` nodes with `severity: "high"` or `"critical"` and no `mitigated_by` edge? Ask: *"For [risk] — is there currently any safeguard, plan, or design decision that addresses it? Or is it an open hazard?"*
 
@@ -364,6 +371,8 @@ After each gap analysis pass, if any problems were found and new questions were 
 - Write updated nodes/edges to the intermediate files
 - Run the gap analysis again on the updated graph
 - Continue until a full pass finds no gaps
+
+**Termination safeguard:** If the same gap category is still present after 3 consecutive passes (the specialist cannot or will not resolve it), stop looping on that category. Record a `claim` node with `confidence: "tentative"` and `summary: "open question: [the unresolved issue]"`. Move on.
 
 A clean pass means:
 - All concepts have a non-vague `summary`
@@ -446,7 +455,7 @@ Offer to launch the dashboard:
 
 ## Reference: Node Shapes
 
-```json
+```jsonc
 {
   "id": "feature:<kebab-name>",
   "type": "feature",
@@ -540,6 +549,8 @@ Offer to launch the dashboard:
   "tags": []
 }
 
+// Claims use a short UUID rather than kebab-case because multiple distinct claims can exist
+// about the same topic and a name-based ID would collide. Generate 8 random hex characters.
 {
   "id": "claim:<short-uuid>",
   "type": "claim",
