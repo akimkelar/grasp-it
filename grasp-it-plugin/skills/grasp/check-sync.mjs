@@ -25,6 +25,7 @@ import { mkdirSync } from "node:fs";
 import { getNeo4jConfig, getConnectionType } from "./neo4j-config-loader.mjs";
 const GRAPH_FILE = "knowledge-graph.json";
 const UA_DIR = ".grasp-it";
+const PROJECT_SINGLETON_ID = "project:singleton";
 
 // ── Git helpers ────────────────────────────────────────────────────────────────
 
