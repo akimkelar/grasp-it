@@ -1,19 +1,25 @@
 ---
 name: grasp-requirements
-description: Interview a Product Specialist to extract product requirements into the knowledge graph. Use when you need to gather requirements, design decisions, business rules, and constraints directly from a product specialist through guided questioning.
-argument-hint: [topic area]
+description: Interview a Product Specialist to extract product requirements into the knowledge graph. Use when you need to gather requirements, design decisions, business rules, constraints, and risks directly from a product specialist through deep, relentless questioning.
+argument-hint: [topic area or feature name]
 ---
 
 # /grasp-requirements
 
-Conduct a structured interview with a Product Specialist to extract product requirements into the knowledge graph. The interview continues until mutual confidence is reached — until both the agent and the Product Specialist understand the topic the same way. At that point, knowledge is extracted and stored.
+Interview a Product Specialist relentlessly about a feature or domain until both of you hold exactly the same understanding. The goal is not to collect what the specialist volunteers — it is to excavate what they know, challenge what they assume, expose what they haven't considered, and produce a knowledge graph that is **complete, consistent, and unambiguous**.
+
+The interview never ends because the specialist says "that's everything." It ends when you have analyzed the captured knowledge, found no gaps or contradictions, and confirmed the specialist agrees with your synthesis.
+
+---
 
 ## When to Use
 
 - When starting a new feature or significant change
-- When the existing graph's `:Knowledge:Semantic:Decision` and `:Knowledge:Semantic:Constraint` nodes need population
 - When migrating or re-implementing behavior that was never formally documented
+- When the graph has `source: "code-analysis"` nodes about a feature but lacks the business intent behind them
 - Use `/grasp-chat` when querying existing knowledge; use `/grasp-requirements` when building new knowledge
+
+---
 
 ## Graph Schema
 
@@ -21,29 +27,27 @@ Conduct a structured interview with a Product Specialist to extract product requ
 distinguishes specialist-described knowledge from code-mined knowledge (`source: "code-analysis"`)
 and enables queries that separate intent from implementation.
 
-Product requirements knowledge uses these node types:
+Node types:
 
 - `feature` — a named product capability
 - `operation` — a meaningful action within a feature
 - `actor` — a user role or system agent
-- `business-rule` — a business policy or constraint
-- `entity` — a named business object
+- `business-rule` — a high-level business policy
+- `entity` — a named business object (e.g. Invoice, Interview, Offer)
 - `decision` — a commitment or resolved question (`status: draft | accepted | deprecated`)
-- `constraint` — a rule, invariant, or condition the implementation must respect
-- `concept` — a key abstraction or topic area named by the specialist
+- `constraint` — a technical invariant or condition the implementation must respect
+- `concept` — a key abstraction named by the specialist during the interview
 - `claim` — an assertion made during the interview (`confidence: tentative | agreed`)
-- `risk` — a potential negative outcome: implementation hazard, business exposure, calculation
-  pitfall, data-loss scenario, customer-facing risk. Use when the specialist warns about
-  what could go wrong.
+- `risk` — a potential negative outcome: implementation hazard, business exposure, calculation pitfall, data-loss scenario, customer-facing harm
 
-Key relationship types for product requirements knowledge:
+Key relationship types:
 
 - `sub_concept_of` — concept composition (part-of hierarchy)
 - `constrained_by` — a rule applies to a concept, decision, feature, or business rule
 - `decides` — a claim leads to a decision, which resolves a feature or business rule
 - `implements` — a decision fulfills a concept
 - `supports` — evidence chain between claims
-- `applies_in` — scope/context binding (constraint, rule, or risk → concept/feature/operation)
+- `applies_in` — scope/context binding
 - `governs` — a business rule applies to a feature or operation
 - `uses_entity` — a feature or operation works with an entity
 - `performed_by` — an operation is performed by an actor
@@ -51,15 +55,13 @@ Key relationship types for product requirements knowledge:
 - `has_risk` — a feature, operation, business rule, or concept has an associated risk
 - `mitigated_by` — a risk is addressed by a decision or constraint
 
-Node IDs use prefixes: `feature:<kebab-name>`, `operation:<kebab-name>`, `actor:<kebab-name>`, `business-rule:<kebab-name>`, `entity:<kebab-name>`, `decision:<kebab-name>`, `constraint:<kebab-name>`, `concept:<kebab-name>`, `claim:<uuid-short>`, `risk:<kebab-name>`.
-
-Decision status lifecycle: `draft` → `accepted` → `deprecated`.
+Node ID prefixes: `feature:`, `operation:`, `actor:`, `business-rule:`, `entity:`, `decision:`, `constraint:`, `concept:`, `claim:`, `risk:`.
 
 ---
 
 ## Phase 0: Setup
 
-Resolve `PROJECT_ROOT` and `PLUGIN_ROOT` using the standard pattern:
+Resolve `PROJECT_ROOT` and `PLUGIN_ROOT`:
 
 ```bash
 PROJECT_ROOT="${PWD}"
@@ -80,7 +82,7 @@ fi
 SKILL_REAL=$(realpath ~/.agents/skills/grasp-requirements 2>/dev/null || readlink -f ~/.agents/skills/grasp-requirements 2>/dev/null || echo "")
 SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-requirements 2>/dev/null || readlink -f ~/.copilot/skills/grasp-requirements 2>/dev/null || echo "")
-COPILOT_SELF_RELATIVE=$P([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
+COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
 PLUGIN_ROOT=""
 for candidate in \
@@ -97,151 +99,412 @@ for candidate in \
 done
 ```
 
-Create working directories:
+Create working directories and initialize intermediate files:
+
 ```bash
 mkdir -p "$PROJECT_ROOT/.grasp-it/intermediate"
+echo '{"nodes":[]}' > "$PROJECT_ROOT/.grasp-it/intermediate/pr-nodes.json"
+echo '{"edges":[]}' > "$PROJECT_ROOT/.grasp-it/intermediate/pr-edges.json"
 ```
 
 ---
 
-## Phase 1: Topic Confirmation
+## Phase 1: Topic Orientation
 
-1. Confirm the topic area with the Product Specialist: `$ARGUMENTS` or the user's initial statement
-2. If no topic was provided, ask the Product Specialist what area they want to cover
-3. State the goal: "We're going to explore [topic] together. I'll ask questions to make sure I understand it the same way you do. When we're both confident we understand it fully, I'll record what we've agreed on."
-4. Create an `interview-context.json`:
+### 1a. Determine the topic
+
+The topic comes from:
+1. `$ARGUMENTS` — if provided directly with the skill call
+2. The current conversation context — if a feature was just described or is being discussed
+3. Ask — if neither is available: *"What feature or domain area should we explore together?"*
+
+If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not proceed to interview. First establish a precise name and a one-sentence description: *"Before we go deep, I want to make sure we're talking about the same thing. Can you give it a name and describe it in one sentence — what does it do and who benefits from it?"*
+
+### 1b. Check existing graph knowledge
+
+Read `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` if it exists. Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find relevant existing nodes:
+
+- Surface them to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
+- If the existing nodes came from `source: "code-analysis"`, tell the specialist: *"I have some code-mined knowledge about this. I'll use it as a starting point and ask you to confirm, extend, or correct it."*
+
+### 1c. State the contract
+
+Tell the specialist:
+
+> "We're going to explore [topic] together. I'll ask you one question at a time. For each question I'll tell you what I currently think the answer is — your job is to correct me, extend me, or confirm me. When I think I understand something, I'll paraphrase it back and you confirm. We'll keep going until we both agree the picture is complete and correct. I'll save what we agree on to the knowledge graph as we go."
+
+Create `$PROJECT_ROOT/.grasp-it/intermediate/interview-context.json`:
+
 ```json
 {
-  "topic": "<topic area>",
+  "topic": "<topic name>",
+  "featureId": "feature:<kebab-name>",
   "startedAt": "<ISO timestamp>",
-  "status": "in-progress"
+  "status": "in-progress",
+  "aspects": {
+    "identity": "pending",
+    "actors": "pending",
+    "operations": "pending",
+    "entities": "pending",
+    "rules": "pending",
+    "decisions": "pending",
+    "risks": "pending",
+    "integration": "pending"
+  }
 }
 ```
 
 ---
 
-## Phase 2: Structured Interview
+## Phase 2: Aspect-by-Aspect Deep Interview
 
-### Interview Strategy
+The interview is divided into **eight aspects**. Work through each aspect completely before moving to the next. After completing each aspect, write what was learned to the intermediate graph files before continuing.
 
-Use the `pr-interviewer` agent definition. The agent:
+Questions must be asked **one at a time**. Before asking, state your current hypothesis so the specialist corrects rather than explains from scratch.
 
-1. Asks structured, probing questions to extract:
-   - **Concepts** — what are the key abstractions? What parts make up the whole?
-   - **Constraints** — what rules, invariants, conditions must hold? When do they apply?
-   - **Decisions** — what was decided, and why? What alternatives were considered?
-   - **Claims** — what assertions are made? Are they agreed or still tentative?
-   - **Scope** — where/when does each rule or decision apply?
-   - **Risks** — what could go wrong? What edge cases in logic (e.g. rounding, ordering, concurrency)?
-     What business exposure does a wrong implementation create for customers? What could be lost
-     during migration or refactoring? Which rule interactions are dangerous?
+### Question Modes
 
-2. Tracks consensus — a topic is "done" when:
-   - All key concepts are named and described
-   - All constraints have `condition` and `invariant` defined
-   - All decisions have `rationale` and `scope`
-   - All active claims have `confidence: agreed`
+Use all three modes throughout the interview — vary them to maintain pace:
 
-3. Writes nodes incrementally to `$PROJECT_ROOT/.grasp-it/intermediate/pr-nodes.json`:
-```json
-{
-  "nodes": [
-    { "id": "concept:<name>", "type": "concept", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "tags": [], "complexity": "moderate" },
-    { "id": "decision:<name>", "type": "decision", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "rationale": "...", "status": "proposed", "scope": [], "tags": [], "complexity": "moderate" },
-    { "id": "constraint:<name>", "type": "constraint", "kind": "knowledge", "source": "interview", "name": "...", "condition": "...", "invariant": "...", "scope": [], "tags": [], "complexity": "simple" },
-    { "id": "risk:<name>", "type": "risk", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "severity": "medium", "probability": "medium", "mitigation": "...", "scope": [], "tags": [] }
-  ]
-}
-```
+**Open question** — requires a free-text description. Use when you need the specialist's own framing.
+> "Describe how X works in your own words. Don't worry about being precise yet."
 
-4. Writes edges to `$PROJECT_ROOT/.grasp-it/intermediate/pr-edges.json`:
-```json
-{
-  "edges": [
-    { "source": "decision:<name>", "target": "concept:<name>", "type": "implements", "direction": "forward", "weight": 1.0 },
-    { "source": "concept:<name>", "target": "constraint:<name>", "type": "constrained_by", "direction": "forward", "weight": 1.0 },
-    { "source": "claim:<uuid>", "target": "decision:<name>", "type": "decides", "direction": "forward", "weight": 0.8 },
-    { "source": "feature:<name>", "target": "risk:<name>", "type": "has_risk", "direction": "forward", "weight": 1.0 },
-    { "source": "risk:<name>", "target": "decision:<name>", "type": "mitigated_by", "direction": "forward", "weight": 0.9 }
-  ]
-}
-```
+**Hypothesis question** — state your assumption, ask for correction. Use for most questions.
+> "My understanding is that X does Y. Is that right, or does it also/instead/never do Z?"
 
-### Probing Technique
+**Concrete scenario** — name a specific situation and ask what happens. Use to probe edge cases and expose assumptions.
+> "If actor A performs operation B while actor C is doing D — what should happen? And what actually happens today?"
 
-Ask questions in this order for each concept area:
+**Quick confirmation** — a binary or short-option check. Use to verify details rapidly after an open answer.
+> "Just to confirm: is this rule always in effect, or only in [specific context]? (always / only when X / other)"
 
-1. **What** — What is this thing? Can you describe it in one or two sentences?
-2. **Parts** — What sub-parts does it have? What are the components that make it up?
-3. **Rules** — What must always be true about it? What conditions trigger different behavior?
-4. **Decisions** — What choices were made about how it works? Why those choices?
-5. **Scope** — When/where does this apply? Only in this feature? For all users?
-6. **Risks** — What could go wrong if this is implemented incorrectly? What edge cases are tricky (e.g. rounding, ordering, concurrent updates)? What would a customer lose or experience incorrectly? What has gone wrong before or almost went wrong?
-7. **Evidence** — Is there documentation, a ticket, or code that shows this?
-
-For each risk identified, also ask:
-- How likely is it to happen? (low / medium / high)
-- How severe would the impact be? (low / medium / high / critical)
-- Is there already a decision or constraint that mitigates it?
-
-For each question, mark the response as `tentative` or `agreed`. Switch to `agreed` only when the Product Specialist confirms and you paraphrase back their meaning and they confirm your paraphrase is correct.
+**Paraphrase check** — summarize what you understood and ask for explicit confirmation before writing to graph.
+> "Let me make sure I have this right: [your precise synthesis]. Is that accurate? What did I miss or get wrong?"
 
 ---
 
-## Phase 3: Consensus Check
+### Aspect 1: Identity and Scope
 
-Periodically (or when the Product Specialist signals done), verify mutual understanding:
+Goal: establish what the feature IS, what it is NOT, and what "done" looks like.
 
-1. Summarize back what was agreed in the conversation:
-   - List the key concepts and their sub-concepts
-   - List the constraints with their invariants
-   - List the decisions with their rationale and scope
-   - List all identified risks with their severity and any known mitigations
-   - List any claims that are still tentative
+Questions to ask (one at a time, hypothesis-first):
 
-2. Ask: "Have I understood this correctly? Is there anything I've missed or misrepresented?"
+1. *"My current understanding of [topic] is: [your synthesis from context/graph]. What's wrong or incomplete about that?"*
+2. *"What problem does this feature solve for the user? What would they have to do without it?"*
+3. *"What is explicitly OUT of scope for this feature — things someone might expect but we're not doing?"*
+4. *"What does a successful outcome look like? If I came back in three months and this was working perfectly, what would I observe?"*
+5. *"Is there an existing feature this replaces, extends, or competes with?"*
 
-3. If the Product Specialist confirms, mark all current claims as `confidence: agreed`, set all current decisions to `status: accepted`
-
-4. If gaps remain, continue interviewing until consensus
+After the last answer in this aspect, write a `feature` node and any `concept` nodes that emerged.
 
 ---
 
-## Phase 4: Merge into Knowledge Graph
+### Aspect 2: Actors and Permissions
+
+Goal: identify every role that interacts with this feature and what each can and cannot do.
+
+Questions to ask:
+
+1. *"Who uses this feature? I'll list who I think is involved: [list from graph/context]. Who's missing, and who on that list actually isn't involved?"*
+2. For each actor: *"What exactly can [actor] do with this feature? Be specific — not just 'use it' but what actions they initiate."*
+3. *"Is there any role that can see this feature but cannot use it, or can use it but with restrictions?"*
+4. *"Who is explicitly blocked from this? Is that enforced in the product or just a policy?"*
+5. Scenario: *"If [actor A] tries to do [operation] — which should only be for [actor B] — what happens? An error? Silent failure? Redirect?"*
+6. *"Are there any temporary or contextual permissions — roles that gain or lose access based on state?"*
+
+After this aspect, write `actor` nodes and `performed_by` / `restricted_for` edges.
+
+---
+
+### Aspect 3: Operations and Flow
+
+Goal: name every action the feature performs and understand their sequence, triggers, and conditions.
+
+Questions to ask:
+
+1. *"Walk me through this feature step by step as if I'm the user. What happens first?"*
+2. For each step: *"You said '[step]'. Give that a name — what would you call this operation in plain business language?"*
+3. *"What must have happened before [operation] can run? Are there preconditions?"*
+4. *"Can any of these operations run in parallel, or must they be sequential? What breaks if they run out of order?"*
+5. *"What triggers each operation — a user action, a time schedule, another system, an event?"*
+6. Scenario: *"What happens if [operation A] is skipped — either by accident or by an actor who bypasses the UI? Does the system detect it? Does it matter?"*
+7. *"Are there operations that only happen on certain paths — for example, only on first use, or only if a certain condition is met?"*
+
+After this aspect, write `operation` nodes and `sequence` / `performed_by` / `has_operation` edges.
+
+---
+
+### Aspect 4: Entities and Data
+
+Goal: identify every business object this feature creates, reads, modifies, or destroys, and what matters about each.
+
+Questions to ask:
+
+1. *"What data does this feature work with? Name every object type involved — not database tables, but business concepts."*
+2. For each entity: *"When is a [entity] created? What gives it life? When does it end?"*
+3. *"Which fields on [entity] are significant for this feature's logic? Not all fields — just the ones that drive behavior."*
+4. *"Are there states or statuses that [entity] moves through? What are the valid transitions?"*
+5. Scenario: *"If [entity] is in state X and [operation] runs — does it succeed, fail, or behave differently than when it's in state Y?"*
+6. *"Is there any data this feature produces that other features consume? Or data it depends on that's produced elsewhere?"*
+
+After this aspect, write `entity` nodes and `uses_entity` edges.
+
+---
+
+### Aspect 5: Business Rules and Policies
+
+Goal: surface the "must", "must not", and "must always" statements that govern this feature.
+
+Questions to ask:
+
+1. *"What are the non-negotiable rules for this feature? Things that must always be true, no matter what?"*
+2. For each rule: *"When exactly does this rule apply? Is it always, or only in certain conditions?"*
+3. *"What rules have exceptions? Name the exception and when it applies."*
+4. *"Is there anything this feature must never do, even if asked to? Things that would be wrong regardless of who requests it?"*
+5. *"Are any of these rules enforced today in code, or are they just policy? Which ones could theoretically be violated?"*
+6. Challenge: *"You said [rule A] and earlier you said [rule B]. These seem to conflict in [scenario]. Which wins?"* (Ask this when contradictions emerge.)
+7. *"Are there rules that apply differently to different actors — the same action is allowed for one role but forbidden for another?"*
+
+After this aspect, write `business-rule` nodes and `governs` edges. Write `constraint` nodes for the technical invariants.
+
+---
+
+### Aspect 6: Decisions and Rationale
+
+Goal: capture every "we chose X over Y" commitment so future implementors understand why things are the way they are.
+
+Questions to ask:
+
+1. *"What design choices were made for this feature that someone implementing it later might question?"*
+2. For each decision: *"What were the alternatives you considered? Why did you reject them?"*
+3. *"Are there any decisions that were made because of external constraints — time, technology, another team's API, a regulatory requirement?"*
+4. *"Is there anything that's done a certain way for historical reasons that no longer apply — a legacy choice that lives on?"*
+5. *"If the team revisited this feature in a year, what decision would they most likely want to change?"*
+6. *"Are there any decisions that were made provisionally — 'for now' choices that need to be revisited?"*
+
+After this aspect, write `decision` nodes with `rationale` and `scope`. Write `decides` edges.
+
+---
+
+### Aspect 7: Risks and Hazards
+
+Goal: capture what the specialist knows could go wrong — in implementation, in production, or for the customer.
+
+Questions to ask:
+
+1. *"What worries you most about implementing this feature? What could go wrong?"*
+2. *"Where are the tricky edge cases in this feature's logic? Places where a developer could make an honest mistake that would be hard to detect?"*
+3. For any calculation or financial logic: *"How does [calculation] work when [edge case — zero values, rounding, overflow, currency conversion, concurrent writes]?"*
+4. *"What would a customer experience if this feature had a subtle bug? What would they see or lose?"*
+5. *"Has anything like this gone wrong before — either with this feature in a previous version, or with a similar feature elsewhere in the product?"*
+6. *"What assumptions are baked into this design that would break if [external factor] changed?"*
+7. For each risk identified: *"How likely is this to happen? (low / medium / high) How bad is it if it does? (low / medium / high / critical)"*
+8. *"Is there already a safeguard for this risk — a decision that prevents it, or a constraint that catches it?"*
+
+After this aspect, write `risk` nodes and `has_risk` / `mitigated_by` edges. Update existing `decision` / `constraint` nodes with mitigation links.
+
+---
+
+### Aspect 8: Integration and Dependencies
+
+Goal: understand what this feature depends on and what depends on it.
+
+Questions to ask:
+
+1. *"What other features or systems does this depend on? What would break if [dependency] changed or became unavailable?"*
+2. *"What does this feature expose to the rest of the product? What do other features rely on it for?"*
+3. *"Are there any external services, APIs, or third parties involved? What happens to this feature if that integration fails?"*
+4. *"Is there anything about this feature that needs to be coordinated with another team or system owner?"*
+5. Scenario: *"If this feature is deployed but [downstream feature] hasn't been updated yet — what breaks? Is that a safe intermediate state?"*
+
+After this aspect, write `depends_on` / `used_by` edges between features, update `concept` and `decision` nodes with scope.
+
+---
+
+### Writing to the Graph After Each Aspect
+
+After each aspect is completed and you have paraphrase-checked the key findings with the specialist:
+
+1. Update `pr-nodes.json` — append new nodes, update existing ones (by matching `id`)
+2. Update `pr-edges.json` — append new edges (deduplicate by `(source, target, type)`)
+3. Mark the aspect complete in `interview-context.json`
+4. Say briefly what was captured: *"I've recorded [N] concepts, [M] rules, and [K] risks from this section. Moving on to [next aspect]."*
+
+Do not batch graph writes to the end — capturing incrementally allows the specialist to see the graph grow and correct misunderstandings before they propagate.
+
+---
+
+## Phase 3: Gap Analysis Loop
+
+After all eight aspects are complete, analyze the intermediate graph files (`pr-nodes.json` + `pr-edges.json`) for the following problems. For each problem found, ask targeted follow-up questions before accepting the interview as complete.
+
+### Gap categories to check
+
+**Undefined terms** — are there `concept` nodes with a `summary` that is still vague, or entity nodes whose lifecycle was never described? Ask: *"Earlier you mentioned [concept]. I captured it as [summary]. Is that precise enough, or is there a more exact definition?"*
+
+**Dangling operations** — are there `operation` nodes with no `performed_by` edge? Ask: *"Who initiates [operation]? I don't have that recorded."*
+
+**Unscoped rules** — are there `business-rule` or `constraint` nodes without a `scope[]`? Ask: *"Does [rule] apply everywhere in the product, or only within [feature]?"*
+
+**Unmitigated high risks** — are there `risk` nodes with `severity: "high"` or `"critical"` and no `mitigated_by` edge? Ask: *"For [risk] — is there currently any safeguard, plan, or design decision that addresses it? Or is it an open hazard?"*
+
+**Orphan decisions** — are there `decision` nodes with no `rationale`? Ask: *"Why was [decision] made? What would have been the alternative?"*
+
+**Missing status on decisions** — are there decisions still at `status: "draft"`? Ask: *"Is [decision] settled, or is it still being worked out?"*
+
+**Contradictions** — are there two claims or rules that cannot both be true? Surface them: *"You said [A] earlier, and just now [B]. These seem to conflict when [scenario]. Which is right, or are they both right but in different contexts?"*
+
+**Missing entity transitions** — are there entity nodes with no status/lifecycle information? Ask: *"When does a [entity] cease to exist or become invalid?"*
+
+**Actors without restrictions** — does the feature have restricted operations but no `restricted_for` edges? Ask: *"Who cannot do [operation]? Is it open to all actors by default?"*
+
+### Loop condition
+
+After each gap analysis pass, if any problems were found and new questions were asked:
+- Write updated nodes/edges to the intermediate files
+- Run the gap analysis again on the updated graph
+- Continue until a full pass finds no gaps
+
+A clean pass means:
+- All concepts have a non-vague `summary`
+- All operations have at least one `performed_by` edge
+- All rules have a `scope`
+- All high/critical risks have either a `mitigated_by` edge or an explicit note that no mitigation exists yet
+- All decisions have `rationale` and `status: "accepted"` or `"draft"` with a reason
+- No unresolved contradictions between claims
+
+---
+
+## Phase 4: Final Consensus Check
+
+When the gap analysis passes cleanly, do a final synthesis check with the specialist.
+
+Present a structured summary — this is not a question, it is a statement for them to correct:
+
+> "Here is what I've recorded about [topic]. Please tell me anything that's wrong, missing, or described in a way you wouldn't recognize.
+>
+> **The feature:** [one-paragraph synthesis]
+>
+> **Who uses it:** [actor list with what each can and cannot do]
+>
+> **How it works:** [ordered operation list with preconditions]
+>
+> **The rules that govern it:** [business rules and constraints, in plain language]
+>
+> **What was decided and why:** [decisions with rationale]
+>
+> **The risks we identified:** [risk list grouped by severity]
+>
+> **What it depends on / exposes:** [integration summary]"
+
+Then ask: *"Is there anything I've misrepresented, or anything important that isn't there?"*
+
+If corrections are given, update the graph and repeat the synthesis summary for the corrected sections only.
+
+When the specialist confirms the synthesis is correct:
+- Mark all `claim` nodes with `confidence: "agreed"`
+- Set all `decision` nodes to `status: "accepted"` (or `"draft"` if explicitly still open)
+- Update `interview-context.json` status to `"complete"`
+
+---
+
+## Phase 5: Merge into Knowledge Graph
 
 1. Read the existing `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` (if it exists)
-2. Read the new `pr-nodes.json` and `pr-edges.json`
+2. Read `pr-nodes.json` and `pr-edges.json`
 3. Merge:
-   - Nodes with the same `id` are deduplicated (keep existing if already `accepted` or `implemented`, otherwise update)
-   - Edges are deduplicated by `(source, target, type)` composite
+   - Nodes with the same `id`: keep existing if `status: "accepted"` or `"implemented"`, otherwise replace
+   - Edges: deduplicate by `(source, target, type)` composite
    - All new nodes/edges are appended
-4. Ensure a `layer:knowledge` layer exists — add any new Product Specialist-derived nodes to its `nodeIds`
-5. Validate the merged graph using the schema validation
+4. Ensure a `layer:knowledge` layer exists — add all new nodes to its `nodeIds`
+5. Validate the merged graph against the schema
 6. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
 
 ---
 
-## Phase 5: Summary
+## Phase 6: Summary
 
-Report to the user:
-- Topics covered
-- Decisions extracted (with rationale)
-- Constraints extracted (with invariants)
-- Concepts extracted (with sub-concept hierarchy)
-- Risks identified (grouped by severity: critical → high → medium → low)
-- Any gaps or open questions remaining
-- Path to the updated graph
+Report to the specialist:
+
+- **Feature captured:** name and one-sentence description
+- **Actors:** list with permission summary
+- **Operations:** count and list
+- **Entities:** list
+- **Business rules and constraints:** count
+- **Decisions:** count, with status breakdown (accepted / draft)
+- **Risks:** grouped by severity (critical → high → medium → low), with mitigation status
+- **Open questions:** any items left at `status: "draft"` or `confidence: "tentative"`
+- **Path:** `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+
+If any open questions remain, offer to continue: *"There are [N] open items. Should we resolve them now, or revisit later?"*
 
 Offer to launch the dashboard:
 
-> Run `/grasp-dashboard` to view the updated knowledge graph.
+> Run `/grasp-dashboard` to visualize the knowledge graph.
 
 ---
 
-## Reference: Product Requirements Interview Node Shapes
+## Reference: Node Shapes
 
-```
-Decision node:
+```json
+{
+  "id": "feature:<kebab-name>",
+  "type": "feature",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<one-paragraph description>",
+  "status": "planned",
+  "tags": [],
+  "complexity": "moderate"
+}
+
+{
+  "id": "operation:<kebab-name>",
+  "type": "operation",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<what this action does>",
+  "status": "planned",
+  "tags": []
+}
+
+{
+  "id": "actor:<kebab-name>",
+  "type": "actor",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<who this is>",
+  "permissions": ["<what they can do>"],
+  "restrictions": ["<what they cannot do>"],
+  "tags": []
+}
+
+{
+  "id": "business-rule:<kebab-name>",
+  "type": "business-rule",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<what the rule says>",
+  "ruleText": "<plain-language policy statement>",
+  "status": "active",
+  "scope": ["<feature-or-domain>"],
+  "tags": []
+}
+
+{
+  "id": "entity:<kebab-name>",
+  "type": "entity",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<what this object is and its lifecycle>",
+  "tags": []
+}
+
 {
   "id": "decision:<kebab-name>",
   "type": "decision",
@@ -249,14 +512,12 @@ Decision node:
   "source": "interview",
   "name": "<name>",
   "summary": "<what was decided>",
-  "rationale": "<why this decision>",
+  "rationale": "<why this, not alternatives>",
   "status": "accepted",
-  "scope": ["auth", "frontend"],
-  "tags": ["auth", "security"],
-  "complexity": "moderate"
+  "scope": ["<feature-or-domain>"],
+  "tags": []
 }
 
-Constraint node:
 {
   "id": "constraint:<kebab-name>",
   "type": "constraint",
@@ -264,25 +525,21 @@ Constraint node:
   "source": "interview",
   "name": "<name>",
   "condition": "<when this applies>",
-  "invariant": "<what must hold true>",
-  "scope": ["auth"],
-  "tags": ["security"],
-  "complexity": "simple"
+  "invariant": "<what must always hold true>",
+  "scope": ["<feature>"],
+  "tags": []
 }
 
-Concept node:
 {
   "id": "concept:<kebab-name>",
   "type": "concept",
   "kind": "knowledge",
   "source": "interview",
   "name": "<name>",
-  "summary": "<description>",
-  "tags": [],
-  "complexity": "moderate"
+  "summary": "<precise definition — not vague>",
+  "tags": []
 }
 
-Claim node:
 {
   "id": "claim:<short-uuid>",
   "type": "claim",
@@ -292,11 +549,9 @@ Claim node:
   "summary": "<the assertion>",
   "confidence": "agreed",
   "rationale": "<evidence or reasoning>",
-  "tags": [],
-  "complexity": "simple"
+  "tags": []
 }
 
-Risk node:
 {
   "id": "risk:<kebab-name>",
   "type": "risk",
@@ -306,7 +561,7 @@ Risk node:
   "summary": "<what could go wrong and why it matters>",
   "severity": "high",
   "probability": "medium",
-  "mitigation": "<how this risk is or could be addressed>",
+  "mitigation": "<how this risk is or could be addressed — empty string if none>",
   "scope": ["<feature-or-domain>"],
   "tags": []
 }
