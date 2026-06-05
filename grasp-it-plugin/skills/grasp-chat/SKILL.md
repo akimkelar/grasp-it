@@ -6,7 +6,9 @@ argument-hint: [query]
 
 # /grasp-chat
 
-Answer questions about this codebase using the knowledge graph at `.grasp-it/knowledge-graph.json`.
+Answer questions about a codebase using the knowledge graph stored in Neo4j (or a local `.grasp-it/knowledge-graph.json` file if present).
+
+> **Works for non-developers too.** If you do not have the codebase locally, you can still query the knowledge graph as long as Neo4j credentials are configured (see `~/.grasp-it/neo4j.env` or the project `.env`). You do not need to run `/grasp` yourself — a developer must have built the graph first.
 
 ## Graph Structure Reference
 
