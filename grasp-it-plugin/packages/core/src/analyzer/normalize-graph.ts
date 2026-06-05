@@ -3,6 +3,8 @@ const VALID_PREFIXES = new Set([
   "config", "document", "service", "table", "endpoint",
   "pipeline", "schema", "resource",
   "domain", "flow", "step",
+  "feature", "operation", "actor", "business-rule",
+  "entity", "decision", "constraint", "claim", "risk",
 ]);
 
 const TYPE_TO_PREFIX: Record<string, string> = {
@@ -22,6 +24,15 @@ const TYPE_TO_PREFIX: Record<string, string> = {
   domain: "domain",
   flow: "flow",
   step: "step",
+  feature: "feature",
+  operation: "operation",
+  actor: "actor",
+  "business-rule": "business-rule",
+  entity: "entity",
+  decision: "decision",
+  constraint: "constraint",
+  claim: "claim",
+  risk: "risk",
 };
 
 /**
@@ -179,6 +190,10 @@ const PREFIX_TO_TYPE: Record<string, string> = {
   service: "service", table: "table", endpoint: "endpoint",
   pipeline: "pipeline", schema: "schema", resource: "resource",
   domain: "domain", flow: "flow", step: "step",
+  feature: "feature", operation: "operation", actor: "actor",
+  "business-rule": "business-rule", entity: "entity",
+  decision: "decision", constraint: "constraint",
+  claim: "claim", risk: "risk",
 };
 
 /** Infer node type from an ID's prefix (e.g. "step:foo" → "step"). Falls back to "file". */
