@@ -107,7 +107,7 @@ build_plugin() {
   if [[ ! -f "$core_dist/index.js" ]]; then
     printf -- '→ Building @grasp-it/core (pre-computed for skill runtime)\n'
     if command -v pnpm >/dev/null 2>&1; then
-      (cd "$REPO_DIR" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @grasp-it/core build
+      (cd "$REPO_DIR" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @grasp-it/core build)
     else
       printf -- '  warning: pnpm not found — skipping build. Skills may need Node.js ≥ 22 and pnpm ≥ 10.\n'
     fi
