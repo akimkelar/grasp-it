@@ -101,10 +101,10 @@ If you are using Grasp-It on Codex, ChatGPT, or any platform other than Claude C
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash -s -- codex
 
 # Windows (PowerShell)
-iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1 | iex
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1).Content)) codex
 ```
 
 **2. Start analyzing:**
@@ -220,12 +220,12 @@ Grasp-It supports multiple AI coding platforms via a one-line installer.
 
 **macOS / Linux:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash -s -- codex
 ```
 
 **Windows (PowerShell):**
 ```powershell
-iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1 | iex
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1).Content)) codex
 ```
 
 Supported platforms: `gemini`, `codex`, `opencode`, `cursor`, `vscode`, `copilot`, `cline`, `trae`, and more.
