@@ -234,6 +234,34 @@ Supported platforms: `gemini`, `codex`, `opencode`, `cursor`, `vscode`, `copilot
 
 ---
 
+## Uninstalling and Reinstalling
+
+### Uninstall (full removal)
+
+```bash
+# Step 1: remove skill symlinks and the ~/.grasp-it-plugin symlink
+~/.grasp-it/repo/install.sh --uninstall <platform>
+
+# Step 2: remove the repo checkout and stored credentials
+rm -rf ~/.grasp-it
+```
+
+`--uninstall` intentionally keeps `~/.grasp-it/repo` so that other platforms sharing the same
+checkout are not broken. Step 2 removes everything that remains, including any saved Neo4j
+credentials (`~/.grasp-it/neo4j.env`). The `~/.grasp-it-plugin` symlink is already removed by
+step 1, so no separate command is needed for it.
+
+### Reinstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash -s <platform>
+```
+
+After a full reinstall `~/.grasp-it/neo4j.env` will not exist, so the first `/grasp` run
+triggers the first-time setup wizard to reconfigure your Neo4j connection.
+
+---
+
 ## Contributing
 
 Contributions are welcome.
