@@ -419,15 +419,53 @@ When the specialist confirms the synthesis is correct:
 
 ## Phase 5: Merge into Knowledge Graph
 
-1. Read the existing `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` (if it exists)
-2. Read `pr-nodes.json` and `pr-edges.json`
-3. Merge:
-   - Nodes with the same `id`: keep existing if `status: "accepted"` or `"implemented"`, otherwise replace
-   - Edges: deduplicate by `(source, target, type)` composite
-   - All new nodes/edges are appended
-4. Ensure a `layer:knowledge` layer exists — add all new nodes to its `nodeIds`
-5. Validate the merged graph against the schema
-6. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+### 5a. Load existing graph
+
+Read the existing `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` (if it exists) into memory as `existingGraph`.
+Read `pr-nodes.json` and `pr-edges.json` as the incoming interview output.
+
+### 5b. Classify each incoming node
+
+For each incoming node, compare against all existing nodes by `id`:
+
+- **Same `id`, same `source: "interview"`** — re-run of the same skill on the same topic:
+  - Update `summary`, `rationale`, `scope`, `tags` with the incoming values
+  - If the existing node has `status: "accepted"` or `"implemented"`, keep that status (do not downgrade to `"draft"`)
+  - Keep all existing edges; append incoming edges that are not already present (deduplicate by `(source, target, type)`)
+
+- **Same `id`, different `source`** (e.g., existing has `source: "code-analysis"`, incoming has `source: "interview"`) — concurrent runs with different perspectives:
+  - **Do not overwrite.** Rename the incoming node's `id` by appending a double-dash suffix and the source name: `feature:invoice-assignment` becomes `feature:invoice-assignment--interview`
+  - This preserves both perspectives explicitly. A later query can show divergences: "here is what the code does vs. what the PO wants."
+
+- **New `id`** (no existing node with that id):
+  - Append the incoming node as-is
+
+### 5c. Track conflicts for user reporting
+
+Maintain a `conflicts[]` list: for every same-`id`, different-`source` rename, record `{ id, existingSource, incomingSource, existingSummary, incomingSummary }`.
+
+### 5d. Merge edges
+
+Edges: deduplicate by `(source, target, type)` composite. All new edges are appended; existing edges are preserved.
+
+### 5e. Ensure layer exists
+
+Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed) node IDs to its `nodeIds` list.
+
+### 5f. Validate and write
+
+1. Validate the merged graph against the schema
+2. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+
+### 5g. Report conflicts to user
+
+If `conflicts` is non-empty, after writing the graph report to the user:
+
+> "I found [N] nodes that already existed from code analysis. Here's where the interview description differs from what the code does:
+> - **[id]**: code says \"[existingSummary]\" / interview says \"[incomingSummary]\"
+> ..."
+
+This turns a merge conflict into actionable information — the implementor knows where intent and implementation diverge.
 
 ---
 

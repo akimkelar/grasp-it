@@ -173,10 +173,51 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 2. Validate using the standard graph validation pipeline (the schema now supports domain/feature/operation types)
 3. If validation fails, log warnings but save what's valid (error tolerance)
 4. **All nodes written to the graph must include `"kind": "knowledge"` and `"source": "code-analysis"`** — this is required by the schema and distinguishes code-mined knowledge from specialist-described knowledge
-5. Save to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
-6. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
 
-### Phase 7: Launch Dashboard
+### Phase 6b: Merge into Domain Graph
+
+The domain graph is stored at `$PROJECT_ROOT/.grasp-it/domain-graph.json`. When merging new domain analysis results:
+
+#### 6b-1. Load existing domain graph
+
+Read the existing `$PROJECT_ROOT/.grasp-it/domain-graph.json` (if it exists) into memory as `existingGraph`.
+Read the new domain analysis output as `incomingNodes` and `incomingEdges`.
+
+#### 6b-2. Classify each incoming node
+
+For each incoming node, compare against all existing nodes by `id`:
+
+- **Same `id`, same `source: "code-analysis"`** — re-run of the same skill on the same topic:
+  - Update `summary`, `name`, `tags` with the incoming values
+  - If the existing node has `status: "accepted"` or `"implemented"`, keep that status (do not downgrade)
+  - Keep all existing edges; append incoming edges that are not already present (deduplicate by `(source, target, type)`)
+
+- **Same `id`, different `source`** (e.g., existing has `source: "interview"`, incoming has `source: "code-analysis"`) — concurrent runs with different perspectives:
+  - **Do not overwrite.** Rename the incoming node's `id` by appending a double-dash suffix and the source name: `feature:invoice-assignment` becomes `feature:invoice-assignment--code-analysis`
+  - This preserves both perspectives explicitly.
+
+- **New `id`** (no existing node with that id):
+  - Append the incoming node as-is
+
+#### 6b-3. Track conflicts for user reporting
+
+Maintain a `conflicts[]` list: for every same-`id`, different-`source` rename, record `{ id, existingSource, incomingSource, existingSummary, incomingSummary }`.
+
+#### 6b-4. Merge edges
+
+Edges: deduplicate by `(source, target, type)` composite. All new edges are appended; existing edges are preserved.
+
+#### 6b-5. Validate and write
+
+1. Validate the merged graph against the schema
+2. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
+3. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
+
+### Phase 7: Clean Up
+
+1. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
+
+### Phase 8: Launch Dashboard
 
 1. Auto-trigger `/grasp-dashboard` to visualize the domain graph
 2. The dashboard will detect `domain-graph.json` and show the domain view by default
