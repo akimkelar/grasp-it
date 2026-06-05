@@ -17,6 +17,11 @@ The knowledge subgraph stores knowledge of two kinds:
 - **Implemented** — what the codebase currently does, extracted by analysis
 - **Planned** — what the PO envisions for a new or changed feature, extracted from interviews
 
+Knowledge nodes carry a `source` property that records where the knowledge came from:
+- `"code-analysis"` — mined from the codebase by `/grasp-domain`
+- `"interview"` — extracted from a specialist/PO conversation by `/grasp-requirements`
+- `"wiki"` — ingested from documentation by `/grasp-knowledge` (future)
+
 Both subgraphs are used together to create tasks, build implementation plans, design test cases,
 and drive implementation. The `IMPLEMENTED_BY` relationship bridges them — tracing a planned
 feature or operation directly to the code that realizes it.
@@ -53,6 +58,9 @@ Node labels are Neo4j-friendly PascalCase strings (e.g. `File`, `BusinessRule`).
 Relationship types are UPPER_SNAKE_CASE (e.g. `:CONTAINS`, `:IMPLEMENTED_BY`).
 
 Each node's subgraph origin is tracked by the `kind` property (`"codebase"` or `"knowledge"`).
+Knowledge nodes additionally carry a `source` property (`"code-analysis"` | `"interview"` | `"wiki"`)
+that records which skill produced them — enabling queries that distinguish implemented facts from
+specialist-described intent.
 
 **Codebase nodes** use labels: `File`, `Function`, `Class`, `Module`, `Config`,
 `Table`, `Endpoint`, `Document`, `Service`, `Pipeline`, `Schema`, `Resource`.
@@ -106,21 +114,42 @@ Business concepts, domain models, and LLM-facts extracted from wikis and intervi
 
 #### Business Layer — populated by `/grasp-domain` and `/grasp-requirements`
 
+Nodes produced by `/grasp-domain` carry `source: "code-analysis"`.
+Nodes produced by `/grasp-requirements` carry `source: "interview"`.
+The same node type can appear from either source; the `source` property tells them apart.
+
 | Label | Description | Properties |
 |-------|-------------|------------|
-| `Domain` | Product domain or area | `id`, `name`, `summary`, `tags[]` |
-| `Feature` | Named product feature | `id`, `name`, `summary`, `status`, `tags[]` |
-| `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `tags[]` |
-| `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `tags[]` |
-| `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `tags[]` |
-| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `tags[]` |
+| `Domain` | Product domain or area | `id`, `name`, `summary`, `source`, `tags[]` |
+| `Feature` | Named product feature | `id`, `name`, `summary`, `status`, `source`, `tags[]` |
+| `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `source`, `tags[]` |
+| `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `source`, `tags[]` |
+| `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `source`, `tags[]` |
+| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `source`, `tags[]` |
 
 #### PO Interview Layer — populated by `/grasp-requirements`
+
+All nodes in this layer carry `source: "interview"`.
 
 | Label | Description | Properties |
 |-------|-------------|------------|
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
 | `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
+| `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]` |
+| `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]` |
+| `Risk` | Potential negative outcome — implementation hazard, business exposure, logic pitfall | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `tags[]` |
+
+**`Claim.confidence`:** `"tentative"` | `"agreed"`
+
+**`Risk.severity`:** `"low"` | `"medium"` | `"high"` | `"critical"`
+
+**`Risk.probability`:** `"low"` | `"medium"` | `"high"`
+
+`Risk` captures what the specialist warns about: edge cases in calculation logic (e.g. invoice
+rounding), customer-facing exposure from a wrong implementation choice, data-loss hazards during
+migration, or scenarios where a rule interacts unexpectedly with another.  These are distinct from
+`Constraint` (which states an invariant) and `BusinessRule` (which states a policy) — a risk
+describes what breaks or goes wrong when either is violated or overlooked.
 
 ### Project Singleton Node
 
@@ -153,21 +182,26 @@ via `IMPLEMENTED_BY`.
 ### Knowledge Provenance Nodes (future — `/grasp-knowledge` only)
 
 These nodes are produced exclusively by the `/grasp-knowledge` skill from wikis, Confluence, or
-external knowledge-base sources. They are **not** extracted from codebases. Domain analysis and
-PO interview agents must not create these types. They exist in the schema for future wiki ingestion.
+external knowledge-base sources. They are **not** extracted from codebases or PO interviews.
 
 | Label | Description | Source | ID pattern |
 |-------|-------------|--------|------------|
 | `Article` | Wiki/knowledge-base article | `/grasp-knowledge` | `article:<slug>` |
 | `Topic` | Topic or category node | `/grasp-knowledge` | `topic:<slug>` |
-| `Claim` | Assertion or thesis | `/grasp-knowledge` | `claim:<slug>` |
 | `Source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
+
+> **Note:** `Claim` was previously reserved for `/grasp-knowledge`. It is now a first-class PO
+> Interview Layer node — see above. Claims produced by `/grasp-requirements` carry `source: "interview"`;
+> claims produced by `/grasp-knowledge` carry `source: "wiki"`.
 
 ### Deferred Node Types
 
-`Concept` — abstract concept or idea. LLM-speculative; no script extraction signal. May appear
-when an LLM produces one during analysis but it is not a primary extraction target and should not
-be actively sought. Remains in the schema as an optional catch-all.
+Previously deferred `Concept`, `Claim`, and `Risk` have been promoted to the PO Interview Layer.
+See that section above.
+
+Remaining deferred types (no clear use case or script signal):
+`Impact`, `Context`, `StateTransition`, `ViewArtifact`, `DataArtifact`, `Evidence`,
+`Process`, `RuleAssessment`, `SubFeature`
 
 ### Key Property Values
 
@@ -192,10 +226,16 @@ Every node carries:
 - `name: string` — human-readable label
 - `type: string` — internal node category in lowercase/kebab-case (e.g. `"function"`, `"business-rule"`, `"domain"`)
 - `kind: string` — subgraph origin: `"codebase"` or `"knowledge"`
+- `source: string` — knowledge origin (knowledge nodes only): `"code-analysis"` | `"interview"` | `"wiki"`. Not set on codebase nodes.
 - `summary: string` — LLM-generated description
 - `tags: string[]` — arbitrary tags
 - `complexity: "simple" | "moderate" | "complex"` — optional
 - `lineRange: [number, number]` — optional; code nodes only
+
+The `source` property is the primary way to distinguish implemented knowledge (mined from code by
+`/grasp-domain`) from specialist-described intent (captured by `/grasp-requirements`). The same
+`Feature` or `BusinessRule` can appear from both sources — use `source` to tell them apart, and
+`status` to understand how far implementation has progressed.
 
 The `kind` property separates the two subgraphs. Use it to scope wipe queries:
 
@@ -247,8 +287,14 @@ MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:CONSTRAINED_BY` | `Decision` / `Feature` / `BusinessRule` | `Constraint` | Rule that applies | `weight: float` |
+| `:CONSTRAINED_BY` | `Decision` / `Feature` / `BusinessRule` / `Concept` | `Constraint` | Rule that applies | `weight: float` |
 | `:DECIDES` | `Decision` | `Feature` / `BusinessRule` | Decision resolves this | `weight: float` |
+| `:SUB_CONCEPT_OF` | `Concept` | `Concept` | Concept is a sub-part of a larger concept | `weight: float` |
+| `:IMPLEMENTS` | `Decision` | `Concept` | Decision fulfills or realizes a concept | `weight: float` |
+| `:SUPPORTS` | `Claim` | `Claim` / `Decision` | Evidence chain — one claim supports another | `weight: float` |
+| `:APPLIES_IN` | `Constraint` / `BusinessRule` / `Risk` | `Concept` / `Feature` / `Operation` | Scopes a rule or risk to a context | `weight: float` |
+| `:HAS_RISK` | `Feature` / `Operation` / `BusinessRule` / `Concept` | `Risk` | Identifies a risk associated with this node | `weight: float` |
+| `:MITIGATED_BY` | `Risk` | `Decision` / `Constraint` | Decision or constraint that addresses this risk | `weight: float` |
 
 ### Bridge Relationship (knowledge → codebase, native within single DB)
 
@@ -266,13 +312,16 @@ MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 graph TD
     subgraph knowledge["Knowledge subgraph (kind: knowledge)"]
         D["Domain"]
-        F["Feature\nstatus: planned|partial|implemented"]
-        O["Operation\nstatus: planned|partial|implemented"]
+        F["Feature\nstatus: planned|partial|implemented\nsource: code-analysis|interview"]
+        O["Operation\nstatus: planned|partial|implemented\nsource: code-analysis|interview"]
         A["Actor"]
         E["Entity"]
-        BR["BusinessRule"]
-        DC["Decision"]
-        CN["Constraint"]
+        BR["BusinessRule\nsource: code-analysis|interview"]
+        DC["Decision\nsource: interview"]
+        CN["Constraint\nsource: interview"]
+        CO["Concept\nsource: interview"]
+        CL["Claim\nconfidence: tentative|agreed\nsource: interview"]
+        RK["Risk\nseverity: low|medium|high|critical\nsource: interview"]
 
         D -->|HAS_FEATURE| F
         F -->|HAS_OPERATION| O
@@ -286,6 +335,17 @@ graph TD
         DC -->|CONSTRAINED_BY| CN
         DC -->|DECIDES| F
         DC -->|DECIDES| BR
+        DC -->|IMPLEMENTS| CO
+        CO -->|SUB_CONCEPT_OF| CO
+        CL -->|SUPPORTS| DC
+        F -->|HAS_RISK| RK
+        O -->|HAS_RISK| RK
+        BR -->|HAS_RISK| RK
+        RK -->|MITIGATED_BY| DC
+        RK -->|MITIGATED_BY| CN
+        CN -->|APPLIES_IN| F
+        CN -->|APPLIES_IN| O
+        BR -->|APPLIES_IN| CO
     end
 
     subgraph codebase["Codebase subgraph (kind: codebase) — rebuilt per /grasp run"]
@@ -375,6 +435,28 @@ RETURN f, collect(DISTINCT dc) AS decisions,
        collect(DISTINCT br) AS rules
 ```
 
+### All risks for a feature (with mitigations)
+
+```cypher
+MATCH (f:Feature {id: $featureId})-[:HAS_OPERATION]->(op:Operation)
+OPTIONAL MATCH (f)-[:HAS_RISK]->(fr:Risk)
+OPTIONAL MATCH (op)-[:HAS_RISK]->(or:Risk)
+WITH f, collect(DISTINCT fr) + collect(DISTINCT or) AS risks
+UNWIND risks AS r
+OPTIONAL MATCH (r)-[:MITIGATED_BY]->(m)
+RETURN r.name, r.severity, r.probability, r.summary,
+       collect(DISTINCT {type: labels(m)[0], name: m.name}) AS mitigations
+ORDER BY r.severity DESC
+```
+
+### Knowledge by source (code-derived vs interview-derived)
+
+```cypher
+MATCH (n) WHERE n.kind = "knowledge"
+RETURN n.source AS source, labels(n)[0] AS label, count(n) AS count
+ORDER BY source, label
+```
+
 ### Find all complex functions related to a domain
 
 ```cypher
@@ -405,6 +487,9 @@ CREATE CONSTRAINT actor_id FOR (n:Actor) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT businessrule_id FOR (n:BusinessRule) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT decision_id FOR (n:Decision) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT constraint_id FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT concept_id FOR (n:Concept) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT claim_id FOR (n:Claim) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT risk_id FOR (n:Risk) REQUIRE n.id IS UNIQUE;
 -- Project singleton — single node per database, holds shared gitCommitHash across users
 CREATE CONSTRAINT project_id FOR (p:Project) REQUIRE p.id IS UNIQUE;
 ```
@@ -422,6 +507,12 @@ CREATE INDEX knowledge_name FOR (n) WHERE n.kind = "knowledge" ON (n.name);
 -- Status filtering (planned vs implemented)
 CREATE INDEX feature_status FOR (n:Feature) ON (n.status);
 CREATE INDEX operation_status FOR (n:Operation) ON (n.status);
+
+-- Source filtering (code-analysis vs interview)
+CREATE INDEX knowledge_source FOR (n) WHERE n.kind = "knowledge" ON (n.source);
+
+-- Risk filtering
+CREATE INDEX risk_severity FOR (n:Risk) ON (n.severity);
 
 -- Complexity filtering
 CREATE INDEX function_complexity FOR (n:Function) ON (n.complexity);
@@ -489,5 +580,8 @@ Internal `type` values (JSON / schema.ts) are lowercase or kebab-case. Neo4j lab
 | `Entity` | `entity` | `entity:<kebab-name>` | `entity:interview` |
 | `Decision` | `decision` | `decision:<kebab-name>` | `decision:jwt-memory-only` |
 | `Constraint` | `constraint` | `constraint:<kebab-name>` | `constraint:no-localstorage` |
+| `Concept` | `concept` | `concept:<kebab-name>` | `concept:invoice-assignment` |
+| `Claim` | `claim` | `claim:<short-uuid>` | `claim:a1b2c3d4` |
+| `Risk` | `risk` | `risk:<kebab-name>` | `risk:rounding-in-invoice-totals` |
 
 ¹ Currently stored as `"BusinessRule"` in schema.ts enum (not yet `"business-rule"`). See Task 17.

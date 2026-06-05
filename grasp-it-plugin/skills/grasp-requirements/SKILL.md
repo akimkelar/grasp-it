@@ -17,6 +17,10 @@ Conduct a structured interview with a Product Specialist to extract product requ
 
 ## Graph Schema
 
+**All nodes created by this skill carry `kind: "knowledge"` and `source: "interview"`.** This
+distinguishes specialist-described knowledge from code-mined knowledge (`source: "code-analysis"`)
+and enables queries that separate intent from implementation.
+
 Product requirements knowledge uses these node types:
 
 - `feature` — a named product capability
@@ -26,8 +30,11 @@ Product requirements knowledge uses these node types:
 - `entity` — a named business object
 - `decision` — a commitment or resolved question (`status: draft | accepted | deprecated`)
 - `constraint` — a rule, invariant, or condition the implementation must respect
-- `concept` — a topic or subject (extended with `subConcepts[]`, `constrainedBy[]`)
-- `claim` — an assertion (extended with `confidence: tentative | agreed`)
+- `concept` — a key abstraction or topic area named by the specialist
+- `claim` — an assertion made during the interview (`confidence: tentative | agreed`)
+- `risk` — a potential negative outcome: implementation hazard, business exposure, calculation
+  pitfall, data-loss scenario, customer-facing risk. Use when the specialist warns about
+  what could go wrong.
 
 Key relationship types for product requirements knowledge:
 
@@ -36,13 +43,15 @@ Key relationship types for product requirements knowledge:
 - `decides` — a claim leads to a decision, which resolves a feature or business rule
 - `implements` — a decision fulfills a concept
 - `supports` — evidence chain between claims
-- `applies_in` — scope/context binding
+- `applies_in` — scope/context binding (constraint, rule, or risk → concept/feature/operation)
 - `governs` — a business rule applies to a feature or operation
 - `uses_entity` — a feature or operation works with an entity
 - `performed_by` — an operation is performed by an actor
 - `restricted_for` — an operation is forbidden for an actor
+- `has_risk` — a feature, operation, business rule, or concept has an associated risk
+- `mitigated_by` — a risk is addressed by a decision or constraint
 
-Node IDs use prefixes: `feature:<kebab-name>`, `operation:<kebab-name>`, `actor:<kebab-name>`, `business-rule:<kebab-name>`, `entity:<kebab-name>`, `decision:<kebab-name>`, `constraint:<kebab-name>`, `concept:<kebab-name>`, `claim:<uuid-short>`.
+Node IDs use prefixes: `feature:<kebab-name>`, `operation:<kebab-name>`, `actor:<kebab-name>`, `business-rule:<kebab-name>`, `entity:<kebab-name>`, `decision:<kebab-name>`, `constraint:<kebab-name>`, `concept:<kebab-name>`, `claim:<uuid-short>`, `risk:<kebab-name>`.
 
 Decision status lifecycle: `draft` → `accepted` → `deprecated`.
 
@@ -123,6 +132,9 @@ Use the `pr-interviewer` agent definition. The agent:
    - **Decisions** — what was decided, and why? What alternatives were considered?
    - **Claims** — what assertions are made? Are they agreed or still tentative?
    - **Scope** — where/when does each rule or decision apply?
+   - **Risks** — what could go wrong? What edge cases in logic (e.g. rounding, ordering, concurrency)?
+     What business exposure does a wrong implementation create for customers? What could be lost
+     during migration or refactoring? Which rule interactions are dangerous?
 
 2. Tracks consensus — a topic is "done" when:
    - All key concepts are named and described
@@ -134,9 +146,10 @@ Use the `pr-interviewer` agent definition. The agent:
 ```json
 {
   "nodes": [
-    { "id": "concept:<name>", "type": "concept", "name": "...", "summary": "...", "tags": [], "complexity": "moderate", "subConcepts": [], "constrainedBy": [] },
-    { "id": "decision:<name>", "type": "decision", "name": "...", "summary": "...", "rationale": "...", "status": "proposed", "scope": [], "tags": [], "complexity": "moderate" },
-    { "id": "constraint:<name>", "type": "constraint", "name": "...", "condition": "...", "invariant": "...", "scope": [], "tags": [], "complexity": "simple" }
+    { "id": "concept:<name>", "type": "concept", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "tags": [], "complexity": "moderate" },
+    { "id": "decision:<name>", "type": "decision", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "rationale": "...", "status": "proposed", "scope": [], "tags": [], "complexity": "moderate" },
+    { "id": "constraint:<name>", "type": "constraint", "kind": "knowledge", "source": "interview", "name": "...", "condition": "...", "invariant": "...", "scope": [], "tags": [], "complexity": "simple" },
+    { "id": "risk:<name>", "type": "risk", "kind": "knowledge", "source": "interview", "name": "...", "summary": "...", "severity": "medium", "probability": "medium", "mitigation": "...", "scope": [], "tags": [] }
   ]
 }
 ```
@@ -147,7 +160,9 @@ Use the `pr-interviewer` agent definition. The agent:
   "edges": [
     { "source": "decision:<name>", "target": "concept:<name>", "type": "implements", "direction": "forward", "weight": 1.0 },
     { "source": "concept:<name>", "target": "constraint:<name>", "type": "constrained_by", "direction": "forward", "weight": 1.0 },
-    { "source": "claim:<uuid>", "target": "decision:<name>", "type": "decides", "direction": "forward", "weight": 0.8 }
+    { "source": "claim:<uuid>", "target": "decision:<name>", "type": "decides", "direction": "forward", "weight": 0.8 },
+    { "source": "feature:<name>", "target": "risk:<name>", "type": "has_risk", "direction": "forward", "weight": 1.0 },
+    { "source": "risk:<name>", "target": "decision:<name>", "type": "mitigated_by", "direction": "forward", "weight": 0.9 }
   ]
 }
 ```
@@ -161,7 +176,13 @@ Ask questions in this order for each concept area:
 3. **Rules** — What must always be true about it? What conditions trigger different behavior?
 4. **Decisions** — What choices were made about how it works? Why those choices?
 5. **Scope** — When/where does this apply? Only in this feature? For all users?
-6. **Evidence** — Is there documentation, a ticket, or code that shows this?
+6. **Risks** — What could go wrong if this is implemented incorrectly? What edge cases are tricky (e.g. rounding, ordering, concurrent updates)? What would a customer lose or experience incorrectly? What has gone wrong before or almost went wrong?
+7. **Evidence** — Is there documentation, a ticket, or code that shows this?
+
+For each risk identified, also ask:
+- How likely is it to happen? (low / medium / high)
+- How severe would the impact be? (low / medium / high / critical)
+- Is there already a decision or constraint that mitigates it?
 
 For each question, mark the response as `tentative` or `agreed`. Switch to `agreed` only when the Product Specialist confirms and you paraphrase back their meaning and they confirm your paraphrase is correct.
 
@@ -175,6 +196,7 @@ Periodically (or when the Product Specialist signals done), verify mutual unders
    - List the key concepts and their sub-concepts
    - List the constraints with their invariants
    - List the decisions with their rationale and scope
+   - List all identified risks with their severity and any known mitigations
    - List any claims that are still tentative
 
 2. Ask: "Have I understood this correctly? Is there anything I've missed or misrepresented?"
@@ -206,6 +228,7 @@ Report to the user:
 - Decisions extracted (with rationale)
 - Constraints extracted (with invariants)
 - Concepts extracted (with sub-concept hierarchy)
+- Risks identified (grouped by severity: critical → high → medium → low)
 - Any gaps or open questions remaining
 - Path to the updated graph
 
@@ -222,6 +245,8 @@ Decision node:
 {
   "id": "decision:<kebab-name>",
   "type": "decision",
+  "kind": "knowledge",
+  "source": "interview",
   "name": "<name>",
   "summary": "<what was decided>",
   "rationale": "<why this decision>",
@@ -235,6 +260,8 @@ Constraint node:
 {
   "id": "constraint:<kebab-name>",
   "type": "constraint",
+  "kind": "knowledge",
+  "source": "interview",
   "name": "<name>",
   "condition": "<when this applies>",
   "invariant": "<what must hold true>",
@@ -243,27 +270,44 @@ Constraint node:
   "complexity": "simple"
 }
 
-Concept node (conversation-extended):
+Concept node:
 {
   "id": "concept:<kebab-name>",
   "type": "concept",
+  "kind": "knowledge",
+  "source": "interview",
   "name": "<name>",
   "summary": "<description>",
-  "sub_concept_of": ["concept:<sub-part>"],
-  "constrained_by": ["constraint:<rule-id>"],
   "tags": [],
   "complexity": "moderate"
 }
 
-Claim node (conversation-extended):
+Claim node:
 {
   "id": "claim:<short-uuid>",
   "type": "claim",
+  "kind": "knowledge",
+  "source": "interview",
   "name": "<name>",
   "summary": "<the assertion>",
   "confidence": "agreed",
   "rationale": "<evidence or reasoning>",
   "tags": [],
   "complexity": "simple"
+}
+
+Risk node:
+{
+  "id": "risk:<kebab-name>",
+  "type": "risk",
+  "kind": "knowledge",
+  "source": "interview",
+  "name": "<name>",
+  "summary": "<what could go wrong and why it matters>",
+  "severity": "high",
+  "probability": "medium",
+  "mitigation": "<how this risk is or could be addressed>",
+  "scope": ["<feature-or-domain>"],
+  "tags": []
 }
 ```

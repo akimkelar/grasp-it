@@ -51,23 +51,48 @@ The following nodes from earlier drafts are **deferred** — they have no script
 speculative LLM extraction, and can be modeled as `tags[]`, `scope[]`, or `BusinessRule` text
 until a concrete use case justifies them:
 
-`Risk`, `Impact`, `Context`, `StateTransition`, `ViewArtifact`, `DataArtifact`, `Evidence`,
+`Impact`, `Context`, `StateTransition`, `ViewArtifact`, `DataArtifact`, `Evidence`,
 `Process`, `RuleAssessment`, `SubFeature`
 
 The following nodes exist in `schema.ts` for future use by `/grasp-knowledge` (wiki ingestion)
 but must **not** be created by codebase analysis or PO interview agents:
 
-`Article`, `Topic`, `Claim`, `Source`
+`Article`, `Topic`, `Source`
 
-`Concept` — LLM-speculative; no script signal. Optional catch-all; not an active extraction target.
+### PO Interview nodes (promoted from deferred)
+
+`Concept`, `Claim`, and `Risk` have been promoted from deferred status to first-class PO Interview
+Layer nodes. They are created only by `/grasp-requirements` during a specialist interview and carry
+`source: "interview"`.
+
+- **`Concept`** — a key abstraction or topic area named by the specialist. Replaces the vague
+  "optional catch-all" role with a structured node used to track what the interview covers.
+- **`Claim`** — an assertion made during the interview. Was reserved for `/grasp-knowledge` wiki
+  ingestion, but interview knowledge also consists of claims (tentative or agreed).
+- **`Risk`** — a potential negative outcome: implementation hazard, business exposure, logic pitfall,
+  edge-case in calculation logic, data-loss scenario during migration. This is what specialists
+  warn about; `BusinessRule` (policy) and `Constraint` (invariant) don't capture it.
+
+### Knowledge source tracking
+
+A `source` property has been added to all knowledge nodes:
+- `source: "code-analysis"` — nodes produced by `/grasp-domain` from codebase mining
+- `source: "interview"` — nodes produced by `/grasp-requirements` from specialist interviews
+- `source: "wiki"` — nodes produced by `/grasp-knowledge` from wiki/Confluence ingestion (future)
+
+This separates implemented facts from specialist-described intent at the property level, enabling
+queries that distinguish what the code does from what the PO envisions.
 
 ### Final node set
 
 **Codebase (scripts + LLM summaries):** `File`, `Function`, `Class`, `Module`, `Config`,
 `Table`, `Endpoint`
 
-**Knowledge (LLM-produced):** `Domain`, `Feature`, `Operation`, `Actor`, `Entity`,
-`BusinessRule`, `Decision`, `Constraint`
+**Knowledge — Business Layer (LLM-produced, source: code-analysis or interview):**
+`Domain`, `Feature`, `Operation`, `Actor`, `Entity`, `BusinessRule`
+
+**Knowledge — PO Interview Layer (source: interview only):**
+`Decision`, `Constraint`, `Concept`, `Claim`, `Risk`
 
 **Bridge:** `IMPLEMENTED_BY` (`Feature / Operation / BusinessRule` → `File / Function / Class /
 Endpoint`) with `{status, confidence}` — native relationship, single DB.
@@ -347,6 +372,9 @@ the product concept of a "feature" — a named, versioned, deliverable slice of 
 | `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-requirements` |
 | `Domain` | Entry point groupings (existing) | Yes (existing) | `/grasp-domain` (existing) |
 | `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-requirements` (existing) |
+| `Concept` | Nothing | Yes — specialist names the abstraction | `/grasp-requirements` only |
+| `Claim` | Nothing | Yes — assertions from interview | `/grasp-requirements` only |
+| `Risk` | Nothing | Yes — hazards, pitfalls, edge cases from specialist | `/grasp-requirements` only |
 | `File`, `Function`, `Class` | Full structural facts | Yes — summaries only | `/grasp` (existing) |
 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | Non-code file parsers (zero LLM cost) | No — structure only | `/grasp` (existing) |
 | `Article`, `Topic`, `Claim`, `Source` | Nothing from codebase | Yes — wiki/knowledge-base extraction | `/grasp-knowledge` (future) |
@@ -593,11 +621,21 @@ tree-sitter-groovy   (ships tree-sitter-groovy.wasm — confirmed)
 | Add `RESTRICTED_FOR` | New relationship | ✅ Final |
 | Add `GOVERNS` | New relationship | ✅ Final |
 | Add `USES_ENTITY` | New relationship | ✅ Final |
-| Add `CONSTRAINED_BY` (extended to Feature/BusinessRule) | Relationship extension | ✅ Final |
+| Add `CONSTRAINED_BY` (extended to Feature/BusinessRule/Concept) | Relationship extension | ✅ Final |
 | Add `DECIDES` (Decision → Feature/BusinessRule) | New relationship | ✅ Final |
 | Add `IMPLEMENTED_BY` | Native bridge relationship | ✅ Final (requires single DB) |
 | Drop `CONTAINS_FLOW`, `FLOW_STEP`, `CROSS_DOMAIN` | Removed with Flow/Step | ✅ Final |
 | Single database, `kind` property separation | Architecture decision | ✅ Final |
+| Add `source` property to all knowledge nodes | Schema property | ✅ Final |
+| Add `Concept` node (PO Interview Layer) | New knowledge node | ✅ Final |
+| Add `Claim` node (PO Interview Layer, also available to `/grasp-requirements`) | Node reclassification | ✅ Final |
+| Add `Risk` node (PO Interview Layer) | New knowledge node | ✅ Final |
+| Add `SUB_CONCEPT_OF` | New relationship | ✅ Final |
+| Add `IMPLEMENTS` (Decision → Concept) | New relationship | ✅ Final |
+| Add `SUPPORTS` (Claim → Claim/Decision) | New relationship | ✅ Final |
+| Add `APPLIES_IN` (Constraint/BusinessRule/Risk → Concept/Feature/Operation) | New relationship | ✅ Final |
+| Add `HAS_RISK` (Feature/Operation/BusinessRule/Concept → Risk) | New relationship | ✅ Final |
+| Add `MITIGATED_BY` (Risk → Decision/Constraint) | New relationship | ✅ Final |
 
 ### Groovy / Grails support (G1–G6)
 
