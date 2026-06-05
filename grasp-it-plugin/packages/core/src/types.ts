@@ -5,7 +5,8 @@ export type NodeType =
   | "pipeline" | "schema" | "resource"
   | "domain" | "feature" | "operation" | "actor" | "business-rule" | "entity"
   | "article" | "topic" | "claim" | "source"
-  | "decision" | "constraint";
+  | "decision" | "constraint"
+  | "risk";
 
 // Edge types (45 total in 11 categories: Structural, Behavioral, Data flow, Dependencies, Semantic, Infrastructure, Schema, Domain, Business, Bridge, Knowledge, Conversation)
 export type EdgeType =
@@ -20,7 +21,8 @@ export type EdgeType =
   | "performed_by" | "restricted_for" | "governs" | "uses_entity"  // Business
   | "implemented_by"                                                // Bridge
   | "cites" | "contradicts" | "builds_on" | "exemplifies" | "categorized_under" | "authored_by" // Knowledge
-  | "decides" | "constrained_by" | "supports" | "applies_in" | "sub_concept_of"; // Conversation
+  | "decides" | "constrained_by" | "supports" | "applies_in" | "sub_concept_of"
+  | "has_risk" | "mitigated_by"; // Conversation
 
 // Optional knowledge metadata for article/entity/topic/claim/source nodes
 export interface KnowledgeMeta {
@@ -67,6 +69,13 @@ export interface GraphNode {
   ruleText?: string;                              // BusinessRule
   // Codebase node properties
   analyzedAtCommit?: string;                      // File (git commit hash at which file was last analyzed)
+  // Shared node properties
+  kind?: "codebase" | "knowledge" | "project";
+  source?: "code-analysis" | "interview" | "wiki";
+  // Risk node properties
+  severity?: "low" | "medium" | "high" | "critical";
+  probability?: "low" | "medium" | "high";
+  mitigation?: string;
 }
 
 // GraphEdge with rich relationship modeling

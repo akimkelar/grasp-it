@@ -13,7 +13,8 @@ export const EdgeTypeSchema = z.enum([
   "performed_by", "restricted_for", "governs", "uses_entity",   // Business
   "implemented_by",                                             // Bridge (knowledge→codebase)
   "cites", "contradicts", "builds_on", "exemplifies", "categorized_under", "authored_by", // Knowledge
-  "decides", "constrained_by", "supports", "applies_in", "sub_concept_of", // Conversation
+  "decides", "constrained_by", "supports", "applies_in", "sub_concept_of",
+  "has_risk", "mitigated_by", // Conversation
 ]);
 
 // Aliases that LLMs commonly generate instead of canonical node types
@@ -131,6 +132,10 @@ export const EDGE_TYPE_ALIASES: Record<string, string> = {
   composition: "sub_concept_of",
   applies_to: "applies_in",
   scoped_by: "applies_in",
+  mitigates: "mitigated_by",
+  addresses: "mitigated_by",
+  risk_of: "has_risk",
+  has_risk_of: "has_risk",
 };
 
 // Aliases for complexity values LLMs commonly generate
@@ -383,6 +388,7 @@ export const GraphNodeSchema = z.object({
     "domain", "feature", "operation", "actor", "business-rule", "entity",
     "article", "topic", "claim", "source",
     "decision", "constraint",
+    "risk",
   ]),
   name: z.string(),
   filePath: z.string().optional(),
@@ -402,6 +408,11 @@ export const GraphNodeSchema = z.object({
   confidence: z.enum(["tentative", "agreed"]).optional(),
   subConcepts: z.array(z.string()).optional(),
   constrainedBy: z.array(z.string()).optional(),
+  kind: z.enum(["codebase", "knowledge", "project"]).optional(),
+  source: z.enum(["code-analysis", "interview", "wiki"]).optional(),
+  severity: z.enum(["low", "medium", "high", "critical"]).optional(),
+  probability: z.enum(["low", "medium", "high"]).optional(),
+  mitigation: z.string().optional(),
 }).passthrough();
 
 export const GraphEdgeSchema = z.object({
