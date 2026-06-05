@@ -21,6 +21,9 @@ CREATE CONSTRAINT businessrule_id IF NOT EXISTS FOR (n:BusinessRule) REQUIRE n.i
 CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (n:Entity) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT decision_id IF NOT EXISTS FOR (n:Decision) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT constraint_id IF NOT EXISTS FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT concept_id IF NOT EXISTS FOR (n:Concept) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT claim_id IF NOT EXISTS FOR (n:Claim) REQUIRE n.id IS UNIQUE;
+CREATE CONSTRAINT risk_id IF NOT EXISTS FOR (n:Risk) REQUIRE n.id IS UNIQUE;
 
 -- Project singleton — single node per database, holds shared gitCommitHash across users
 CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE;
@@ -43,6 +46,20 @@ CREATE INDEX knowledge_name IF NOT EXISTS FOR (n) WHERE n.kind = "knowledge" ON 
 
 CREATE INDEX feature_status IF NOT EXISTS FOR (n:Feature) ON (n.status);
 CREATE INDEX operation_status IF NOT EXISTS FOR (n:Operation) ON (n.status);
+
+-- =============================================================================
+-- SOURCE FILTERING INDEX
+-- Enables efficient queries like "all nodes produced from interviews" vs "all nodes mined from code"
+-- =============================================================================
+
+CREATE INDEX knowledge_source IF NOT EXISTS FOR (n) WHERE n.kind = "knowledge" ON (n.source);
+
+-- =============================================================================
+-- RISK SEVERITY FILTERING INDEX
+-- Enables filtering risks by severity without scanning all Risk nodes
+-- =============================================================================
+
+CREATE INDEX risk_severity IF NOT EXISTS FOR (n:Risk) ON (n.severity);
 
 -- =============================================================================
 -- COMPLEXITY FILTERING INDEX
