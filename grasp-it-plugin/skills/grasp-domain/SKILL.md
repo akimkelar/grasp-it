@@ -15,6 +15,21 @@ Extracts business domain knowledge — domains, features, operations, actors, bu
 - Use `--full` flag to force a fresh scan even if a knowledge graph exists
 - Groovy/Grails entry point patterns (controllers, services, domain classes) are automatically recognized
 
+## Graph Schema
+
+**All nodes created by this skill carry `kind: "knowledge"` and `source: "code-analysis"`.** This
+distinguishes code-mined knowledge from specialist-described knowledge (`source: "interview"`)
+and enables queries that separate implemented facts from planned intent.
+
+Node types produced by this skill:
+
+- `domain` — a business domain or bounded context
+- `feature` — a named product capability
+- `operation` — a meaningful action within a feature
+- `actor` — a user role or system agent
+- `business-rule` — a high-level business policy
+- `entity` — a named business object
+
 ## Instructions
 
 ### Phase 0: Resolve `PROJECT_ROOT`
@@ -157,8 +172,9 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 1. Read the domain analysis output
 2. Validate using the standard graph validation pipeline (the schema now supports domain/feature/operation types)
 3. If validation fails, log warnings but save what's valid (error tolerance)
-4. Save to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
-5. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
+4. **All nodes written to the graph must include `"kind": "knowledge"` and `"source": "code-analysis"`** — this is required by the schema and distinguishes code-mined knowledge from specialist-described knowledge
+5. Save to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
+6. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
 
 ### Phase 7: Launch Dashboard
 
