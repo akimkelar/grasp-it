@@ -35,6 +35,12 @@ Analyze the provided context and produce a domain graph JSON file.
 
 ## Output Schema
 
+**Required Node Fields:** Every node produced by this agent must include:
+```json
+"kind": "knowledge",
+"source": "code-analysis"
+```
+
 Produce a JSON object with this exact structure:
 
 ```json
@@ -52,6 +58,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "domain:<kebab-case-name>",
       "type": "domain",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Human Readable Domain Name>",
       "summary": "<2-3 sentences about what this domain handles>",
       "tags": ["<relevant-tags>"],
@@ -60,6 +68,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "feature:<kebab-case-name>",
       "type": "feature",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Feature Name>",
       "summary": "<what this feature accomplishes>",
       "tags": ["<relevant-tags>"],
@@ -69,6 +79,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "operation:<kebab-case-name>",
       "type": "operation",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Operation Name>",
       "summary": "<what this operation does>",
       "tags": ["<relevant-tags>"],
@@ -78,6 +90,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "actor:<kebab-case-name>",
       "type": "actor",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Actor Name>",
       "summary": "<role or agent description>",
       "tags": ["<relevant-tags>"],
@@ -87,6 +101,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "business-rule:<kebab-case-name>",
       "type": "business-rule",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Business Rule Name>",
       "summary": "<what this rule enforces>",
       "tags": ["<relevant-tags>"],
@@ -96,6 +112,8 @@ Produce a JSON object with this exact structure:
     {
       "id": "entity:<kebab-case-name>",
       "type": "entity",
+      "kind": "knowledge",
+      "source": "code-analysis",
       "name": "<Entity Name>",
       "summary": "<what this entity represents>",
       "tags": ["<relevant-tags>"]
