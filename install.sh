@@ -91,6 +91,7 @@ prompt_platform() {
 clone_or_update() {
   if [[ -d "$REPO_DIR/.git" ]]; then
     printf -- '→ Updating existing checkout at %s\n' "$REPO_DIR"
+    git -C "$REPO_DIR" reset --hard HEAD
     git -C "$REPO_DIR" pull --ff-only
   else
     printf -- '→ Cloning %s → %s\n' "$REPO_URL" "$REPO_DIR"
