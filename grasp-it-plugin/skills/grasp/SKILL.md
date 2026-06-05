@@ -169,7 +169,7 @@ Determine whether to run a full analysis or incremental update.
      NEO4J_CONFIG_FOUND=1
    elif [ -f "$PROJECT_ROOT/.env" ] && grep -q "NEO4J_URI" "$PROJECT_ROOT/.env"; then
      NEO4J_CONFIG_FOUND=1
-   elif [ -f "$HOME/.grasp-it/neo4j.env" ] && grep -q "NEO4J_URI" "$HOME/.grasp-it/neo4j.env" ]; then
+   elif [ -f "$HOME/.grasp-it/neo4j.env" ] && grep -q "NEO4J_URI" "$HOME/.grasp-it/neo4j.env"; then
      NEO4J_CONFIG_FOUND=1
    else
      NEO4J_CONFIG_FOUND=0
@@ -181,16 +181,18 @@ Determine whether to run a full analysis or incremental update.
    1. Prompts for connection type (default: `1` = driver), URI (default: `bolt://localhost:7687`),
       database name (default: `neo4j`), username (default: `neo4j`), and password
    2. Calls `saveConfig()` to write `$PROJECT_ROOT/.env` (which also runs `ensureEnvInGitignore()`)
-   3. Loads env vars from `.env` so subsequent phases have the credentials
+   3. Asks whether to also save globally to `~/.grasp-it/neo4j.env` (default: yes); if yes, calls `saveGlobalConfig()`
+   4. Loads env vars from `.env` so subsequent phases have the credentials
 
    Write the setup script to `$PROJECT_ROOT/.grasp-it/tmp/first-use-setup.mjs`:
    ```javascript
    #!/usr/bin/env node
-   import { writeFileSync, readFileSync } from 'node:fs';
+   import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
    import { join } from 'node:path';
    import { createInterface } from 'readline';
    import { fileURLToPath } from 'node:url';
    import { dirname } from 'node:path';
+   import { homedir } from 'node:os';
 
    const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -257,6 +259,14 @@ Determine whether to run a full analysis or incremental update.
      ensureEnvInGitignore(projectRoot);
    }
 
+   function saveGlobalConfig(config) {
+     const globalDir = join(homedir(), '.grasp-it');
+     mkdirSync(globalDir, { recursive: true });
+     const filePath = join(globalDir, 'neo4j.env');
+     const content = serializeEnvFile(config);
+     writeFileSync(filePath, content, 'utf-8');
+   }
+
    function ask(question) {
      return new Promise(resolve => {
        const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -289,6 +299,12 @@ Determine whether to run a full analysis or incremental update.
      const config = { uri, database, username, password, connectionType: connType };
      saveConfig(projectRoot, config);
 
+     const globalAnswer = await ask('\nSave these credentials globally for all projects? (y/n, default y): ');
+     const saveGlobal = globalAnswer.trim().toLowerCase() !== 'n';
+     if (saveGlobal) {
+       saveGlobalConfig(config);
+     }
+
      // Load the written .env into process.env so bash can source it
      const envPath = join(projectRoot, '.env');
      const content = readFileSync(envPath, 'utf-8');
@@ -305,6 +321,9 @@ Determine whether to run a full analysis or incremental update.
 
      console.log('\n[grasp-it] Neo4j credentials saved to .env');
      console.log('[grasp-it] Added .env to .gitignore');
+     if (saveGlobal) {
+       console.log('[grasp-it] Neo4j credentials also saved globally to ~/.grasp-it/neo4j.env');
+     }
    }
 
    main().catch(err => { console.error(err.message); process.exit(1); });
