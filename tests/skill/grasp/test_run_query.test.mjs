@@ -44,7 +44,7 @@ describe('run-query.mjs — no Neo4j config (graceful skip)', () => {
   });
 
   it('exits 0 with empty results when no Neo4j configuration is found', () => {
-    const result = runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], {});
+    const result = runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], { HOME: root });
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout);
     expect(parsed.results).toEqual([]);

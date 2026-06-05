@@ -8,7 +8,7 @@ export type NodeType =
   | "decision" | "constraint"
   | "risk";
 
-// Edge types (45 total in 11 categories: Structural, Behavioral, Data flow, Dependencies, Semantic, Infrastructure, Schema, Domain, Business, Bridge, Knowledge, Conversation)
+// Edge types (47 total in 11 categories: Structural, Behavioral, Data flow, Dependencies, Semantic, Infrastructure, Schema, Domain, Business, Bridge, Knowledge, Conversation)
 export type EdgeType =
   | "imports" | "exports" | "contains" | "inherits" | "implements"  // Structural
   | "calls" | "subscribes" | "publishes" | "middleware"              // Behavioral

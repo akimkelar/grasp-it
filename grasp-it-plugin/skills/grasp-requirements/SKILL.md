@@ -31,14 +31,14 @@ Node types:
 
 - `feature` — a named product capability
 - `operation` — a meaningful action within a feature
-- `actor` — a user role or system agent
+- `actor` — a user role, user type, organizational unit, external party, or system agent that performs or is restricted from actions
 - `business-rule` — a high-level business policy
 - `entity` — a named business object (e.g. Invoice, Interview, Offer)
 - `decision` — a commitment or resolved question (`status: draft | accepted | deprecated`)
-- `constraint` — a technical invariant or condition the implementation must respect
-- `concept` — a key abstraction named by the specialist during the interview
-- `claim` — an assertion made during the interview (`confidence: tentative | agreed`)
-- `risk` — a potential negative outcome: implementation hazard, business exposure, calculation pitfall, data-loss scenario, customer-facing harm
+- `constraint` — a technical invariant or access condition the implementation must respect
+- `concept` — a key abstraction or topic area named by the specialist during the interview
+- `claim` — a tentative or unresolved assertion made during the interview (`confidence: tentative | agreed`); use when something is stated but not yet settled — a `decision` is for resolved commitments, a `claim` is for things still subject to correction or confirmation
+- `risk` — a potential negative outcome: implementation hazard, business exposure, logic pitfall, edge-case in calculation logic, data-loss scenario, customer-facing harm
 
 Key relationship types:
 
@@ -205,7 +205,7 @@ Goal: identify every role that interacts with this feature and what each can and
 
 Questions to ask:
 
-An **actor** is a user role or system agent — not an individual person. Name actors at the role level (`actor:agency-user`, `actor:manager`, `actor:background-job`, `actor:external-api`). A "user" is not an actor name — give it a precise business role.
+An **actor** is a user role, user type, organizational unit, external party, or system agent that performs or is restricted from actions. Examples: "Manager", "Agency User", "Client Contact", "Finance Department", "Partner Agency", "Background Job", "External API". Name actors at the level of precision the business uses — a contact person at a client company is a valid actor (`actor:client-contact`), as is a department or an automated process. Generic names like "user" are not precise enough — give each actor its actual business role or identity.
 
 1. *"Who uses this feature? I'll list who I think is involved: [list from graph/context]. Who's missing, and who on that list actually isn't involved?"*
 2. For each actor: *"What exactly can [actor] do with this feature? Be specific — not just 'use it' but what actions they initiate."*

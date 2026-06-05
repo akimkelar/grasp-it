@@ -129,17 +129,35 @@ describe("Extended types", () => {
     expect(check).toBe("file");
   });
 
-  it("accepts all 26 edge types", () => {
+  it("accepts all 47 edge types", () => {
     const edgeTypes: EdgeType[] = [
+      // Structural
       "imports", "exports", "contains", "inherits", "implements",
+      // Behavioral
       "calls", "subscribes", "publishes", "middleware",
+      // Data flow
       "reads_from", "writes_to", "transforms", "validates",
+      // Dependencies
       "depends_on", "tested_by", "configures",
+      // Semantic
       "related", "similar_to",
-      "deploys", "serves", "migrates", "documents",
-      "provisions", "routes", "defines_schema", "triggers",
+      // Infrastructure
+      "deploys", "serves", "provisions", "triggers",
+      // Schema/Data
+      "migrates", "documents", "routes", "defines_schema",
+      // Domain
+      "has_feature", "has_operation", "sequence",
+      // Business
+      "performed_by", "restricted_for", "governs", "uses_entity",
+      // Bridge
+      "implemented_by",
+      // Knowledge
+      "cites", "contradicts", "builds_on", "exemplifies", "categorized_under", "authored_by",
+      // Conversation
+      "decides", "constrained_by", "supports", "applies_in", "sub_concept_of",
+      "has_risk", "mitigated_by",
     ];
-    expect(edgeTypes).toHaveLength(26);
+    expect(edgeTypes).toHaveLength(47);
   });
 
   it("StructuralAnalysis has optional non-code fields", () => {

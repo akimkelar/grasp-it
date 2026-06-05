@@ -123,7 +123,7 @@ describe('load-project-meta.mjs — no Neo4j config (no .env)', () => {
   });
 
   it('returns empty object when no Neo4j configuration is found', () => {
-    const result = runScript(LOAD_SCRIPT, [root]);
+    const result = runScript(LOAD_SCRIPT, [root], { HOME: root });
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe('{}');
   });
@@ -176,7 +176,7 @@ describe('save-project-meta.mjs — no Neo4j config (no .env)', () => {
   });
 
   it('exits 0 silently when no Neo4j is configured (graceful degradation)', () => {
-    const result = runScript(SAVE_SCRIPT, [root, '5'], {});
+    const result = runScript(SAVE_SCRIPT, [root, '5'], { HOME: root });
     expect(result.status).toBe(0);
   });
 });
@@ -411,7 +411,7 @@ describe('check-sync.mjs — exits 3 when no Neo4j config found (graceful fallba
   });
 
   it('exits 3 when no Neo4j config is available', () => {
-    const result = runScript(CHECK_SYNC_SCRIPT, [root], {});
+    const result = runScript(CHECK_SYNC_SCRIPT, [root], { HOME: root });
     expect(result.status).toBe(3);
     expect(result.stdout).toMatch(/Neo4j has no analysis yet/);
   });

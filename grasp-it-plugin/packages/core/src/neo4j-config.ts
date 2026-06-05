@@ -30,9 +30,9 @@ export type ConnectionType = "driver" | "cypher-shell" | "mcp";
 
 // Default values
 export const DEFAULTS = {
-  DATABASE: "neo4j",
+  DATABASE: "grasp",
   CONNECTION_TYPE: "driver" as ConnectionType,
-  URI: "bolt://localhost:7687",
+  URI: "neo4j://127.0.0.1:7687",
   USERNAME: "neo4j",
 };
 
@@ -306,15 +306,15 @@ Enter your choice (1, 2, or 3) or press Enter for default (1 - Driver):`,
 
   NEO4J_URI: `Enter your Neo4j connection URI:
 
-  - Local: bolt://localhost:7687
+  - Local: neo4j://127.0.0.1:7687
   - Neo4j Aura: neo4j+s://xxxxx.databases.neo4j.io
-  - Custom: bolt://hostname:7687
+  - Custom: neo4j://hostname:7687
 
-Press Enter for default (bolt://localhost:7687):`,
+Press Enter for default (neo4j://127.0.0.1:7687):`,
 
   NEO4J_DATABASE: `Enter the database name:
 
-Press Enter for default (neo4j):`,
+Press Enter for default (grasp):`,
 
   NEO4J_USERNAME: `Enter your Neo4j username:
 
