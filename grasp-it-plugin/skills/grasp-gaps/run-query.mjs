@@ -2,159 +2,205 @@
 /**
  * run-query.mjs
  *
- * Executes a Cypher query against Neo4j using the neo4j-driver and prints
- * results as JSON. Respects NEO4J_CONNECTION_TYPE — if set to "cypher-shell",
- * exits with code 2 to signal the caller should fall back to cypher-shell.
+ * Executes an arbitrary Cypher query against Neo4j and prints results as JSON.
  *
  * Usage:
- *   node run-query.mjs <project-root> <cypher-query> [params-json]
+ *   node run-query.mjs <project-root> <cypher-query>
  *
- * Input:
- *   project-root   — root of the project (for .env lookup)
- *   cypher-query   — single-line Cypher query to execute
- *   params-json    — optional JSON string of query parameters
+ * Arguments:
+ *   project-root  — root of the project being analyzed
+ *   cypher-query  — the Cypher query to execute
  *
- * Output (stdout as JSON):
- *   { success: true, records: [...], summary: {...} }  — on success
- *   { error: string }                                   — on failure
+ * Environment:
+ *   NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD — credentials (or .env in project root)
+ *   NEO4J_CONNECTION_TYPE — "driver" | "cypher-shell" | "mcp" (default: driver)
  *
  * Exit codes:
- *   0 — query executed successfully
- *   1 — Neo4j not configured or query failed
- *   2 — NEO4J_CONNECTION_TYPE is "cypher-shell" — caller should use cypher-shell
+ *   0 — query succeeded (results printed to stdout)
+ *   1 — connection/query failure
+ *   2 — driver signaled cypher-shell fallback (caller should fall back to cypher-shell)
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "child_process";
+import { getNeo4jConfig, getConnectionType } from "./neo4j-config-loader.mjs";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── Config ─────────────────────────────────────────────────────────────────────
+// ── Neo4j helpers ───────────────────────────────────────────────────────────────
 
-function getNeo4jConfig(projectRoot) {
-  // Check NEO4J_CONNECTION_TYPE first
-  const connectionType = process.env.NEO4J_CONNECTION_TYPE ||
-    (process.env.NEO4J_URI ? "driver" : null);
+/**
+ * Execute a Cypher query via neo4j-driver.
+ * Returns { ok: true, records } on success, { ok: false, reason } on failure.
+ */
+async function runQueryViaDriver(neo4jConfig, query) {
+  const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
 
-  if (connectionType === "cypher-shell") {
-    return { connectionType: "cypher-shell" };
-  }
-
-  // Check environment variables first
-  if (process.env.NEO4J_URI && process.env.NEO4J_USERNAME) {
-    return {
-      connectionType: "driver",
-      NEO4J_URI: process.env.NEO4J_URI,
-      NEO4J_DATABASE: process.env.NEO4J_DATABASE || "neo4j",
-      NEO4J_USERNAME: process.env.NEO4J_USERNAME,
-      NEO4J_PASSWORD: process.env.NEO4J_PASSWORD || "password",
-    };
-  }
-
-  // Try .env in project root
-  const envPath = join(projectRoot, ".env");
-  if (existsSync(envPath)) {
-    try {
-      const content = readFileSync(envPath, "utf-8");
-      const config = {};
-      for (const line of content.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#")) continue;
-        const eqIndex = trimmed.indexOf("=");
-        if (eqIndex === -1) continue;
-        const key = trimmed.slice(0, eqIndex).trim();
-        const value = trimmed.slice(eqIndex + 1).trim();
-        if (key === "NEO4J_URI" || key === "NEO4J_DATABASE" ||
-            key === "NEO4J_USERNAME" || key === "NEO4J_PASSWORD" ||
-            key === "NEO4J_CONNECTION_TYPE") {
-          config[key] = value;
-        }
-      }
-      if (config.NEO4J_URI && config.NEO4J_USERNAME) {
-        if (config.NEO4J_CONNECTION_TYPE === "cypher-shell") {
-          return { connectionType: "cypher-shell" };
-        }
-        return {
-          connectionType: "driver",
-          NEO4J_URI: config.NEO4J_URI,
-          NEO4J_DATABASE: config.NEO4J_DATABASE || "neo4j",
-          NEO4J_USERNAME: config.NEO4J_USERNAME,
-          NEO4J_PASSWORD: config.NEO4J_PASSWORD || "password",
-        };
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  return null;
-}
-
-// ── Query runner ───────────────────────────────────────────────────────────────
-
-async function runQuery(neo4jConfig, query, params) {
   let driver;
   try {
     const { default: neo4j } = await import("neo4j-driver");
     driver = neo4j.driver(
-      neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",
-      neo4j.auth.basic(
-        neo4jConfig.NEO4J_USERNAME || "neo4j",
-        neo4jConfig.NEO4J_PASSWORD || "password"
-      ),
+      NEO4J_URI || "neo4j://localhost:7687",
+      neo4j.auth.basic(NEO4J_USERNAME || "neo4j", NEO4J_PASSWORD || "password"),
     );
   } catch {
-    return { error: "neo4j-driver not available" };
+    return { ok: false, reason: "neo4j-driver not available", fallback: true };
   }
 
   try {
-    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "neo4j" });
-    const result = await session.run(query, params || {});
-    const records = result.records.map((r) => {
+    const session = driver.session();
+    const result = await session.run(query);
+    await session.close();
+    // Convert records to plain objects
+    const records = result.records.map((record) => {
       const obj = {};
-      for (const key of r.keys) {
-        obj[key] = r.get(key);
-      }
+      record.keys.forEach((key) => {
+        const value = record.get(key);
+        // Convert Neo4j Integer, Date, etc. to plain values
+        if (value && typeof value.toString === "function" && value.constructor.name !== "String" && value.constructor.name !== "Number") {
+          obj[key] = value.toString();
+        } else if (Array.isArray(value)) {
+          obj[key] = value.map((v) =>
+            v && typeof v.toString === "function" && v.constructor.name !== "String" && v.constructor.name !== "Number"
+              ? v.toString()
+              : v
+          );
+        } else {
+          obj[key] = value;
+        }
+      });
       return obj;
     });
-    const summary = {
-      counters: result.summary.counters.toJSON(),
-      queryType: result.summary.queryType,
-      serverInfo: {
-        address: result.summary.server.address,
-        version: result.summary.server.version,
-      },
-    };
-    await session.close();
-    return { success: true, records, summary };
+    return { ok: true, records };
   } catch (err) {
-    return { error: err.message };
+    // Any driver error while executing the query means the driver can't be used.
+    // Signal fallback to cypher-shell (exit 2) so the caller can try that instead.
+    // This handles connection refused, timeouts, auth failures, query errors, etc.
+    // The caller will decide whether to fall back or treat it as a hard failure.
+    return {
+      ok: false,
+      reason: err.message,
+      fallback: true,
+    };
   } finally {
     if (driver) await driver.close();
   }
 }
 
+/**
+ * Execute a Cypher query via cypher-shell.
+ * Returns { ok: true, records } on success, { ok: false, reason } on failure.
+ */
+function runQueryViaCypherShell(neo4jConfig, query) {
+  const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
+  const uri = NEO4J_URI || "neo4j://localhost:7687";
+  const username = NEO4J_USERNAME || "neo4j";
+  const password = NEO4J_PASSWORD || "password";
+
+  // Extract host/port from URI for cypher-shell -a argument
+  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+
+  try {
+    const output = execFileSync(
+      "cypher-shell",
+      [
+        "-a", cypherUri,
+        "-u", username,
+        "-p", password,
+        "--format", "plain",
+      ],
+      { input: query, encoding: "utf-8" },
+    );
+
+    // cypher-shell outputs CSV-style results. Parse into records.
+    const lines = output.trim().split("\n");
+    if (lines.length === 0) {
+      return { ok: true, records: [] };
+    }
+
+    const headers = lines[0].split(",").map((h) => h.trim());
+    const records = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(",").map((v) => v.trim());
+      const record = {};
+      headers.forEach((h, idx) => {
+        record[h] = values[idx] ?? null;
+      });
+      records.push(record);
+    }
+
+    return { ok: true, records };
+  } catch (err) {
+    // If cypher-shell binary not found, signal fallback
+    if (err.code === "ENOENT" || err.message.includes("ENOENT")) {
+      return { ok: false, reason: "cypher-shell not available", fallback: true };
+    }
+    return { ok: false, reason: err.message };
+  }
+}
+
+/**
+ * Execute a Cypher query using the configured connection type.
+ */
+async function runQuery(neo4jConfig, query) {
+  const connectionType = getConnectionType();
+
+  if (connectionType === "cypher-shell") {
+    return runQueryViaCypherShell(neo4jConfig, query);
+  }
+
+  if (connectionType === "mcp") {
+    // MCP is out of scope for now — graceful skip (exit 0)
+    return { ok: false, reason: "MCP connection type is not yet supported", skipped: true };
+  }
+
+  // Default: driver
+  const result = await runQueryViaDriver(neo4jConfig, query);
+  if (!result.ok && result.fallback) {
+    // Driver failed with connection error — signal caller to use cypher-shell
+    process.exit(2);
+  }
+  return result;
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────────
 
-const [, , projectRoot, query, paramsJson] = process.argv;
+const projectRoot = process.argv[2];
+const query = process.argv[3];
 
 if (!projectRoot || !query) {
-  console.error("Usage: node run-query.mjs <project-root> <cypher-query> [params-json]");
+  console.error("Usage: node run-query.mjs <project-root> <cypher-query>");
   process.exit(1);
 }
 
+// Check for Neo4j configuration
 const neo4jConfig = getNeo4jConfig(projectRoot);
 if (!neo4jConfig) {
-  console.log(JSON.stringify({ error: "No Neo4j configuration found" }));
+  // No Neo4j configured — skip silently (graceful degradation)
+  console.log(JSON.stringify({ results: [], skipped: "no Neo4j configuration" }));
+  process.exit(0);
+}
+
+// Execute the query
+const result = await runQuery(neo4jConfig, query);
+
+if (!result.ok) {
+  // Check if this is a graceful skip (e.g., MCP not supported)
+  if (result.skipped) {
+    console.log(JSON.stringify({ results: [], skipped: result.reason }));
+    process.exit(0);
+  }
+  // Check if we should signal fallback to cypher-shell
+  if (result.fallback) {
+    process.exit(2);
+  }
+  console.error(`run-query.mjs: Query failed: ${result.reason}`);
   process.exit(1);
 }
 
-if (neo4jConfig.connectionType === "cypher-shell") {
-  process.exit(2); // Signal caller to use cypher-shell
-}
-
-const params = paramsJson ? JSON.parse(paramsJson) : {};
-const result = await runQuery(neo4jConfig, query, params);
-console.log(JSON.stringify(result));
-process.exit(result.error ? 1 : 0);
+// Output results as JSON
+console.log(JSON.stringify({ results: result.records }));
+process.exit(0);

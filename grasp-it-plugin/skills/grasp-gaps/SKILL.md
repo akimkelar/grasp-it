@@ -75,33 +75,16 @@ For routine refreshes, the delegated pass should confirm a narrow gap and write 
 
 ## Runtime prerequisites
 
-Credentials are in the project `.env` file:
+Credentials are loaded automatically by `run-query.mjs` in this priority order:
+1. Environment variables (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`)
+2. Project `.env` file
+3. Global config at `~/.grasp-it/neo4j.env`
 
-- `NEO4J_URI`
-- `NEO4J_DATABASE`
-- `NEO4J_USERNAME`
-- `NEO4J_PASSWORD`
+`NEO4J_CONNECTION_TYPE` controls the backend: `driver` (default), `cypher-shell`, or `mcp`. Use `run-query.mjs` — it reads this setting and routes accordingly without any manual Java check.
 
-Load them with shell sourcing:
-
-```bash
-set -a
-source .env >/dev/null 2>&1
-set +a
-```
-
-Check Java first:
-
-```bash
-java -version
-```
-
-- If Java 21 is available locally, prefer using Java 21 for `cypher-shell` before the first live graph query in the delegated pass.
-- If only an older or different Java is active, try to locate a Java 21 installation before the first live query.
-- If Java 21 is not available, try the query once with the available Java and only switch if `cypher-shell` reports a Java/runtime compatibility error.
-- Do not change Java for unrelated Gradle work in this repository. This Java preference is for Neo4j CLI usage only.
-- Request escalation proactively before the first live Neo4j `cypher-shell` query so the delegated pass does not fail on its first graph read.
-- If graph access still fails with connection or permission errors, rerun the same `cypher-shell` command with the required approval instead of changing the workflow.
+- Do not check Java proactively. Java is only needed when `run-query.mjs` exits with code 2 (driver unavailable) and cypher-shell fallback is required.
+- Request escalation proactively before the first live Neo4j query so the delegated pass does not fail on its first graph read.
+- If graph access still fails with connection or permission errors, rerun the same command with the required approval instead of changing the workflow.
 
 Useful `cypher-shell` reminders for this skill:
 
@@ -118,26 +101,15 @@ Do not hardcode graph paths up front.
 Start with a small health check:
 
 ```bash
-set -a
-source .env >/dev/null 2>&1
-set +a
-
-# Try driver-based query first (respected by run-query.mjs helpers)
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10"
-DRIVER_EXIT=$?
+QUERY_EXIT=$?
 
-if [ $DRIVER_EXIT -eq 0 ]; then
-  # Driver path succeeded
-  :
-elif [ $DRIVER_EXIT -eq 2 ]; then
-  # Driver signaled cypher-shell mode — fall back to cypher-shell
+if [ $QUERY_EXIT -eq 2 ]; then
+  # run-query.mjs signaled cypher-shell fallback (driver unavailable)
+  # Only now check Java — it is only needed for cypher-shell
   java -version
-  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
-    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10;"
-else
-  # Driver not available — try cypher-shell directly
-  java -version
+  set -a; source ~/.grasp-it/neo4j.env 2>/dev/null || source .env 2>/dev/null; set +a
   cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
     "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10;"
 fi

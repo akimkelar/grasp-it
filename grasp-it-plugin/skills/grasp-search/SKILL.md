@@ -19,31 +19,19 @@ Only fall back to code reading after the graph has narrowed the scope, or when t
 
 ## Connection
 
-Credentials are in the project `.env` file (`NEO4J_URI`, `NEO4J_DATABASE`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`).
-Prefer shell sourcing because it is more reliable in this repository:
+Credentials are loaded automatically by `run-query.mjs` in this priority order:
+1. Environment variables (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`)
+2. Project `.env` file
+3. Global config at `~/.grasp-it/neo4j.env`
 
-```bash
-set -a
-source .env >/dev/null 2>&1
-set +a
-```
+`NEO4J_CONNECTION_TYPE` controls the backend: `driver` (default), `cypher-shell`, or `mcp`. Use `run-query.mjs` — it reads this setting and routes accordingly without any manual Java check.
 
 ### Runtime prerequisites
 
-- Check the active Java version before querying.
-- If Java 21 is available locally, prefer using Java 21 for `cypher-shell` before the first live graph query.
-- If only an older or different Java is active, try to locate a Java 21 installation before the first live query.
-- If Java 21 is not available, try the query once with the available Java and only switch if `cypher-shell` reports a Java/runtime compatibility error.
-- Do not change Java for unrelated Gradle work in this repository. This Java preference is for Neo4j CLI usage only.
-
-```bash
-java -version
-```
-
-- If multiple Java versions are installed, use the platform-appropriate mechanism to inspect available versions and select Java 21 for the Neo4j CLI when possible.
 - In this repository environment, live Neo4j access commonly needs network approval even when credentials are present locally.
-- Request escalation proactively before the first live `cypher-shell` query so the skill does not fail partway through on the first graph read.
-- If you still start sandboxed and hit connection or permission errors, rerun the same `cypher-shell` command with the required permissions instead of abandoning the skill.
+- Request escalation proactively before the first live graph query so the skill does not fail partway through.
+- If you still start sandboxed and hit connection or permission errors, rerun the same command with the required permissions instead of abandoning the skill.
+- Java is only needed if `NEO4J_CONNECTION_TYPE=cypher-shell` or if `run-query.mjs` exits with code 2 (driver unavailable). Do not check Java proactively when the connection type is `driver`.
 
 ### Phase 0: Graph Freshness Check
 
@@ -62,46 +50,34 @@ Before querying the graph, check whether it is stale relative to the current HEA
 Run this before broader graph exploration when using the skill in a fresh environment:
 
 ```bash
-set -a
-source .env >/dev/null 2>&1
-set +a
-
-# Try driver-based query first (respected by run-query.mjs helpers)
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3"
-DRIVER_EXIT=$?
+QUERY_EXIT=$?
 
-if [ $DRIVER_EXIT -eq 0 ]; then
-  # Driver path succeeded
-  :
-elif [ $DRIVER_EXIT -eq 2 ]; then
-  # Driver signaled cypher-shell mode — fall back to cypher-shell
+if [ $QUERY_EXIT -eq 2 ]; then
+  # run-query.mjs signaled cypher-shell fallback (driver unavailable)
+  # Only now check Java — it is only needed for cypher-shell
   java -version
-  cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
-    "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3;"
-else
-  # Driver not available — try cypher-shell directly
-  java -version
+  set -a; source ~/.grasp-it/neo4j.env 2>/dev/null || source .env 2>/dev/null; set +a
   cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" \
     "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3;"
 fi
 ```
 
 If this fails:
-- unsupported-Java or runtime-compatibility errors: switch to Java 21 if it is available locally, otherwise switch to a Java version accepted by the installed `cypher-shell`, then retry
 - permission or connection-denied style failures: rerun with the required network approval / permissions
-- auth or database errors: verify `.env` values and that `NEO4J_DATABASE` is loaded
+- auth or database errors: verify `~/.grasp-it/neo4j.env` values (or project `.env`)
+- exit code 2 + cypher-shell missing: install `cypher-shell` or switch `NEO4J_CONNECTION_TYPE` back to `driver`
 - empty or irrelevant results: continue with the search approaches below using broader terms or domain scoping
 
 Basic query execution:
 
 ```bash
-# Use run-query.mjs for driver path, or cypher-shell directly
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5;"
-# For cypher-shell, use: cypher-shell -a $NEO4J_URI -u $NEO4J_USERNAME -p $NEO4J_PASSWORD -d $NEO4J_DATABASE "..."
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5"
 ```
 
-For multi-line queries, use a heredoc or pass a `.cypher` file with `-f`.
+For multi-line queries, pass a single-line query or use a temporary `.cypher` file with `cypher-shell -f`.
 
 ## Graph overview
 
@@ -172,7 +148,7 @@ File -[:DEFINES]-> Class
 ```
 New task received:
   -> Connection health check if environment is fresh or untrusted
-      -> Java/runtime issue? -> activate a Java version supported by the installed cypher-shell
+      -> exit code 2? -> fall back to cypher-shell (Java needed only here)
       -> permission/network issue? -> rerun query with escalation
   -> Approach 1 (broad text search, direct terms, core fields)
       -> poor results? -> retry with synonyms or shorter terms + more fields
@@ -471,7 +447,7 @@ RETURN f.key AS key, f.name AS name, f.featureType AS type
 
 These are common reasons the skill can appear to "not work" even when the graph and query strategy are correct:
 
-- The repository or surrounding toolchain may use a different Java version than the Neo4j CLI. Treat graph querying as a separate runtime concern and use a Java version supported by the installed `cypher-shell`.
+- Do not check Java proactively. Java is only needed when `run-query.mjs` exits with code 2 (driver unavailable) and you need to fall back to `cypher-shell`.
+- Credentials are loaded by `run-query.mjs` automatically: env vars → project `.env` → `~/.grasp-it/neo4j.env`. Do not assume credentials are only in the project `.env`.
 - Sandbox/network restrictions can block Neo4j access with generic permission-style errors. The right response is to rerun the query with escalation, not to skip the graph step.
-- `source .env` is more reliable than `export $(grep '^NEO4J_' .env | xargs)` for this repo - prefer it when env vars are not loading correctly.
 - Use `kind` property filtering to narrow results when the node type is known - it is more precise than filtering by label alone.
