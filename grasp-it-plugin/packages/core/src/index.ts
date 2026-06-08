@@ -145,3 +145,36 @@ export {
   DEFAULTS,
 } from "./neo4j-config.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
+
+// MCP Server for Claude Code integration
+export {
+  MCPServer,
+  createMCPServer,
+  MCPResources,
+  MCPTools,
+  type MCPServerOptions,
+} from "./mcp-server/index.js";
+export type {
+  MCPRequest,
+  MCPResponse,
+  MCPError,
+  MCPResource,
+  MCPResourceContent,
+  MCPTool,
+  MCPToolResult,
+  MCPPaginatedResult,
+  GraphResource,
+  NodeSearchParams,
+  NodeGetParams,
+  EdgeListParams,
+  GraphStatsParams,
+  RunQueryParams,
+  RunQueryResult,
+  ProjectInfoParams,
+  ProjectInfo,
+  SchemaInfoParams,
+  SchemaInfo,
+  NodeTypeInfo,
+  EdgeTypeInfo,
+  GraphStats,
+} from "./mcp-server/types.js";
