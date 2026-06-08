@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, isAbsolute, relative, basename } from "node:path";
-import type { KnowledgeGraph, AnalysisMeta, ProjectConfig, ProjectSingletonMeta } from "../types.js";
+import type { KnowledgeGraph, GraphNode, GraphEdge, AnalysisMeta, ProjectConfig, ProjectSingletonMeta } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 import { validateGraph } from "../schema.js";
 
@@ -250,4 +250,151 @@ export async function loadProjectMeta(
     version: record["version"] as string,
     analyzedFiles: record["analyzedFiles"] as number,
   };
+}
+
+// ── Domain Graph Neo4j Persistence ──────────────────────────────────────────
+
+// Domain element secondary labels map
+const DOMAIN_ELEMENT_LABELS: Record<string, string> = {
+  domain: "Domain",
+  feature: "Feature",
+  operation: "Operation",
+  actor: "Actor",
+  "business-rule": "BusinessRule",
+  entity: "Entity",
+};
+
+/**
+ * Load domain graph from Neo4j.
+ * Returns nodes with label DomainElement plus their secondary label (Domain/Feature/etc).
+ * Falls back to JSON file if Neo4j is unavailable or has no domain elements.
+ *
+ * @param session - Neo4j driver session
+ * @param projectId - Project identifier (defaults to "project:singleton")
+ */
+export async function loadDomainGraphFromNeo4j(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+  projectId: string = PROJECT_SINGLETON_ID,
+): Promise<KnowledgeGraph | null> {
+  const result = await session.run(
+    `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+     RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS nodeType,
+            d.source AS source, d.sourceFile AS sourceFile, d.filePath AS filePath,
+            d.lineRange AS lineRange, d.tags AS tags, d.complexity AS complexity,
+            labels(d) AS labels`,
+    { projectId },
+  );
+
+  if (result.records.length === 0) {
+    return null;
+  }
+
+  const nodes: GraphNode[] = [];
+  for (const record of result.records) {
+    const rec = record as unknown as Record<string, unknown>;
+    const labels = rec["labels"] as string[];
+    // Get the secondary label (first label that isn't DomainElement)
+    const secondaryLabel = labels?.find((l) => l !== "DomainElement") ?? "domain";
+    const nodeType = Object.entries(DOMAIN_ELEMENT_LABELS).find(
+      ([, v]) => v === secondaryLabel,
+    )?.[0] ?? "domain";
+
+    nodes.push({
+      id: rec["id"] as string,
+      name: rec["name"] as string,
+      summary: (rec["summary"] as string) ?? "",
+      type: nodeType as GraphNode["type"],
+      source: rec["source"] as GraphNode["source"],
+      filePath: rec["filePath"] as string | undefined,
+      lineRange: rec["lineRange"] as [number, number] | undefined,
+      tags: (rec["tags"] as string[]) ?? [],
+      complexity: (rec["complexity"] as GraphNode["complexity"]) ?? "simple",
+    });
+  }
+
+  return {
+    version: "1.0.0",
+    kind: "codebase",
+    project: {
+      name: "",
+      languages: [],
+      frameworks: [],
+      description: "",
+      analyzedAt: "",
+      gitCommitHash: "",
+    },
+    nodes,
+    edges: [],
+    layers: [],
+    tour: [],
+  };
+}
+
+/**
+ * Save domain graph to Neo4j.
+ * Writes DomainElement nodes with secondary labels (Domain/Feature/etc).
+ * Updates Project node with domainAnalyzedAt and domainCommit.
+ *
+ * @param session - Neo4j driver session
+ * @param graph - Domain graph to persist
+ * @param projectId - Project identifier (defaults to "project:singleton")
+ * @param commit - Git commit hash at which domain analysis was run
+ */
+export async function saveDomainGraphToNeo4j(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+  graph: KnowledgeGraph,
+  projectId: string = PROJECT_SINGLETON_ID,
+  commit?: string,
+): Promise<void> {
+  // Clear existing domain elements for this project
+  await session.run(
+    `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+     DELETE d`,
+    { projectId },
+  );
+
+  // Write new domain elements
+  for (const node of graph.nodes) {
+    const secondaryLabel = DOMAIN_ELEMENT_LABELS[node.type] ?? "Domain";
+    const labels = `DomainElement:${secondaryLabel}`;
+
+    await session.run(
+      `MATCH (p:Project {id: $projectId})
+       CREATE (d:${labels} {
+         id: $id,
+         name: $name,
+         summary: $summary,
+         source: $source,
+         filePath: $filePath,
+         lineRange: $lineRange,
+         tags: $tags,
+         complexity: $complexity
+       })
+       CREATE (d)-[:PART_OF]->(p)`,
+      {
+        projectId,
+        id: node.id,
+        name: node.name,
+        summary: node.summary ?? "",
+        source: node.source ?? "code-analysis",
+        filePath: node.filePath ?? null,
+        lineRange: node.lineRange ?? null,
+        tags: node.tags ?? [],
+        complexity: node.complexity ?? "simple",
+      },
+    );
+  }
+
+  // Update Project with domain analysis metadata
+  const now = new Date().toISOString();
+  const domainCommit = commit ?? graph.project?.gitCommitHash ?? "";
+
+  await session.run(
+    `MATCH (p:Project {id: $projectId})
+     SET p.domainAnalyzedAt = $domainAnalyzedAt,
+         p.domainCommit = $domainCommit`,
+    { projectId, domainAnalyzedAt: now, domainCommit },
+  );
 }

@@ -6,51 +6,80 @@ argument-hint: [query]
 
 # /grasp-chat
 
-Answer questions about a codebase using the knowledge graph stored in Neo4j (or a local `.grasp-it/knowledge-graph.json` file if present).
+Answer questions about a codebase using the knowledge graph stored in Neo4j (with local `.grasp-it/knowledge-graph.json` as fallback for single-user mode).
 
 > **Works for non-developers too.** If you do not have the codebase locally, you can still query the knowledge graph as long as Neo4j credentials are configured (see `~/.grasp-it/neo4j.env` or the project `.env`). You do not need to run `/grasp` yourself — a developer must have built the graph first.
 
 ## Graph Structure Reference
 
-The knowledge graph JSON has this structure:
-- `project` — {name, description, languages, frameworks, analyzedAt, gitCommitHash}
-- `nodes[]` — each has {id, type, name, filePath?, summary, tags[], complexity, languageNotes?}
-  - Code node types: file, function, class, module, concept
-  - Non-code node types: config, document, service, table, endpoint, pipeline, schema, resource
-  - Domain/knowledge node types: domain, feature, operation, actor, BusinessRule, entity, decision, constraint, article, topic, claim, source
-  - IDs use the node type as prefix, e.g. `file:path`, `function:path:name`, `config:path`, `article:path`
-- `edges[]` — each has {source, target, type, direction, weight}
-  - Key types: imports, exports, contains, calls, depends_on, tested_by, configures, has_feature, has_operation, performed_by, governed_by, uses_entity
-- `layers[]` — each has {id, name, description, nodeIds[]}
-- `tour[]` — each has {order, title, description, nodeIds[]}
+The knowledge graph in Neo4j has these node types:
+- **Codebase nodes**: File, Function, Class, Module, Concept, Config, Service, Table, Endpoint, Pipeline, Schema, Resource
+- **Knowledge nodes**: Domain, Feature, Operation, Actor, BusinessRule, Entity, Decision, Constraint, Article, Topic, Claim, Source
 
-## How to Read Efficiently
-
-1. Use Grep to search within the JSON for relevant entries BEFORE reading the full file
-2. Only read sections you need — don't dump the entire graph into context
-3. Node names and summaries are the most useful fields for understanding
-4. Edges tell you how components connect — follow imports and calls for dependency chains
+Key relationships:
+- `(:Function)-[:CALLS]->(:Function)`
+- `(:Function)-[:PART_OF]->(:Class)`
+- `(:File)-[:DEFINES]->(:Function)`
+- `(:Domain)-[:HAS_FEATURE]->(:Feature)`
+- `(:Feature)-[:HAS_OPERATION]->(:Operation)`
+- `(:Operation)-[:PERFORMED_BY]->(:Actor)`
+- `(:Feature)-[:GOVERNED_BY]->(:BusinessRule)`
 
 ## Instructions
 
-1. Check that `.grasp-it/knowledge-graph.json` exists in the current project root. If not, tell the user to run `/grasp` first.
+### Phase 0: Verify Graph Exists
 
-2. **Read project metadata only** — use Grep or Read with a line limit to extract just the `"project"` section from the top of the file for context (name, description, languages, frameworks).
+1. Query Neo4j for the `Project` singleton:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   ```
+2. If Neo4j returns no results, fall back to checking `.grasp-it/knowledge-graph.json` exists. If neither has graph data, tell the user to run `/grasp` first.
 
-3. **Search for relevant nodes** — use Grep to search the knowledge graph file for the user's query keywords: "$ARGUMENTS"
-   - Search `"name"` fields: `grep -i "query_keyword"` in the graph file
-   - Search `"summary"` fields for semantic matches
-   - Search `"tags"` arrays for topic matches
-   - Note the `id` values of all matching nodes
+### Phase 1: Get Project Context
 
-4. **Find connected edges** — for each matched node ID, Grep for that ID in the `edges` section to find:
-   - What it imports or depends on (downstream)
-   - What calls or imports it (upstream)
-   - This gives you the 1-hop subgraph around the query
+Query for project metadata:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.name, p.description, p.languages, p.frameworks"
+```
 
-5. **Read layer context** — Grep for `"layers"` to understand which architectural layers the matched nodes belong to.
+If Neo4j is unavailable, use Grep to extract the `"project"` section from `.grasp-it/knowledge-graph.json`.
 
-6. **Answer the query** using only the relevant subgraph:
+### Phase 2: Search for Relevant Nodes
+
+Query Neo4j for nodes matching the user's query:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE toLower(n.name) CONTAINS toLower('$ARGUMENTS') OR toLower(n.summary) CONTAINS toLower('$ARGUMENTS') RETURN n.name, n.kind, n.summary LIMIT 50"
+```
+
+If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for matching `"name"` or `"summary"` fields.
+
+Note the node IDs of all matching nodes.
+
+### Phase 3: Find Connected Edges
+
+For each matched node ID, query for connected edges:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[r]->(m) RETURN n.name, type(r), m.name LIMIT 30"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (m)-[r]->(n {name: '$NODE_NAME'}) RETURN m.name, type(r), n.name LIMIT 30"
+```
+
+This gives you the 1-hop subgraph around the query.
+
+### Phase 4: Read Layer Context
+
+Query for layer membership:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[:IN_LAYER]->(l) RETURN l.name, l.description"
+```
+
+### Phase 5: Answer the Query
+
+Answer the query using only the relevant subgraph:
    - Reference specific files, functions, and relationships from the graph
    - Explain which layer(s) are relevant and why
    - Be concise but thorough — link concepts to actual code locations

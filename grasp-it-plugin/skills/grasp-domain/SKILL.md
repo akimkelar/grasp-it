@@ -102,36 +102,39 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
 
 Before deriving domain knowledge, check whether the underlying knowledge graph is stale relative to the current HEAD:
 
-1. Read `gitCommitHash` from `.grasp-it/knowledge-graph.json` (or fall back to `.grasp-it/meta.json`)
-2. Compare it to `git rev-parse HEAD` — if they differ, the graph is stale
+1. Query Neo4j `Project` singleton for `gitCommitHash` using `load-project-meta.mjs`:
+   ```bash
+   # Try Neo4j first
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   NEO4J_RESULT=$(node "$SKILL_DIR/../grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
+   if [ -n "$NEO4J_RESULT" ] && [ "$NEO4J_RESULT" != "{}" ]; then
+     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   fi
+   # Fallback to meta.json only if Neo4j unavailable or returned empty
+   if [ -z "$LAST_COMMIT" ] && [ -f "$PROJECT_ROOT/.grasp-it/meta.json" ]; then
+     LAST_COMMIT=$(grep -o '"gitCommitHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/.grasp-it/meta.json" | head -1 | sed 's/.*: "\(.*\)"/\1/')
+   fi
+   ```
+2. Compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
 3. If stale, print a warning:
-   > "⚠ Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
+   > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
-> **Note:** This check compares the local graph against the current git HEAD — it does not query Neo4j. To check whether your local graph is in sync with the shared Neo4j database, run `check-sync.mjs` separately.
+> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`, falling back to `meta.json` only if Neo4j is unavailable. To check whether your local graph is in sync with a shared Neo4j database, run `check-sync.mjs` separately.
 
 ### Phase 2: Detect Existing Graph and Preflight Staleness
 
-1. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists
-2. Check if `$PROJECT_ROOT/.grasp-it/meta.json` exists and read it for `domainGraphStale`
-3. If `domainGraphStale` is `false` AND `--full` was NOT passed:
-   - The domain graph is current — report "Domain graph is up to date" and STOP
-4. If `domainGraphStale` is `true` OR `--full` was passed:
-   - Proceed to Phase 3 or Phase 4 as appropriate
-5. After successful derivation, clear `domainGraphStale` by writing `meta.json` with `domainGraphStale` removed (or set to `false`):
-   ```bash
-   node -e "
-   const fs=require('fs');
-   const metaPath='$PROJECT_ROOT/.grasp-it/meta.json';
-   if (fs.existsSync(metaPath)) {
-     const meta=JSON.parse(fs.readFileSync(metaPath,'utf8'));
-     meta.domainGraphStale=false;
-     fs.writeFileSync(metaPath,JSON.stringify(meta,null,2));
-   }
-   "
-   ```
+1. Check if a `Project` singleton exists in Neo4j (using `load-project-meta.mjs`)
+2. If `--full` was passed:
+   - Force a fresh domain analysis — proceed to Phase 3 or Phase 4
+3. If `--full` was NOT passed:
+   - Query Neo4j for `Project.domainCommit` to check if domain analysis is current
+   - Compare `Project.domainCommit` against `Project.gitCommitHash` — if they match, the domain graph is current
+   - If domain graph is current: report "Domain graph is up to date" and **STOP**
+4. Proceed to Phase 3 or Phase 4 to derive/update domain knowledge
+5. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`
 
-**Note:** Phase 2 in the original skill description is replaced by this Phase 2 (preflight staleness check). The "Detect Existing Graph" logic now integrates the staleness check. Proceed to Phase 3 (lightweight scan) or Phase 4 (derive from graph) as determined by step 3.
+> **Note:** The `domainGraphStale` flag from `meta.json` is deprecated. Staleness is now determined by comparing `Project.gitCommitHash` (the commit when full analysis ran) against `Project.domainCommit` (the commit when domain analysis last ran). If they differ, the domain graph is stale.
 
 ### Phase 3: Lightweight Scan (Path 1)
 
@@ -152,7 +155,11 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 4: Derive from Existing Graph (Path 2)
 
-1. Read `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+1. Query Neo4j for the existing knowledge graph:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name"
+   ```
 2. Format the graph data as structured context:
    - All nodes with their types, names, summaries, and tags
    - All edges with their types (especially `calls`, `imports`, `contains`)
@@ -160,6 +167,8 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
    - Tour steps if available
 3. This is the context for the domain analyzer — no file reading needed
 4. Proceed to Phase 5
+
+> **Fallback:** If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` for backward compatibility.
 
 ### Phase 5: Domain Analysis
 
@@ -176,11 +185,18 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 6b: Merge into Domain Graph
 
-The domain graph is stored at `$PROJECT_ROOT/.grasp-it/domain-graph.json`. When merging new domain analysis results:
+The domain graph is stored in Neo4j (primary) with optional backup at `$PROJECT_ROOT/.grasp-it/domain-graph.json`. When merging new domain analysis results:
 
 #### 6b-1. Load existing domain graph
 
-Read the existing `$PROJECT_ROOT/.grasp-it/domain-graph.json` (if it exists) into memory as `existingGraph`.
+Query Neo4j for existing domain elements:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:DomainElement)-[:PART_OF]->(p:Project) WHERE p.id = 'project:singleton' RETURN d"
+```
+
+If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/domain-graph.json`.
+
 Read the new domain analysis output as `incomingNodes` and `incomingEdges`.
 
 #### 6b-2. Classify each incoming node
@@ -210,8 +226,22 @@ Edges: deduplicate by `(source, target, type)` composite. All new edges are appe
 #### 6b-5. Validate and write
 
 1. Validate the merged graph against the schema
-2. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/domain-graph.json`
-3. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
+2. Write the merged domain graph to Neo4j:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   # Write domain elements to Neo4j
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
+   ```
+   For each domain element, use cypher to `MERGE` (upsert) the node and create the `PART_OF` relationship.
+3. Optionally write to `$PROJECT_ROOT/.grasp-it/domain-graph.json` as a local backup:
+   ```bash
+   node -e "
+   const fs = require('fs');
+   const backup = { nodes: mergedNodes, edges: mergedEdges, updatedAt: new Date().toISOString() };
+   fs.writeFileSync('$PROJECT_ROOT/.grasp-it/domain-graph.json', JSON.stringify(backup, null, 2));
+   "
+   ```
+4. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
 
 ### Phase 7: Clean Up
 

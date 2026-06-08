@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -7,8 +7,9 @@ import {
   saveGraph, loadGraph, saveMeta, loadMeta,
   saveFingerprints, loadFingerprints, saveConfig, loadConfig,
   saveProjectMeta, loadProjectMeta,
+  saveDomainGraphToNeo4j, loadDomainGraphFromNeo4j,
 } from "./index.js";
-import type { KnowledgeGraph, AnalysisMeta } from "../types.js";
+import type { KnowledgeGraph, AnalysisMeta, GraphNode } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 
 describe("persistence", () => {
@@ -206,7 +207,283 @@ describe("persistence", () => {
     });
   });
 
-  describe("saveProjectMeta / loadProjectMeta", () => {
+  // ─────────────────────────────────────────────────────────────────
+// saveDomainGraphToNeo4j
+// ─────────────────────────────────────────────────────────────────
+
+describe("saveDomainGraphToNeo4j", () => {
+  it("deletes existing DomainElement nodes before writing new ones", async () => {
+    const sampleGraph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "test",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "test",
+        analyzedAt: "2026-04-01T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [
+        {
+          id: "domain:orders",
+          type: "feature",
+          name: "Orders Feature",
+          summary: "Order management",
+          tags: [],
+          complexity: "moderate",
+        },
+      ],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton", "abc123");
+
+    // First call should be the DELETE query
+    expect(calls[0]![0]).toContain("DELETE d");
+    expect(calls[0]![1]).toEqual({ projectId: "project:singleton" });
+  });
+
+  it("writes one CREATE query per domain node with correct labels", async () => {
+    const sampleGraph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "test",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "test",
+        analyzedAt: "2026-04-01T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [
+        {
+          id: "domain:orders",
+          type: "domain",
+          name: "Orders",
+          summary: "Order domain",
+          tags: ["core"],
+          complexity: "complex",
+        },
+        {
+          id: "feature:create-order",
+          type: "feature",
+          name: "Create Order",
+          summary: "Create a new order",
+          tags: [],
+          complexity: "moderate",
+        },
+      ],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton", "abc123");
+
+    // Verify node CREATE calls (after the DELETE call at index 0)
+    const nodeCalls = calls.slice(1, 3); // Two nodes → two CREATE calls
+
+    expect(nodeCalls[0]![0]).toContain("CREATE (d:DomainElement:Domain");
+    expect(nodeCalls[0]![1]).toMatchObject({ id: "domain:orders", name: "Orders" });
+
+    expect(nodeCalls[1]![0]).toContain("CREATE (d:DomainElement:Feature");
+    expect(nodeCalls[1]![1]).toMatchObject({ id: "feature:create-order", name: "Create Order" });
+  });
+
+  it("updates Project with domainAnalyzedAt and domainCommit", async () => {
+    const sampleGraph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "test",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "test",
+        analyzedAt: "2026-04-01T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton", "def456");
+
+    // Last call should be the SET query for domainAnalyzedAt and domainCommit
+    const lastCall = calls[calls.length - 1]!;
+    expect(lastCall[0]).toContain("SET p.domainAnalyzedAt");
+    expect(lastCall[0]).toContain("domainCommit");
+    expect(lastCall[1].domainCommit).toBe("def456");
+  });
+
+  it("uses graph.project.gitCommitHash as domainCommit when commit not provided", async () => {
+    const sampleGraph: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "test",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "test",
+        analyzedAt: "2026-04-01T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    const lastCall = calls[calls.length - 1]!;
+    expect(lastCall[1].domainCommit).toBe("abc123");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// loadDomainGraphFromNeo4j
+// ─────────────────────────────────────────────────────────────────
+
+describe("loadDomainGraphFromNeo4j", () => {
+  it("returns null when no DomainElement nodes exist", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).toBeNull();
+    expect(mockSession.run).toHaveBeenCalledWith(
+      expect.stringContaining("MATCH (d:DomainElement)-[:PART_OF]->(p:Project"),
+      expect.objectContaining({ projectId: "project:singleton" }),
+    );
+  });
+
+  it("returns KnowledgeGraph with nodes when DomainElement records exist", async () => {
+    const mockRecord = {
+      id: "domain:orders",
+      name: "Orders",
+      summary: "Order management domain",
+      nodeType: "domain",
+      source: "code-analysis",
+      filePath: "src/orders.ts",
+      lineRange: [1, 50],
+      tags: ["core", "domain"],
+      complexity: "complex",
+      labels: ["DomainElement", "Domain"],
+    };
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [mockRecord] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toHaveLength(1);
+    expect(result!.nodes[0].id).toBe("domain:orders");
+    expect(result!.nodes[0].name).toBe("Orders");
+    expect(result!.nodes[0].type).toBe("domain");
+    expect(result!.nodes[0].filePath).toBe("src/orders.ts");
+  });
+
+  it("maps secondary label to correct node type", async () => {
+    const records = [
+      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "BusinessRule"] },
+    ];
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toHaveLength(5);
+    expect(result!.nodes.map((n) => n.type)).toEqual(["feature", "operation", "actor", "entity", "business-rule"]);
+  });
+
+  it("uses domain as default type when secondary label is not recognized", async () => {
+    const mockRecord = {
+      id: "custom:type",
+      name: "Custom",
+      summary: "Custom domain element",
+      nodeType: "domain",
+      source: null,
+      filePath: null,
+      lineRange: null,
+      tags: [],
+      complexity: "simple",
+      labels: ["DomainElement", "CustomType"],
+    };
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [mockRecord] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes[0].type).toBe("domain");
+  });
+
+  it("returns empty edges, layers, and tour arrays", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({
+        records: [{ id: "domain:test", name: "Test", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Domain"] }],
+      })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result!.edges).toEqual([]);
+    expect(result!.layers).toEqual([]);
+    expect(result!.tour).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// saveProjectMeta / loadProjectMeta
+// ─────────────────────────────────────────────────────────────────
+
+describe("saveProjectMeta / loadProjectMeta", () => {
     it("should call session.run with correct MERGE query and params", async () => {
       const sampleMeta: AnalysisMeta = {
         lastAnalyzedAt: "2026-03-14T00:00:00.000Z",

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "../types.js";
+import type { ProjectSingletonMeta } from "../types.js";
 
 vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
@@ -17,7 +18,15 @@ vi.mock("node:path", () => ({
 // Import after mocking
 import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { getChangedFiles, isStale, checkGraphFreshness, mergeGraphUpdate, findStaleImplementedBy } from "../staleness.js";
+import {
+  getChangedFiles,
+  isStale,
+  checkGraphFreshness,
+  checkGraphFreshnessFromFiles,
+  mergeGraphUpdate,
+  findStaleImplementedBy,
+} from "../staleness.js";
+import { loadProjectMeta } from "../persistence/index.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -59,9 +68,49 @@ function makeGraph(overrides?: Partial<KnowledgeGraph>): KnowledgeGraph {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Mock Neo4j session factory
+// ─────────────────────────────────────────────────────────────────
+
+type MockSession = {
+  run: ReturnType<typeof vi.fn>;
+};
+
+/** Creates a mock Neo4j session that returns the given ProjectSingletonMeta. */
+function makeNeo4jSession(meta: ProjectSingletonMeta | null): MockSession {
+  return {
+    run: vi.fn(async () => {
+      if (!meta) return { records: [] };
+      return {
+        records: [
+          {
+            gitCommitHash: meta.gitCommitHash,
+            lastAnalyzedAt: meta.lastAnalyzedAt,
+            version: meta.version,
+            analyzedFiles: meta.analyzedFiles,
+          },
+        ],
+      };
+    }),
+  };
+}
+
+/** Creates a mock Neo4j session that throws when run (simulates connection failure). */
+function makeFailingNeo4jSession(): MockSession {
+  return {
+    run: vi.fn(async () => {
+      throw new Error("Connection refused");
+    }),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+// ─────────────────────────────────────────────────────────────────
+// getChangedFiles
+// ─────────────────────────────────────────────────────────────────
 
 describe("getChangedFiles", () => {
   it("returns changed file list from git diff", () => {
@@ -96,6 +145,10 @@ describe("getChangedFiles", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────
+// isStale
+// ─────────────────────────────────────────────────────────────────
+
 describe("isStale", () => {
   it("returns stale when files have changed", () => {
     mockedExecFileSync.mockReturnValue("src/index.ts\n");
@@ -120,7 +173,170 @@ describe("isStale", () => {
   });
 });
 
-describe("checkGraphFreshness", () => {
+// ─────────────────────────────────────────────────────────────────
+// checkGraphFreshness — Neo4j-first
+// ─────────────────────────────────────────────────────────────────
+
+describe("checkGraphFreshness (Neo4j-first)", () => {
+  const mockedExistsSync = vi.mocked(existsSync);
+  const mockedReadFileSync = vi.mocked(readFileSync);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("queries Neo4j when session is provided", async () => {
+    const session = makeNeo4jSession({
+      gitCommitHash: "abc123",
+      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
+      version: "1.0.0",
+      analyzedFiles: 10,
+    });
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = await checkGraphFreshness("/project", session);
+
+    expect(session.run).toHaveBeenCalled();
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("returns stale=true when Neo4j commit differs from HEAD", async () => {
+    const session = makeNeo4jSession({
+      gitCommitHash: "abc123",
+      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
+      version: "1.0.0",
+      analyzedFiles: 10,
+    });
+    mockedExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
+      if (cmd === "git" && args?.[0] === "rev-list") return "5";
+      return "";
+    });
+
+    const result = await checkGraphFreshness("/project", session);
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "abc123",
+      headCommit: "def456",
+      commitsBehind: 5,
+    });
+  });
+
+  it("falls back to JSON files when session throws (Neo4j unavailable)", async () => {
+    const session = makeFailingNeo4jSession();
+    // Mock JSON fallback — knowledge-graph.json exists with matching commit
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
+    );
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = await checkGraphFreshness("/project", session);
+
+    // Should fall through to JSON files and succeed
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("falls back to JSON files when session is undefined", async () => {
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
+    );
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = await checkGraphFreshness("/project");
+
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("falls back to JSON files when Neo4j returns no records (first run)", async () => {
+    const session = makeNeo4jSession(null);
+    mockedExistsSync.mockImplementation((path) => {
+      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
+      return false;
+    });
+    mockedReadFileSync.mockReturnValue(
+      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
+    );
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    const result = await checkGraphFreshness("/project", session);
+
+    expect(result).toEqual({
+      stale: false,
+      lastCommit: "abc123",
+      headCommit: "abc123",
+      commitsBehind: 0,
+    });
+  });
+
+  it("returns stale=true when neither Neo4j nor JSON files have data", async () => {
+    const session = makeNeo4jSession(null);
+    mockedExistsSync.mockReturnValue(false);
+    mockedReadFileSync.mockReturnValue("{}");
+
+    const result = await checkGraphFreshness("/project", session);
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
+
+  it("gracefully handles HEAD git error after Neo4j success", async () => {
+    const session = makeNeo4jSession({
+      gitCommitHash: "abc123",
+      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
+      version: "1.0.0",
+      analyzedFiles: 10,
+    });
+    mockedExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.[0] === "rev-parse") {
+        throw new Error("fatal: not a git repo");
+      }
+      return "";
+    });
+
+    const result = await checkGraphFreshness("/project", session);
+
+    expect(result).toEqual({
+      stale: true,
+      lastCommit: "abc123",
+      headCommit: "",
+      commitsBehind: 0,
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// checkGraphFreshnessFromFiles — legacy JSON fallback
+// ─────────────────────────────────────────────────────────────────
+
+describe("checkGraphFreshnessFromFiles (legacy JSON fallback)", () => {
   const mockedExistsSync = vi.mocked(existsSync);
   const mockedReadFileSync = vi.mocked(readFileSync);
 
@@ -132,7 +348,7 @@ describe("checkGraphFreshness", () => {
     mockedExistsSync.mockReturnValue(false);
     mockedReadFileSync.mockReturnValue("{}");
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
     expect(result).toEqual({
       stale: true,
@@ -154,7 +370,7 @@ describe("checkGraphFreshness", () => {
     );
     mockedExecFileSync.mockReturnValue("abc123");
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
     expect(result).toEqual({
       stale: false,
@@ -175,16 +391,12 @@ describe("checkGraphFreshness", () => {
       }),
     );
     mockedExecFileSync.mockImplementation((cmd, args) => {
-      if (cmd === "git" && args?.[0] === "rev-parse") {
-        return "def456"; // HEAD
-      }
-      if (cmd === "git" && args?.[0] === "rev-list") {
-        return "5"; // 5 commits behind
-      }
+      if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
+      if (cmd === "git" && args?.[0] === "rev-list") return "5";
       return "";
     });
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
     expect(result).toEqual({
       stale: true,
@@ -200,12 +412,10 @@ describe("checkGraphFreshness", () => {
       if (path === "/project/.grasp-it/meta.json") return true;
       return false;
     });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ gitCommitHash: "abc123" }),
-    );
+    mockedReadFileSync.mockReturnValue(JSON.stringify({ gitCommitHash: "abc123" }));
     mockedExecFileSync.mockReturnValue("abc123");
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
     expect(result).toEqual({
       stale: false,
@@ -221,9 +431,7 @@ describe("checkGraphFreshness", () => {
       return false;
     });
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({
-        project: { gitCommitHash: "abc123", name: "test" },
-      }),
+      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
     );
     mockedExecFileSync.mockImplementation((cmd, args) => {
       if (cmd === "git" && args?.[0] === "rev-parse") {
@@ -232,7 +440,7 @@ describe("checkGraphFreshness", () => {
       return "";
     });
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
     expect(result).toEqual({
       stale: true,
@@ -248,23 +456,18 @@ describe("checkGraphFreshness", () => {
       return false;
     });
     mockedReadFileSync.mockReturnValue(
-      JSON.stringify({
-        project: { gitCommitHash: "abc123", name: "test" },
-      }),
+      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
     );
     mockedExecFileSync.mockImplementation((cmd, args) => {
-      if (cmd === "git" && args?.[0] === "rev-parse") {
-        return "def456"; // HEAD
-      }
+      if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
       if (cmd === "git" && args?.[0] === "rev-list") {
         throw new Error("fatal: bad revision");
       }
       return "";
     });
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
-    // Should still detect staleness, but commitsBehind will be 0 due to error
     expect(result).toEqual({
       stale: true,
       lastCommit: "abc123",
@@ -280,9 +483,8 @@ describe("checkGraphFreshness", () => {
     });
     mockedReadFileSync.mockReturnValue("not-valid-json{{");
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
-    // Should not throw; should fall back to stale=true with empty lastCommit
     expect(result).toEqual({
       stale: true,
       lastCommit: "",
@@ -298,9 +500,8 @@ describe("checkGraphFreshness", () => {
     });
     mockedReadFileSync.mockReturnValue(JSON.stringify({ nodes: [], edges: [] }));
 
-    const result = checkGraphFreshness("/project");
+    const result = checkGraphFreshnessFromFiles("/project");
 
-    // Should fall back gracefully, not throw
     expect(result).toEqual({
       stale: true,
       lastCommit: "",
@@ -309,6 +510,10 @@ describe("checkGraphFreshness", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────
+// mergeGraphUpdate
+// ─────────────────────────────────────────────────────────────────
 
 describe("mergeGraphUpdate", () => {
   it("replaces nodes for changed files", () => {
@@ -412,30 +617,22 @@ describe("mergeGraphUpdate", () => {
 
     // Old edge from file-a should be removed
     expect(
-      result.edges.find(
-        (e) => e.source === "file-a" && e.target === "file-b",
-      ),
+      result.edges.find((e) => e.source === "file-a" && e.target === "file-b"),
     ).toBeUndefined();
 
     // Edge between unchanged files should remain
     expect(
-      result.edges.find(
-        (e) => e.source === "file-b" && e.target === "file-c",
-      ),
+      result.edges.find((e) => e.source === "file-b" && e.target === "file-c"),
     ).toBeDefined();
 
     // Edge to changed file from unchanged should be removed (dangling target)
     expect(
-      result.edges.find(
-        (e) => e.source === "file-c" && e.target === "file-a",
-      ),
+      result.edges.find((e) => e.source === "file-c" && e.target === "file-a"),
     ).toBeUndefined();
 
     // New edge should be added
     expect(
-      result.edges.find(
-        (e) => e.source === "file-a-v2" && e.target === "file-c",
-      ),
+      result.edges.find((e) => e.source === "file-a-v2" && e.target === "file-c"),
     ).toBeDefined();
   });
 
@@ -452,9 +649,6 @@ describe("mergeGraphUpdate", () => {
   });
 
   it("removes cross-file dangling edges when target node is replaced", () => {
-    // Scenario: file A (unchanged) has a CALLS edge to function:fileB:oldFn
-    // file B is re-analyzed with oldFn renamed to newFn
-    // After merge, the CALLS edge should not exist
     const existingGraph = makeGraph({
       nodes: [
         makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
@@ -467,8 +661,6 @@ describe("mergeGraphUpdate", () => {
         }),
       ],
       edges: [
-        // Edge from unchanged file A to old function in changed file B
-        // This is the dangling edge that should be removed
         makeEdge({
           source: "file:a",
           target: "function:src/b.ts:oldFn",
@@ -477,13 +669,8 @@ describe("mergeGraphUpdate", () => {
       ],
     });
 
-    // New analysis of file B: oldFn renamed to newFn
     const newNodes = [
-      makeNode({
-        id: "file:b-v2",
-        name: "b.ts",
-        filePath: "src/b.ts",
-      }),
+      makeNode({ id: "file:b-v2", name: "b.ts", filePath: "src/b.ts" }),
       makeNode({
         id: "function:src/b.ts:newFn",
         name: "newFn",
@@ -500,29 +687,20 @@ describe("mergeGraphUpdate", () => {
       "def456",
     );
 
-    // The dangling edge should be removed
     expect(
       result.edges.find(
-        (e) =>
-          e.source === "file:a" && e.target === "function:src/b.ts:oldFn",
+        (e) => e.source === "file:a" && e.target === "function:src/b.ts:oldFn",
       ),
     ).toBeUndefined();
-
-    // The new function should exist
     expect(
       result.nodes.find((n) => n.id === "function:src/b.ts:newFn"),
     ).toBeDefined();
-
-    // The old function should not exist
     expect(
       result.nodes.find((n) => n.id === "function:src/b.ts:oldFn"),
     ).toBeUndefined();
   });
 
   it("keeps cross-file edges when target still exists after merge", () => {
-    // Scenario: file A (unchanged) has a CALLS edge to function:fileB:existingFn
-    // file B is re-analyzed but existingFn is not changed
-    // After merge, the CALLS edge should still exist
     const existingGraph = makeGraph({
       nodes: [
         makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
@@ -543,13 +721,8 @@ describe("mergeGraphUpdate", () => {
       ],
     });
 
-    // New analysis of file B: adds a new function but keeps existingFn
     const newNodes = [
-      makeNode({
-        id: "file:b-v2",
-        name: "b.ts",
-        filePath: "src/b.ts",
-      }),
+      makeNode({ id: "file:b-v2", name: "b.ts", filePath: "src/b.ts" }),
       makeNode({
         id: "function:src/b.ts:existingFn",
         name: "existingFn",
@@ -572,7 +745,6 @@ describe("mergeGraphUpdate", () => {
       "def456",
     );
 
-    // The edge to existingFn should be kept
     expect(
       result.edges.find(
         (e) =>
@@ -582,9 +754,6 @@ describe("mergeGraphUpdate", () => {
   });
 
   it("removes outbound edges from a source node whose ID changed after re-analysis", () => {
-    // Scenario: function foo in src/a.ts is renamed to baz after re-analysis.
-    // File A is in changed set; foo's node ID changes from function:src/a.ts:foo
-    // to function:src/a.ts:baz. Outbound edges from foo should be removed.
     const existingGraph = makeGraph({
       nodes: [
         makeNode({ id: "file:a", name: "a.ts", filePath: "src/a.ts" }),
@@ -603,7 +772,6 @@ describe("mergeGraphUpdate", () => {
         }),
       ],
       edges: [
-        // Edge from old function foo to bar - should be removed (source gone)
         makeEdge({
           source: "function:src/a.ts:foo",
           target: "function:src/b.ts:bar",
@@ -612,13 +780,8 @@ describe("mergeGraphUpdate", () => {
       ],
     });
 
-    // Re-analysis: foo renamed to baz, bar unchanged (still in b.ts)
     const newNodes = [
-      makeNode({
-        id: "file:a-v2",
-        name: "a.ts",
-        filePath: "src/a.ts",
-      }),
+      makeNode({ id: "file:a-v2", name: "a.ts", filePath: "src/a.ts" }),
       makeNode({
         id: "function:src/a.ts:baz",
         name: "baz",
@@ -641,17 +804,12 @@ describe("mergeGraphUpdate", () => {
       "def456",
     );
 
-    // Old node should not exist
     expect(
       result.nodes.find((n) => n.id === "function:src/a.ts:foo"),
     ).toBeUndefined();
-
-    // New node should exist
     expect(
       result.nodes.find((n) => n.id === "function:src/a.ts:baz"),
     ).toBeDefined();
-
-    // Old edge from foo to bar should NOT exist (source removed, no re-created edge)
     expect(
       result.edges.find(
         (e) =>
@@ -661,7 +819,6 @@ describe("mergeGraphUpdate", () => {
   });
 
   it("file nodes in the incremental update carry analyzedAtCommit matching the new commit", () => {
-    // existing graph: file:src/a.ts with old analyzedAtCommit
     const existingGraph = makeGraph({
       nodes: [
         makeNode({
@@ -680,7 +837,6 @@ describe("mergeGraphUpdate", () => {
       ],
     });
 
-    // new analysis: file:src/a.ts with new analyzedAtCommit
     const newNodes = [
       makeNode({
         id: "file:src/a.ts-v2",
@@ -699,12 +855,15 @@ describe("mergeGraphUpdate", () => {
       "newHash",
     );
 
-    // The new file node should have analyzedAtCommit === "newHash"
     const newFileNode = result.nodes.find((n) => n.filePath === "src/a.ts");
     expect(newFileNode).toBeDefined();
     expect(newFileNode!.analyzedAtCommit).toBe("newHash");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────
+// findStaleImplementedBy
+// ─────────────────────────────────────────────────────────────────
 
 describe("findStaleImplementedBy", () => {
   it("returns empty when no files have analyzedAtCommit", () => {
@@ -772,15 +931,11 @@ describe("findStaleImplementedBy", () => {
 
     const result = findStaleImplementedBy(graph, "newCommit");
     expect(result.staleEdges).toHaveLength(2);
-    expect(result.staleEdges.map(e => e.nodeId)).toContain("feature:auth");
-    expect(result.staleEdges.map(e => e.nodeId)).toContain("operation:login");
+    expect(result.staleEdges.map((e) => e.nodeId)).toContain("feature:auth");
+    expect(result.staleEdges.map((e) => e.nodeId)).toContain("operation:login");
   });
 
   it("reports the changed file's filePath (not the knowledge node's)", () => {
-    // file:src/a.ts has no analyzedAtCommit — edge to it should be ignored
-    // file:src/b.ts has oldCommit != currentCommit — edge to it is stale
-    // The stale result's filePath should be the File node's filePath (src/b.ts),
-    // not the knowledge node's filePath (feature:auth has no filePath)
     const testGraph = makeGraph({
       nodes: [
         makeNode({ id: "file:src/a.ts", name: "a.ts", filePath: "src/a.ts", type: "file" }),
@@ -814,8 +969,6 @@ describe("findStaleImplementedBy", () => {
   });
 
   it("reports the changed file's path in the stale edge result", () => {
-    // The filePath in StaleEdge is the target File node's path (which file changed)
-    // not the knowledge node's filePath (which may not exist)
     const graph = makeGraph({
       nodes: [
         { id: "file:src/a.ts", type: "file", name: "a.ts", filePath: "src/a.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
@@ -828,12 +981,10 @@ describe("findStaleImplementedBy", () => {
 
     const result = findStaleImplementedBy(graph, "newCommit");
     expect(result.staleEdges).toHaveLength(1);
-    // filePath is the file node's filePath (which file was re-analyzed)
     expect(result.staleEdges[0].filePath).toBe("src/a.ts");
   });
 
   it("returns only stale edges when a knowledge node has multiple IMPLEMENTED_BY edges and only some are stale", () => {
-    // feature:auth has two IMPLEMENTED_BY edges; one file is stale, one is fresh
     const graph = makeGraph({
       nodes: [
         { id: "file:src/auth.ts", type: "file", name: "auth.ts", filePath: "src/auth.ts", summary: "", tags: [], complexity: "simple" as const, analyzedAtCommit: "oldCommit" },
@@ -847,7 +998,6 @@ describe("findStaleImplementedBy", () => {
     });
 
     const result = findStaleImplementedBy(graph, "newCommit");
-    // Only one edge should be stale (src/auth.ts), not both and not zero
     expect(result.staleEdges).toHaveLength(1);
     expect(result.staleEdges[0].nodeId).toBe("feature:auth");
     expect(result.staleEdges[0].filePath).toBe("src/auth.ts");

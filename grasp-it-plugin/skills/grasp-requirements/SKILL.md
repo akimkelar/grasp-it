@@ -122,7 +122,15 @@ If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not pro
 
 ### 1b. Check existing graph knowledge
 
-Read `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` if it exists. Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find relevant existing nodes:
+Query Neo4j for nodes related to the topic:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE n.name CONTAINS '$TOPIC' OR any(t IN coalesce(n.tags, []) WHERE toLower(t) CONTAINS toLower('$TOPIC')) RETURN n LIMIT 20"
+```
+
+If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` and searching for matching nodes.
+
+Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find relevant existing nodes:
 
 - Surface them to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
 - If the existing nodes came from `source: "code-analysis"`, tell the specialist: *"I have some code-mined knowledge about this. I'll use it as a starting point and ask you to confirm, extend, or correct it."*
@@ -421,7 +429,15 @@ When the specialist confirms the synthesis is correct:
 
 ### 5a. Load existing graph
 
-Read the existing `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` (if it exists) into memory as `existingGraph`.
+Query Neo4j for the existing knowledge graph:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
+```
+
+If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` for backward compatibility.
+
 Read `pr-nodes.json` and `pr-edges.json` as the incoming interview output.
 
 ### 5b. Classify each incoming node

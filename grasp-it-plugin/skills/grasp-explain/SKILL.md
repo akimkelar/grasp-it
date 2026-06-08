@@ -6,52 +6,91 @@ argument-hint: [file-path]
 
 # /grasp-explain
 
-Provide a thorough, in-depth explanation of a specific code component.
+Provide a thorough, in-depth explanation of a specific code component using the Neo4j knowledge graph (with JSON fallback).
 
 ## Graph Structure Reference
 
-The knowledge graph JSON has this structure:
-- `project` — {name, description, languages, frameworks, analyzedAt, gitCommitHash}
-- `nodes[]` — each has {id, type, name, filePath?, summary, tags[], complexity, languageNotes?}
-  - Code node types: file, function, class, module, concept
-  - Non-code node types: config, document, service, table, endpoint, pipeline, schema, resource
-  - Domain/knowledge node types: domain, feature, operation, actor, business_rule, article, entity, topic, claim, source
-  - IDs use the node type as prefix, e.g. `file:path`, `function:path:name`, `config:path`, `article:path`
-- `edges[]` — each has {source, target, type, direction, weight}
-  - Key types: imports, contains, calls, depends_on, configures, documents, deploys, triggers, has_feature, has_operation, performed_by, governed_by, implemented_by, related, cites
-- `layers[]` — each has {id, name, description, nodeIds[]}
-- `tour[]` — each has {order, title, description, nodeIds[]}
+The knowledge graph in Neo4j has these node types:
+- **Codebase nodes**: File, Function, Class, Module, Concept, Config, Service, Table, Endpoint, Pipeline, Schema, Resource
+- **Knowledge nodes**: Domain, Feature, Operation, Actor, BusinessRule, Entity, Decision, Constraint, Article, Topic, Claim, Source
 
-## How to Read Efficiently
-
-1. Use Grep to search within the JSON for relevant entries BEFORE reading the full file
-2. Only read sections you need — don't dump the entire graph into context
-3. Node names and summaries are the most useful fields for understanding
-4. Edges tell you how components connect — follow imports and calls for dependency chains
+Key relationships:
+- `(:Function)-[:CALLS]->(:Function)`
+- `(:Function)-[:PART_OF]->(:Class)`
+- `(:File)-[:DEFINES]->(:Function)`
+- `(:Class)-[:DEFINES]->(:Function)`
+- `(:File)-[:CONTAINS]->(:Function)`
+- `(:Domain)-[:HAS_FEATURE]->(:Feature)`
+- `(:Feature)-[:HAS_OPERATION]->(:Operation)`
 
 ## Instructions
 
-1. Check that `.grasp-it/knowledge-graph.json` exists. If not, tell the user to run `/grasp` first.
+### Phase 0: Verify Graph Exists
 
-2. **Find the target node** — use Grep to search the knowledge graph for the component: "$ARGUMENTS"
-   - For file paths (e.g., `src/auth/login.ts`): search for `"filePath"` matches
-   - For function notation (e.g., `src/auth/login.ts:verifyToken`): search for the function name in `"name"` fields filtered by the file path
-   - Note the exact node `id`, `type`, `summary`, `tags`, and `complexity`
+1. Query Neo4j for the `Project` singleton:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   ```
+2. If Neo4j returns no results, fall back to checking `.grasp-it/knowledge-graph.json` exists. If neither has graph data, tell the user to run `/grasp` first.
 
-3. **Find all connected edges** — Grep for the target node's ID in the edges section:
-   - `"source"` matches → things this node calls/imports/depends on (outgoing)
-   - `"target"` matches → things that call/import/depend on this node (incoming)
-   - Note the connected node IDs and edge types
+### Phase 1: Find the Target Node
 
-4. **Read connected nodes** — for each connected node ID from step 3, Grep for those IDs in the nodes section to get their `name`, `summary`, and `type`. This builds the component's neighborhood.
+Query Neo4j for the component: "$ARGUMENTS"
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+# For file paths (e.g., src/auth/login.ts)
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (f:File) WHERE f.name CONTAINS '$ARGUMENTS' OR f.filePath CONTAINS '$ARGUMENTS' RETURN f LIMIT 5"
+# For function/method names
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (fn:Function) WHERE fn.name CONTAINS '$ARGUMENTS' RETURN fn LIMIT 5"
+```
 
-5. **Identify the layer** — Grep for the target node's ID in the `"layers"` section to find which architectural layer it belongs to and that layer's description.
+If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for `"filePath"` or `"name"` matches.
 
-6. **Read the actual source file** — Read the source file at the node's `filePath` for the deep-dive analysis.
+Note the exact node `id`, `type`, `summary`, `tags`, and `complexity` (if available).
 
-7. **Explain the component in context**:
+### Phase 2: Find Connected Edges
+
+Query Neo4j for edges connected to the target node:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Outgoing edges (what this node calls/imports/depends on)
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[r]->(m) RETURN n.name, type(r), labels(m)[0], m.name LIMIT 30"
+# Incoming edges (what calls/imports/depends on this node)
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (m)-[r]->(n {name: '$NODE_NAME'}) RETURN m.name, type(r), labels(m)[0], n.name LIMIT 30"
+```
+
+If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for the node ID in edges.
+
+### Phase 3: Read Connected Nodes
+
+Query Neo4j for neighbor node details:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'}) RETURN n.name, n.summary, n.kind, labels(n)[0]"
+```
+
+Build the component's neighborhood context.
+
+### Phase 4: Identify the Layer
+
+Query Neo4j for layer membership:
+```bash
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[:IN_LAYER]->(l) RETURN l.name, l.description"
+```
+
+If Neo4j is unavailable, use Grep for the node ID in `"layers"` section.
+
+### Phase 5: Read the Actual Source File
+
+Read the source file at the node's `filePath` for the deep-dive analysis.
+
+### Phase 6: Explain the Component in Context
+
+Explain the component:
    - Its role in the architecture (which layer, why it exists)
-   - Internal structure (functions, classes it contains — from `contains` edges)
+   - Internal structure (functions, classes it contains — from `CONTAINS`/`PART_OF` edges)
    - External connections (what it imports, what calls it, what it depends on — from edges)
    - Data flow (inputs → processing → outputs — from source code)
    - Explain clearly, assuming the reader may not know the programming language

@@ -2,6 +2,7 @@ import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "./types.js";
+import { loadProjectMeta } from "./persistence/index.js";
 
 export interface StaleImplementedByResult {
   staleEdges: StaleEdge[];
@@ -66,8 +67,8 @@ export function isStale(
 /**
  * Preflight check: determine whether the stored graph is stale relative to HEAD.
  *
- * Reads the last-analyzed git commit hash from `knowledge-graph.json` (preferred)
- * or `.grasp-it/meta.json` (fallback), then compares it to the current HEAD.
+ * Tries Neo4j first via `loadProjectMeta()`, then falls back to JSON files.
+ * Compares the last-analyzed git commit hash to the current HEAD.
  *
  * Returns a result indicating:
  * - Whether the graph is stale
@@ -78,45 +79,34 @@ export function isStale(
  * Does NOT account for whether files actually changed — use `isStale()` for
  * that. This function is for pre-flight warnings only.
  */
-export function checkGraphFreshness(
+export async function checkGraphFreshness(
   projectDir: string,
-): GraphFreshnessResult {
-  // Try to read gitCommitHash from knowledge-graph.json first
-  let lastCommit: string | null = null;
-
-  try {
-    const graphPath = join(projectDir, ".grasp-it", "knowledge-graph.json");
-    if (existsSync(graphPath)) {
-      const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as KnowledgeGraph;
-      lastCommit = graph.project?.gitCommitHash ?? null;
-    }
-  } catch {
-    // Ignore — fall through to meta.json
-  }
-
-  // Fall back to meta.json
-  if (!lastCommit) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+): Promise<GraphFreshnessResult> {
+  // Try Neo4j first if session is provided
+  if (session) {
     try {
-      const metaPath = join(projectDir, ".grasp-it", "meta.json");
-      if (existsSync(metaPath)) {
-        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as { gitCommitHash?: string };
-        lastCommit = meta.gitCommitHash ?? null;
+      const neo4jMeta = await loadProjectMeta(session);
+      if (neo4jMeta?.gitCommitHash) {
+        return checkFreshnessWithCommit(projectDir, neo4jMeta.gitCommitHash);
       }
     } catch {
-      // Ignore
+      // Neo4j unavailable or error — fall through to JSON files
     }
   }
 
-  // If we still don't have a lastCommit, the graph doesn't exist yet
-  if (!lastCommit) {
-    return {
-      stale: true,
-      lastCommit: "",
-      headCommit: "",
-      commitsBehind: 0,
-    };
-  }
+  // Fallback to JSON files
+  return checkGraphFreshnessFromFiles(projectDir);
+}
 
+/**
+ * Internal function to check freshness given a known commit hash.
+ */
+function checkFreshnessWithCommit(
+  projectDir: string,
+  lastCommit: string,
+): GraphFreshnessResult {
   // Get current HEAD commit
   let headCommit: string;
   try {
@@ -160,6 +150,52 @@ export function checkGraphFreshness(
     headCommit,
     commitsBehind,
   };
+}
+
+/**
+ * Fallback: check freshness from JSON files (knowledge-graph.json, meta.json).
+ * This is the legacy behavior when Neo4j is unavailable.
+ */
+export function checkGraphFreshnessFromFiles(
+  projectDir: string,
+): GraphFreshnessResult {
+  // Try to read gitCommitHash from knowledge-graph.json first
+  let lastCommit: string | null = null;
+
+  try {
+    const graphPath = join(projectDir, ".grasp-it", "knowledge-graph.json");
+    if (existsSync(graphPath)) {
+      const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as KnowledgeGraph;
+      lastCommit = graph.project?.gitCommitHash ?? null;
+    }
+  } catch {
+    // Ignore — fall through to meta.json
+  }
+
+  // Fall back to meta.json
+  if (!lastCommit) {
+    try {
+      const metaPath = join(projectDir, ".grasp-it", "meta.json");
+      if (existsSync(metaPath)) {
+        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as { gitCommitHash?: string };
+        lastCommit = meta.gitCommitHash ?? null;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  // If we still don't have a lastCommit, the graph doesn't exist yet
+  if (!lastCommit) {
+    return {
+      stale: true,
+      lastCommit: "",
+      headCommit: "",
+      commitsBehind: 0,
+    };
+  }
+
+  return checkFreshnessWithCommit(projectDir, lastCommit);
 }
 
 /**

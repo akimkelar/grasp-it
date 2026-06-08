@@ -10,11 +10,22 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
 
 1. Set `PROJECT_ROOT` to the current working directory.
 
-2. Check that `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists.
-   - If not: report "No existing knowledge graph found. Run `/understand` first to create one." and **STOP**.
+2. Check that a `Project` singleton exists in Neo4j OR `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists.
+   - If neither exists: report "No existing knowledge graph found. Run `/understand` first to create one." and **STOP**.
 
-3. Check that `$PROJECT_ROOT/.grasp-it/meta.json` exists and read `gitCommitHash`.
-   - If not: report "No analysis metadata found. Run `/understand` to create a baseline." and **STOP**.
+3. Query Neo4j `Project` singleton for `gitCommitHash` using `load-project-meta.mjs`:
+   ```bash
+   # Try Neo4j first
+   NEO4J_RESULT=$(node "$PLUGIN_ROOT/skills/grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
+   if [ -n "$NEO4J_RESULT" ] && [ "$NEO4J_RESULT" != "{}" ]; then
+     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   fi
+   # Fallback to meta.json only if Neo4j unavailable or returned empty
+   if [ -z "$LAST_COMMIT" ] && [ -f "$PROJECT_ROOT/.grasp-it/meta.json" ]; then
+     LAST_COMMIT=$(grep -o '"gitCommitHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/.grasp-it/meta.json" | head -1 | sed 's/.*: "\(.*\)"/\1/')
+   fi
+   ```
+   - If no `LAST_COMMIT` found: report "No analysis metadata found. Run `/understand` to create a baseline." and **STOP**.
 
 4. Get current commit hash:
    ```bash
@@ -27,10 +38,10 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
    ```bash
    git diff <lastCommitHash>..HEAD --name-only
    ```
-   If no files changed: update `meta.json` with the new commit hash and **STOP**.
+   If no files changed: update `meta.json` (and Neo4j if available) with the new commit hash and **STOP**.
 
 7. Filter to source files only (`.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.rb`, `.cpp`, `.c`, `.h`, `.cs`, `.swift`, `.kt`, `.php`).
-   If no source files changed: update `meta.json` with the new commit hash, report "Only non-source files changed. Metadata updated." and **STOP**.
+   If no source files changed: update `meta.json` (and Neo4j if available) with the new commit hash, report "Only non-source files changed. Metadata updated." and **STOP**.
 
 8. Create intermediate directory:
    ```bash
@@ -230,7 +241,13 @@ Perform lightweight validation (no graph-reviewer agent):
 
 1. Write the final knowledge graph to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`.
 
-2. Write updated metadata to `$PROJECT_ROOT/.grasp-it/meta.json`:
+2. Update Neo4j `Project` singleton with latest metadata:
+   ```bash
+   PLUGIN_ROOT="${PLUGIN_ROOT:-$HOME/.grasp-it-plugin}"
+   node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = '$CURRENT_COMMIT', p.lastAnalyzedAt = datetime(), p.version = '1.0.0', p.analyzedFiles = $FILE_COUNT"
+   ```
+
+3. Write updated metadata to `$PROJECT_ROOT/.grasp-it/meta.json`:
    ```json
    {
      "lastAnalyzedAt": "<ISO 8601 timestamp>",
