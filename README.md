@@ -129,6 +129,24 @@ curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh 
 
 ---
 
+### Quick Start for Claude Code
+
+If you are using Grasp-It with Claude Code, you can use the installer to copy the plugin directly into Claude Code's plugin cache:
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh | bash -s -- claude
+```
+
+**Windows (PowerShell):**
+```powershell
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1).Content)) claude
+```
+
+The installer will detect if Claude Code is installed and copy the plugin to the correct location. If Claude Code is not found, it will set up the plugin files for manual installation.
+
+---
+
 ## Skills
 
 | Skill | Purpose | Output |
@@ -230,7 +248,7 @@ curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh 
 & ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.ps1).Content)) codex
 ```
 
-Supported platforms: `gemini`, `codex`, `opencode`, `cursor`, `vscode`, `copilot`, `cline`, `trae`, and more.
+Supported platforms: `claude`, `gemini`, `codex`, `opencode`, `cursor`, `vscode`, `copilot`, `cline`, `trae`, and more.
 
 ---
 

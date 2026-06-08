@@ -39,6 +39,7 @@ $Platforms = [ordered]@{
     cline       = @{ Target = (Join-Path $HOME '.cline\skills');              Style = 'folder' }
     kimi        = @{ Target = (Join-Path $HOME '.kimi\skills');               Style = 'folder' }
     trae        = @{ Target = (Join-Path $HOME '.trae\skills');               Style = 'per-skill' }
+    claude      = @{ Target = (Join-Path $HOME '.claude\plugins\cache');       Style = 'claude' }
 }
 
 function Show-Usage {
@@ -115,6 +116,47 @@ function Build-Plugin {
     }
 }
 
+function Install-ClaudePlugin {
+    # Installs the plugin into Claude Code's plugin cache, or sets up the
+    # plugin files for manual installation if Claude Code is not present.
+    $pluginSrc = Join-Path $RepoDir 'grasp-it-plugin'
+    $claudeCacheBase = Join-Path $HOME '.claude\plugins\cache'
+    $pluginName = 'grasp-it'
+
+    # Detect Claude Code version from the plugin's package.json
+    $pluginVersion = '0.1.0'
+    $pkgJson = Get-Content (Join-Path $pluginSrc 'package.json') -Raw -ErrorAction SilentlyContinue
+    if ($pkgJson -match '"version"[[:space:]]*:[[:space:]]*"([^"]+)"') {
+        $pluginVersion = $matches[1]
+    }
+
+    $cacheTarget = Join-Path $claudeCacheBase "$pluginName\$pluginName\$pluginVersion"
+
+    $claude = Get-Command claude -ErrorAction SilentlyContinue
+    if ($claude -and (Test-Path (Join-Path $HOME '.claude'))) {
+        Write-Host "→ Installing Grasp-It plugin into Claude Code cache"
+        $null = New-Item -ItemType Directory -Path (Join-Path $claudeCacheBase $pluginName) -Force
+        $null = New-Item -ItemType Directory -Path (Join-Path $claudeCacheBase "$pluginName\$pluginName") -Force
+        if (Test-Path $cacheTarget) { Remove-Item -Recurse -Force $cacheTarget }
+        Copy-Item -Path $pluginSrc -Destination $cacheTarget -Recurse
+        Write-Host "  ✓ Plugin installed to $cacheTarget"
+        Write-Host ""
+        Write-Host "  Restart Claude Code to pick up the plugin, or run:"
+        Write-Host "    /plugin marketplace add akimkelar/Grasp-It"
+        Write-Host "    /plugin install grasp-it"
+    } else {
+        Write-Host "→ Claude Code not detected — setting up plugin files for manual installation"
+        Build-Plugin
+        Link-Plugin-Root
+        Write-Host ""
+        Write-Host "  Claude Code not found on this system."
+        Write-Host "  To use Grasp-It with Claude Code:"
+        Write-Host "    1. Install Claude Code from https://docs.anthropic.com/en/docs/claude-code/"
+        Write-Host "    2. Restart your terminal"
+        Write-Host "    3. Run: /plugin marketplace add akimkelar/Grasp-It; /plugin install grasp-it"
+    }
+}
+
 function Get-SkillNames {
     $root = Get-SkillsRoot
     if (-not (Test-Path $root)) { Write-Error "Skills directory not found: $root" }
@@ -170,6 +212,10 @@ function Link-Skills([string]$Target, [string]$Style) {
             New-Junction $link $root
             Write-Host "  ✓ $link → $root"
         }
+        'claude' {
+            # Claude Code uses plugin cache installation instead of skill junctions.
+            # Handled by Install-ClaudePlugin in Cmd-Install.
+        }
         default { Write-Error "Unknown style: $Style" }
     }
 }
@@ -198,6 +244,18 @@ function Unlink-Skills([string]$Target, [string]$Style) {
         'folder' {
             Remove-Reparse (Join-Path $Target 'grasp-it') | Out-Null
         }
+        'claude' {
+            # Remove the plugin from Claude Code's cache.
+            $pluginVersion = '0.1.0'
+            $pkgJson = Get-Content (Join-Path $RepoDir 'grasp-it-plugin\package.json') -Raw -ErrorAction SilentlyContinue
+            if ($pkgJson -match '"version"[[:space:]]*:[[:space:]]*"([^"]+)"') {
+                $pluginVersion = $matches[1]
+            }
+            $cachePath = Join-Path $Target "grasp-it\grasp-it\$pluginVersion"
+            if (Test-Path $cachePath) {
+                Remove-Item -Recurse -Force $cachePath
+            }
+        }
     }
 }
 
@@ -214,23 +272,32 @@ function Link-Plugin-Root {
 function Cmd-Install([string]$Id) {
     $cfg = Resolve-Platform $Id
     Clone-Or-Update
-    Build-Plugin
-    Write-Host "→ Linking skills for $Id ($($cfg.Style) → $($cfg.Target))"
-    Link-Skills $cfg.Target $cfg.Style
-    Write-Host '→ Linking universal plugin root'
-    Link-Plugin-Root
 
-    Write-Host "`n✓ Installed Grasp-It for $Id"
-    Write-Host '  Restart your CLI or IDE to pick up the skills.'
-    if ($Id -eq 'vscode') {
-        Write-Host "`n  Tip: VS Code can also auto-discover the plugin by opening this repo"
-        Write-Host '       directly (it reads .copilot-plugin/plugin.json), no symlinks needed.'
+    if ($Id -eq 'claude') {
+        Install-ClaudePlugin
+    } else {
+        Build-Plugin
+        Write-Host "→ Linking skills for $Id ($($cfg.Style) → $($cfg.Target))"
+        Link-Skills $cfg.Target $cfg.Style
+        Write-Host '→ Linking universal plugin root'
+        Link-Plugin-Root
+
+        Write-Host "`n✓ Installed Grasp-It for $Id"
+        Write-Host '  Restart your CLI or IDE to pick up the skills.'
+        if ($Id -eq 'vscode') {
+            Write-Host "`n  Tip: VS Code can also auto-discover the plugin by opening this repo"
+            Write-Host '       directly (it reads .copilot-plugin/plugin.json), no symlinks needed.'
+        }
     }
 }
 
 function Cmd-Uninstall([string]$Id) {
     $cfg = Resolve-Platform $Id
-    Write-Host "→ Removing skill links for $Id"
+    if ($Id -eq 'claude') {
+        Write-Host "→ Removing Grasp-It plugin from Claude Code cache"
+    } else {
+        Write-Host "→ Removing skill links for $Id"
+    }
     Unlink-Skills $cfg.Target $cfg.Style
     if (Remove-Reparse $PluginLink) {
         Write-Host "  ✓ removed $PluginLink"

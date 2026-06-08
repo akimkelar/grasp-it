@@ -40,6 +40,7 @@ hermes|$HOME/.hermes/skills|folder
 cline|$HOME/.cline/skills|folder
 kimi|$HOME/.kimi/skills|folder
 trae|$HOME/.trae/skills|per-skill
+claude|$HOME/.claude/plugins/cache|claude
 EOF
 }
 
@@ -114,6 +115,44 @@ build_plugin() {
   fi
 }
 
+install_claude_plugin() {
+  # Installs the plugin into Claude Code's plugin cache, or sets up the
+  # plugin files for manual installation if Claude Code is not present.
+  local plugin_src="$REPO_DIR/grasp-it-plugin"
+  local claude_cache_base="$HOME/.claude/plugins/cache"
+  local plugin_name="grasp-it"
+  local cache_target
+
+  # Detect Claude Code version from the plugin's package.json
+  local plugin_version
+  plugin_version="$(cat "$plugin_src/package.json" 2>/dev/null | grep '"version"' | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"//' | sed 's/".*//')"
+  if [[ -z "$plugin_version" ]]; then
+    plugin_version="0.1.0"
+  fi
+
+  cache_target="$claude_cache_base/$plugin_name/$plugin_name/$plugin_version"
+
+  if command -v claude >/dev/null 2>&1 && [[ -d "$HOME/.claude" ]]; then
+    printf -- '→ Installing Grasp-It plugin into Claude Code cache\n'
+    mkdir -p "$claude_cache_base/$plugin_name/$plugin_name"
+    rm -rf "$cache_target"
+    cp -R "$plugin_src" "$cache_target"
+    printf -- '  ✓ Plugin installed to %s\n' "$cache_target"
+    printf '\n  Restart Claude Code to pick up the plugin, or run:\n'
+    printf '    /plugin marketplace add akimkelar/Grasp-It\n'
+    printf '    /plugin install grasp-it\n'
+  else
+    printf -- '→ Claude Code not detected — setting up plugin files for manual installation\n'
+    build_plugin
+    link_plugin_root
+    printf '\n  Claude Code not found on this system.\n'
+    printf '  To use Grasp-It with Claude Code:\n'
+    printf '    1. Install Claude Code from https://docs.anthropic.com/en/docs/claude-code/\n'
+    printf '    2. Restart your terminal\n'
+    printf '    3. Run: /plugin marketplace add akimkelar/Grasp-It && /plugin install grasp-it\n'
+  fi
+}
+
 skills_root() { printf '%s\n' "$REPO_DIR/grasp-it-plugin/skills"; }
 
 list_skills() {
@@ -147,6 +186,10 @@ link_skills() {
       ln -sfn "$root" "$target/grasp-it"
       printf '  ✓ %s → %s\n' "$target/grasp-it" "$root"
       ;;
+    claude)
+      # Claude Code uses plugin cache installation instead of skill symlinks.
+      # Handled by install_claude_plugin() in cmd_install.
+      ;;
     *)
       printf 'Unknown style: %s\n' "$style" >&2
       exit 1
@@ -179,6 +222,16 @@ unlink_skills() {
     folder)
       [[ -L "$target/grasp-it" ]] && rm -f "$target/grasp-it"
       ;;
+    claude)
+      # Remove the plugin from Claude Code's cache.
+      local plugin_version
+      plugin_version="$(cat "$REPO_DIR/grasp-it-plugin/package.json" 2>/dev/null | grep '"version"' | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"//' | sed 's/".*//')"
+      if [[ -z "$plugin_version" ]]; then
+        plugin_version="0.1.0"
+      fi
+      local cache_path="$HOME/.claude/plugins/cache/grasp-it/grasp-it/$plugin_version"
+      [[ -d "$cache_path" ]] && rm -rf "$cache_path"
+      ;;
   esac
 }
 
@@ -199,17 +252,22 @@ cmd_install() {
   style="$(printf '%s\n' "$row" | cut -d'|' -f3)"
 
   clone_or_update
-  build_plugin
-  printf -- '→ Linking skills for %s (%s → %s)\n' "$id" "$style" "$target"
-  link_skills "$target" "$style"
-  printf -- '→ Linking universal plugin root\n'
-  link_plugin_root
 
-  printf '\n✓ Installed Grasp-It for %s\n' "$id"
-  printf '  Restart your CLI or IDE to pick up the skills.\n'
-  if [[ "$id" == "vscode" ]]; then
-    printf '\n  Tip: VS Code can also auto-discover the plugin by opening this repo\n'
-    printf '       directly (it reads .copilot-plugin/plugin.json), no symlinks needed.\n'
+  if [[ "$id" == "claude" ]]; then
+    install_claude_plugin
+  else
+    build_plugin
+    printf -- '→ Linking skills for %s (%s → %s)\n' "$id" "$style" "$target"
+    link_skills "$target" "$style"
+    printf -- '→ Linking universal plugin root\n'
+    link_plugin_root
+
+    printf '\n✓ Installed Grasp-It for %s\n' "$id"
+    printf '  Restart your CLI or IDE to pick up the skills.\n'
+    if [[ "$id" == "vscode" ]]; then
+      printf '\n  Tip: VS Code can also auto-discover the plugin by opening this repo\n'
+      printf '       directly (it reads .copilot-plugin/plugin.json), no symlinks needed.\n'
+    fi
   fi
 }
 
@@ -220,7 +278,11 @@ cmd_uninstall() {
   target="$(printf '%s\n' "$row" | cut -d'|' -f2)"
   style="$(printf '%s\n' "$row" | cut -d'|' -f3)"
 
-  printf -- '→ Removing skill links for %s\n' "$id"
+  if [[ "$id" == "claude" ]]; then
+    printf -- '→ Removing Grasp-It plugin from Claude Code cache\n'
+  else
+    printf -- '→ Removing skill links for %s\n' "$id"
+  fi
   unlink_skills "$target" "$style"
   if [[ -L "$PLUGIN_LINK" ]]; then
     rm -f "$PLUGIN_LINK"
