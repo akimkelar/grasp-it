@@ -90,7 +90,7 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
       });
-      expect(config.NEO4J_DATABASE).toBe('neo4j');
+      expect(config.NEO4J_DATABASE).toBe('grasp');
     });
   });
 
@@ -114,12 +114,12 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
       expect(config.NEO4J_DATABASE).toBe('projectdb');
     });
 
-    it('defaults to "neo4j" when NEO4J_DATABASE is not in project .env', () => {
+    it('defaults to "grasp" when NEO4J_DATABASE is not in project .env', () => {
       writeFileSync(join(root, '.env'),
         `NEO4J_URI=bolt://localhost:7687\nNEO4J_USERNAME=neo4j\nNEO4J_PASSWORD=password\n`
       );
       const config = runConfigLoader(LOADER_PATH, root, {});
-      expect(config.NEO4J_DATABASE).toBe('neo4j');
+      expect(config.NEO4J_DATABASE).toBe('grasp');
     });
   });
 
@@ -160,14 +160,14 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
       }
     });
 
-    it('defaults to "neo4j" when NEO4J_DATABASE is not in global neo4j.env', () => {
+    it('defaults to "grasp" when NEO4J_DATABASE is not in global neo4j.env', () => {
       writeFileSync(globalConfigPath,
         `NEO4J_URI=bolt://localhost:7687\nNEO4J_USERNAME=neo4j\nNEO4J_PASSWORD=password\n${testMarker}\n`
       );
       const projectRoot = mkdtempSync(join(tmpdir(), 'cfg-global-project-'));
       try {
         const config = runConfigLoader(LOADER_PATH, projectRoot, {});
-        expect(config.NEO4J_DATABASE).toBe('neo4j');
+        expect(config.NEO4J_DATABASE).toBe('grasp');
       } finally {
         rmSync(projectRoot, { recursive: true, force: true });
       }
@@ -186,13 +186,13 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
       if (root) rmSync(root, { recursive: true, force: true });
     });
 
-    it('defaults to "neo4j" when NEO4J_DATABASE is not set anywhere', () => {
+    it('defaults to "grasp" when NEO4J_DATABASE is not set anywhere', () => {
       const config = runConfigLoader(LOADER_PATH, root, {
         NEO4J_URI: 'bolt://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
       });
-      expect(config.NEO4J_DATABASE).toBe('neo4j');
+      expect(config.NEO4J_DATABASE).toBe('grasp');
     });
   });
 

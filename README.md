@@ -191,10 +191,10 @@ updates — only re-analyzes files that changed since the last run.
 
 ### Knowledge Graph Schema
 
-Two Neo4j databases:
+One Neo4j database (`grasp`). Two logical subgraphs separated by the `kind` property:
 
-- **`codebase`** — `File`, `Function`, `Class`, `Module`, `Endpoint`, `Table`, `Service`, ...
-- **`knowledge`** — `Domain`, `Feature`, `Actor`, `BusinessRule`, `Operation`, `Flow`, `Step`,
+- **`kind: "codebase"`** — `File`, `Function`, `Class`, `Module`, `Endpoint`, `Table`, `Service`, ...
+- **`kind: "knowledge"`** — `Domain`, `Feature`, `Actor`, `BusinessRule`, `Operation`, `Flow`, `Step`,
   `Decision`, `Constraint`, `Claim`, ...
 
 See [`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md) for the full schema.

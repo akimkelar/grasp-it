@@ -54,7 +54,7 @@ async function loadProjectMetaViaDriver(neo4jConfig) {
   }
 
   try {
-    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'grasp' });
     const result = await session.run(
       `MATCH (p:Project {id: $id}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`,
       { id: PROJECT_SINGLETON_ID },

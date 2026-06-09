@@ -157,15 +157,45 @@ Produce a JSON object with this exact structure:
 8. **Groovy/Grails support**: When analyzing Grails projects, recognize controller patterns (e.g., `InterviewController`), service patterns (e.g., `InterviewService`), and domain class patterns. Use `grails-app/controllers/` and `grails-app/services/` as entry point directories.
 9. **Use `uses_entity` (not `USES`)**: The relationship type from Feature/Operation to Entity must be `uses_entity` per the Neo4j schema (maps to `:USES_ENTITY` in the database).
 
-## Critical Field Name Constraints
+## Node ID Rules (STRICT — violations will cause data corruption)
 
-**Do NOT use `label` — use `name` instead.**
-Every node MUST have a `name` field (the human-readable label). The field name must be exactly `name`, not `label`.
+The ID separator between type prefix and name is a **COLON `:`, NOT a dash `-`**.
 
-**Do NOT use `description` — use `summary` instead.**
-Every node MUST have a `summary` field (2-3 sentences describing the node). The field name must be exactly `summary`, not `description`.
+**CORRECT IDs:**
+```
+domain:surcharge-catalog
+feature:overwork-surcharge
+operation:classify-work-hours
+business-rule:no-base-requires-value
+entity:surcharge-set
+actor:agency-user
+```
 
-**Correct example (pay attention to field names):**
+**WRONG IDs (will break the graph):**
+```
+domain-surcharge-catalog         ← DASH separator (wrong)
+op-classify-work-hours           ← ABBREVIATED prefix (wrong)
+rule-no-base-requires-value      ← ABBREVIATED prefix (wrong)
+```
+
+**Prefixes must NEVER be abbreviated:**
+- `operation` (NOT `op`, `oper`)
+- `business-rule` (NOT `rule`, `br`)
+- `entity` (NOT `ent`)
+- `actor` (NOT `act`)
+
+## Critical Field Name Constraints (STRICT)
+
+**Node fields — use these exact names:**
+- `name` — human-readable label (NOT `label`, `title`, `displayName`)
+- `summary` — description text (NOT `description`, `body`, `text`, `about`)
+
+**Edge fields — use these exact names:**
+- `source` — origin node ID (NOT `from`, `src`)
+- `target` — destination node ID (NOT `to`, `tgt`)
+- `type` — relationship type in kebab-case (NOT `relation`, `rel`, `relationshipType`)
+
+**Correct node example (pay attention to field names and ID format):**
 ```json
 {
   "id": "domain:order-management",
@@ -173,21 +203,18 @@ Every node MUST have a `summary` field (2-3 sentences describing the node). The 
   "kind": "knowledge",
   "source": "code-analysis",
   "name": "Order Management",
-  "summary": "Handles all aspects of order processing including creation, fulfillment, tracking, and cancellation. Integrates with inventory and payment systems.",
-  "tags": ["commerce", "orders", "fulfillment"],
+  "summary": "Handles all aspects of order processing including creation, fulfillment, tracking, and cancellation.",
+  "tags": ["commerce", "orders"],
   "complexity": "moderate"
 }
 ```
 
-**Incorrect example (wrong field names):**
+**Incorrect examples (will cause problems):**
 ```json
 {
-  "id": "domain:order-management",
-  "type": "domain",
-  "label": "Order Management",
-  "description": "Handles all aspects of order processing...",
-  "tags": ["commerce", "orders", "fulfillment"],
-  "complexity": "moderate"
+  "id": "domain-order-management",   ← DASH instead of colon
+  "label": "Order Management",         ← WRONG field name
+  "description": "Handles..."          ← WRONG field name
 }
 ```
 

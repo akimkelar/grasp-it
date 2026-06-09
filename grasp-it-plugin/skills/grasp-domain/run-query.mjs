@@ -50,7 +50,7 @@ async function runQueryViaDriver(neo4jConfig, query) {
   }
 
   try {
-    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'grasp' });
     const result = await session.run(query);
     await session.close();
     // Convert records to plain objects
@@ -109,7 +109,7 @@ function runQueryViaCypherShell(neo4jConfig, query) {
         "-a", cypherUri,
         "-u", username,
         "-p", password,
-        "-d", neo4jConfig.NEO4J_DATABASE || "neo4j",
+        "-d", neo4jConfig.NEO4J_DATABASE || "grasp",
         "--format", "json",
       ],
       { input: query, encoding: "utf-8" },

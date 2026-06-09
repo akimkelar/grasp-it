@@ -41,8 +41,8 @@ describe('push-domain-graph.mjs', () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'push-domain-graph-test-'));
-    // The script reads domain-analysis.json from .grasp-it/ (not intermediate/)
-    mkdirSync(join(root, '.grasp-it'), { recursive: true });
+    // The script reads domain-analysis.json from .grasp-it/intermediate/
+    mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
   });
 
   afterEach(() => {
@@ -65,7 +65,7 @@ describe('push-domain-graph.mjs', () => {
   describe('exit code 1 when no Neo4j configuration found', () => {
     it('exits with code 1 when no Neo4j env vars and no .env file', () => {
       // Create a valid domain-analysis.json at the correct path
-      writeFileSync(join(root, '.grasp-it', 'domain-analysis.json'), JSON.stringify({
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'), JSON.stringify({
         nodes: [],
         edges: [],
       }));
@@ -96,7 +96,7 @@ describe('push-domain-graph.mjs', () => {
         edges: [],
       };
       writeFileSync(
-        join(root, '.grasp-it', 'domain-analysis.json'),
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
         JSON.stringify(domainAnalysis),
       );
 
@@ -132,7 +132,7 @@ describe('push-domain-graph.mjs', () => {
         edges: [],
       };
       writeFileSync(
-        join(root, '.grasp-it', 'domain-analysis.json'),
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
         JSON.stringify(domainAnalysis),
       );
 
@@ -160,7 +160,7 @@ describe('push-domain-graph.mjs', () => {
         edges: [],
       };
       writeFileSync(
-        join(root, '.grasp-it', 'domain-analysis.json'),
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
         JSON.stringify(domainAnalysis),
       );
 

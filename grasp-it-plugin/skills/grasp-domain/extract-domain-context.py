@@ -54,14 +54,22 @@ SOURCE_EXTENSIONS = {
     ".r", ".R",
 }
 
-# Directories to always skip
+# Directories to always skip (exact name matches)
 SKIP_DIRS = {
     "node_modules", ".git", ".svn", ".hg", "__pycache__", ".tox",
-    "venv", ".venv", "env", ".env", "dist", "build", "out", ".next",
+    "venv", ".env", "dist", "build", "out", ".next",
     ".nuxt", "target", "vendor", ".idea", ".vscode", "coverage",
     ".grasp-it", ".pytest_cache", ".mypy_cache",
     "Pods", "DerivedData", ".gradle", "bin", "obj",
 }
+
+# Hard exclusion patterns (regex-based, matched against directory name only)
+HARD_EXCLUDED_PATTERNS = [
+    r"^\.venv.*",       # any .venv-* directory (e.g., .venv-mempalace, .venv-test)
+    r"^env$",           # generic venv directory name
+    r"^\.env",          # .env (but not .env.local, .env.production which are project files)
+    r"^react-native",   # React Native build artifacts
+]
 
 # Files that reveal project metadata
 METADATA_FILES = [
@@ -170,6 +178,16 @@ def is_ignored(rel_path: str, gitignore_patterns: list[re.Pattern[str]]) -> bool
 
 # ── File tree scanner ──────────────────────────────────────────────────────
 
+def should_exclude_dir(dirname: str) -> bool:
+    """Check if a directory name matches any hard exclusion pattern."""
+    if dirname in SKIP_DIRS:
+        return True
+    for pattern in HARD_EXCLUDED_PATTERNS:
+        if re.fullmatch(pattern, dirname):
+            return True
+    return False
+
+
 def scan_file_tree(
     root: Path,
     gitignore_patterns: list[re.Pattern[str]],
@@ -195,7 +213,7 @@ def scan_file_tree(
                 continue
             rel = str(entry.relative_to(root))
             if entry.is_dir():
-                if entry.name in SKIP_DIRS:
+                if should_exclude_dir(entry.name):
                     continue
                 if is_ignored(rel + "/", gitignore_patterns):
                     continue

@@ -46,7 +46,7 @@ async function loadProjectMeta() {
   }
 
   try {
-    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'grasp' });
     const result = await session.run(
       "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
     );

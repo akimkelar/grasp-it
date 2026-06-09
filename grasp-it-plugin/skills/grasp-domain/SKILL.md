@@ -94,6 +94,24 @@ if [ -z "$PLUGIN_ROOT" ]; then
   echo "Make sure the plugin is installed correctly."
   exit 1
 fi
+
+# Validate that the resolved PLUGIN_ROOT has all required skill files.
+# If the installed plugin is outdated (e.g., ~/.grasp-it-plugin is an older version
+# that lacks run-query.mjs and push-domain-graph.mjs), fall back to the Claude cache.
+if [ ! -f "$PLUGIN_ROOT/skills/grasp-domain/run-query.mjs" ]; then
+  CACHE_BASE="$HOME/.claude/plugins/cache/grasp-it/grasp-it"
+  LATEST_CACHE=$(ls -d "$CACHE_BASE"/*/  2>/dev/null | sort -V | tail -1 | sed 's|/$||')
+  if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/skills/grasp-domain/run-query.mjs" ]; then
+    echo "[grasp-domain] WARNING: Installed plugin at $PLUGIN_ROOT is outdated."
+    echo "[grasp-domain] Falling back to cache version: $LATEST_CACHE"
+    PLUGIN_ROOT="$LATEST_CACHE"
+  else
+    echo "[grasp-domain] ERROR: Plugin files are missing. Re-install the plugin."
+    echo "  Run: /plugin update && /reload-plugins"
+    echo "HARD STOP: Cannot continue without run-query.mjs."
+    exit 1
+  fi
+fi
 ```
 
 Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases.
