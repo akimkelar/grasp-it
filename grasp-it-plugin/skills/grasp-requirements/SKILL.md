@@ -97,6 +97,8 @@ for candidate in \
     break
   fi
 done
+
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 ```
 
 Create working directories and initialize intermediate files:
@@ -124,8 +126,7 @@ If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not pro
 
 Query Neo4j for nodes related to the topic:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE n.name CONTAINS '$TOPIC' OR any(t IN coalesce(n.tags, []) WHERE toLower(t) CONTAINS toLower('$TOPIC')) RETURN n LIMIT 20"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE n.name CONTAINS '$TOPIC' OR any(t IN coalesce(n.tags, []) WHERE toLower(t) CONTAINS toLower('$TOPIC')) RETURN n LIMIT 20"
 ```
 If Neo4j query fails, report the error and **STOP**.
 
@@ -430,9 +431,8 @@ When the specialist confirms the synthesis is correct:
 
 Query Neo4j for the existing knowledge graph:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
 ```
 If Neo4j query fails, report the error and **STOP**.
 
@@ -471,7 +471,6 @@ Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed
 1. Validate the merged graph against the schema
 2. Write the merged graph back to Neo4j:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
    # Write nodes and edges to Neo4j via run-query.mjs
    ```
    If Neo4j write fails, report the error and **STOP**.

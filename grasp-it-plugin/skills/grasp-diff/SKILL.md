@@ -30,14 +30,55 @@ The knowledge graph JSON has this structure:
 
 ## Instructions
 
-### Phase 0: Graph Freshness Check
+### Phase 0: Setup
+
+Resolve `PROJECT_ROOT`, `PLUGIN_ROOT`, and `GRASP_SKILL_DIR`:
+
+```bash
+PROJECT_ROOT="${PWD}"
+
+COMMON_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)
+GIT_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)
+if [ -n "$COMMON_DIR" ] && [ -n "$GIT_DIR" ]; then
+  COMMON_ABS=$(cd "$PROJECT_ROOT" && cd "$COMMON_DIR" 2>/dev/null && pwd -P)
+  GIT_ABS=$(cd "$PROJECT_ROOT" && cd "$GIT_DIR" 2>/dev/null && pwd -P)
+  if [ -n "$COMMON_ABS" ] && [ "$COMMON_ABS" != "$GIT_ABS" ]; then
+    MAIN_ROOT=$(dirname "$COMMON_ABS")
+    if [ -d "$MAIN_ROOT" ] && [ "${UNDERSTAND_NO_WORKTREE_REDIRECT:-0}" != "1" ]; then
+      PROJECT_ROOT="$MAIN_ROOT"
+    fi
+  fi
+fi
+
+SKILL_REAL=$(realpath ~/.agents/skills/grasp-diff 2>/dev/null || readlink -f ~/.agents/skills/grasp-diff 2>/dev/null || echo "")
+SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
+COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-diff 2>/dev/null || readlink -f ~/.copilot/skills/grasp-diff 2>/dev/null || echo "")
+COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
+
+PLUGIN_ROOT=""
+for candidate in \
+  "$HOME/.grasp-it-plugin" \
+  "$SELF_RELATIVE" \
+  "$COPILOT_SELF_RELATIVE" \
+  "$HOME/.opencode/grasp-it/grasp-it-plugin" \
+  "$HOME/.pi/grasp-it/grasp-it-plugin" \
+  "$HOME/grasp-it/grasp-it-plugin"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
+    PLUGIN_ROOT="$candidate"
+    break
+  fi
+done
+
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+```
+
+### Phase 1: Graph Freshness Check
 
 Before reading the graph, check whether it is stale relative to the current HEAD:
 
 1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   NEO4J_RESULT=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
    if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
      echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
      echo "Ensure Neo4j is running and accessible, then re-run /grasp-diff."
@@ -60,8 +101,7 @@ Before reading the graph, check whether it is stale relative to the current HEAD
 
 1. Check that a `Project` singleton exists in Neo4j:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
    ```
    If Neo4j returns no results, tell the user to run `/grasp` first.
 

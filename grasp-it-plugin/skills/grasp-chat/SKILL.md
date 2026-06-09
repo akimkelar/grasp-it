@@ -27,55 +27,92 @@ Key relationships:
 
 ## Instructions
 
-### Phase 0: Verify Graph Exists
+### Phase 0: Setup
+
+Resolve `PROJECT_ROOT`, `PLUGIN_ROOT`, and `GRASP_SKILL_DIR`:
+
+```bash
+PROJECT_ROOT="${PWD}"
+
+COMMON_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-common-dir 2>/dev/null)
+GIT_DIR=$(git -C "$PROJECT_ROOT" rev-parse --git-dir 2>/dev/null)
+if [ -n "$COMMON_DIR" ] && [ -n "$GIT_DIR" ]; then
+  COMMON_ABS=$(cd "$PROJECT_ROOT" && cd "$COMMON_DIR" 2>/dev/null && pwd -P)
+  GIT_ABS=$(cd "$PROJECT_ROOT" && cd "$GIT_DIR" 2>/dev/null && pwd -P)
+  if [ -n "$COMMON_ABS" ] && [ "$COMMON_ABS" != "$GIT_ABS" ]; then
+    MAIN_ROOT=$(dirname "$COMMON_ABS")
+    if [ -d "$MAIN_ROOT" ] && [ "${UNDERSTAND_NO_WORKTREE_REDIRECT:-0}" != "1" ]; then
+      PROJECT_ROOT="$MAIN_ROOT"
+    fi
+  fi
+fi
+
+SKILL_REAL=$(realpath ~/.agents/skills/grasp-chat 2>/dev/null || readlink -f ~/.agents/skills/grasp-chat 2>/dev/null || echo "")
+SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
+COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-chat 2>/dev/null || readlink -f ~/.copilot/skills/grasp-chat 2>/dev/null || echo "")
+COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
+
+PLUGIN_ROOT=""
+for candidate in \
+  "$HOME/.grasp-it-plugin" \
+  "$SELF_RELATIVE" \
+  "$COPILOT_SELF_RELATIVE" \
+  "$HOME/.opencode/grasp-it/grasp-it-plugin" \
+  "$HOME/.pi/grasp-it/grasp-it-plugin" \
+  "$HOME/grasp-it/grasp-it-plugin"; do
+  if [ -n "$candidate" ] && [ -f "$candidate/package.json" ] && [ -f "$candidate/pnpm-workspace.yaml" ]; then
+    PLUGIN_ROOT="$candidate"
+    break
+  fi
+done
+
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+```
+
+### Phase 1: Verify Graph Exists
 
 1. Query Neo4j for the `Project` singleton:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
    ```
 2. If Neo4j returns no results, tell the user to run `/grasp` first.
 
-### Phase 1: Get Project Context
+### Phase 2: Get Project Context
 
 Query for project metadata:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.name, p.description, p.languages, p.frameworks"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.name, p.description, p.languages, p.frameworks"
 ```
 If Neo4j query fails, report the error and **STOP**.
 
-### Phase 2: Search for Relevant Nodes
+### Phase 3: Search for Relevant Nodes
 
 Query Neo4j for nodes matching the user's query:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE toLower(n.name) CONTAINS toLower('$ARGUMENTS') OR toLower(n.summary) CONTAINS toLower('$ARGUMENTS') RETURN n.name, n.kind, n.summary LIMIT 50"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE toLower(n.name) CONTAINS toLower('$ARGUMENTS') OR toLower(n.summary) CONTAINS toLower('$ARGUMENTS') RETURN n.name, n.kind, n.summary LIMIT 50"
 ```
 If Neo4j query fails, report the error and **STOP**.
 
 Note the node IDs of all matching nodes.
 
-### Phase 3: Find Connected Edges
+### Phase 4: Find Connected Edges
 
 For each matched node ID, query for connected edges:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[r]->(m) RETURN n.name, type(r), m.name LIMIT 30"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (m)-[r]->(n {name: '$NODE_NAME'}) RETURN m.name, type(r), n.name LIMIT 30"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[r]->(m) RETURN n.name, type(r), m.name LIMIT 30"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (m)-[r]->(n {name: '$NODE_NAME'}) RETURN m.name, type(r), n.name LIMIT 30"
 ```
 
 This gives you the 1-hop subgraph around the query.
 
-### Phase 4: Read Layer Context
+### Phase 5: Read Layer Context
 
 Query for layer membership:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[:IN_LAYER]->(l) RETURN l.name, l.description"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[:IN_LAYER]->(l) RETURN l.name, l.description"
 ```
 
-### Phase 5: Answer the Query
+### Phase 6: Answer the Query
 
 Answer the query using only the relevant subgraph:
    - Reference specific files, functions, and relationships from the graph

@@ -58,14 +58,14 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:orders", name: "Orders", type: "domain" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     // First call clears existing domain elements
-    const clearCall = mockSession.run.mock.calls[0];
+    const clearCall = mockSession.run.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(clearCall[0]).toContain("MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})");
 
     // Second call creates the domain node with dual-label pattern
-    const createCall = mockSession.run.mock.calls[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
     expect(createCall[0]).toContain("DomainElement:Domain");
   });
 
@@ -76,10 +76,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "feature:auth", name: "Auth", type: "feature" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    const createCall = mockSession.run.mock.calls[1];
-    const params = createCall[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
+    const params = createCall[1]!;
 
     // Verify 'type' is in the params, not 'nodeType'
     expect(params).toHaveProperty("type");
@@ -97,10 +97,10 @@ describe("saveDomainGraphToNeo4j", () => {
       makeDomainNode({ id: "feature:auth", name: "Auth", type: "feature" }),
     ]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     // Check that the CREATE query contains kind: "knowledge"
-    const createCall = mockSession.run.mock.calls[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
     expect(createCall[0]).toContain('kind: "knowledge"');
   });
 
@@ -116,7 +116,7 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph(nodes);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     // Verify all 6 domain nodes were created + 1 clear + 1 project update = 8 calls total
     expect(mockSession.run).toHaveBeenCalledTimes(8);
@@ -125,7 +125,7 @@ describe("saveDomainGraphToNeo4j", () => {
     const expectedLabels = ["DomainElement:Domain", "DomainElement:Feature", "DomainElement:Operation", "DomainElement:Actor", "DomainElement:Entity", "DomainElement:BusinessRule"];
 
     for (let i = 0; i < domainTypes.length; i++) {
-      const createCall = mockSession.run.mock.calls[i + 1]; // +1 to skip the clear call
+      const createCall = mockSession.run.mock.calls[i + 1] as unknown as [string, Record<string, unknown>]; // +1 to skip the clear call
       expect(createCall[0]).toContain(expectedLabels[i]);
     }
   });
@@ -137,10 +137,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain", source: undefined })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    const createCall = mockSession.run.mock.calls[1];
-    const params = createCall[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
+    const params = createCall[1]!;
 
     expect(params.source).toBe("code-analysis");
   });
@@ -152,10 +152,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain", source: "interview" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    const createCall = mockSession.run.mock.calls[1];
-    const params = createCall[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
+    const params = createCall[1]!;
 
     expect(params.source).toBe("interview");
   });
@@ -167,14 +167,14 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     // Last call should be the Project update
-    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1];
+    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1] as unknown as [string, Record<string, unknown>];
     expect(updateCall[0]).toContain("domainAnalyzedAt");
     expect(updateCall[0]).toContain("domainCommit");
 
-    const params = updateCall[1];
+    const params = updateCall[1]!;
     expect(params).toHaveProperty("domainAnalyzedAt");
     expect(params).toHaveProperty("domainCommit");
     // domainCommit should come from graph.project.gitCommitHash when not explicitly passed
@@ -188,10 +188,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph, "project:singleton", "explicit-commit-hash");
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph, "project:singleton", "explicit-commit-hash");
 
-    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1];
-    const params = updateCall[1];
+    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1] as unknown as [string, Record<string, unknown>];
+    const params = updateCall[1]!;
 
     expect(params.domainCommit).toBe("explicit-commit-hash");
   });
@@ -203,10 +203,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain" })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     // First call should be the DELETE query
-    const clearCall = mockSession.run.mock.calls[0];
+    const clearCall = mockSession.run.mock.calls[0] as unknown as [string, Record<string, unknown>];
     expect(clearCall[0]).toContain("DELETE d");
   });
 
@@ -227,10 +227,10 @@ describe("saveDomainGraphToNeo4j", () => {
       complexity: "complex",
     })]);
 
-    await saveDomainGraphToNeo4j(mockSession as never, graph);
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    const createCall = mockSession.run.mock.calls[1];
-    const params = createCall[1];
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
+    const params = createCall[1]!;
 
     expect(params.id).toBe("domain:orders");
     expect(params.name).toBe("Orders Domain");
