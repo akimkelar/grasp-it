@@ -101,8 +101,8 @@ Do not hardcode graph paths up front.
 Start with a small health check:
 
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10"
+GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10"
 QUERY_EXIT=$?
 
 if [ $QUERY_EXIT -eq 2 ]; then
@@ -118,7 +118,8 @@ fi
 Then inspect the live schema shape:
 
 ```bash
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label"
+GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label"
 SCHEMA_EXIT=$?
 if [ $SCHEMA_EXIT -eq 2 ]; then
   cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "

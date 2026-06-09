@@ -28,25 +28,12 @@ function initGitRepo(root) {
 }
 
 // ── Scripts under test ────────────────────────────────────────────────────────
-// All three skills ship identical copies of run-query.mjs + neo4j-config-loader.mjs.
-// Running the same suite against each copy ensures they stay in sync.
+// run-query.mjs and neo4j-config-loader.mjs live in the grasp skill as the canonical source.
 
 const SCRIPTS = [
   {
     name: 'grasp',
     path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/run-query.mjs'),
-  },
-  {
-    name: 'grasp-search',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-search/run-query.mjs'),
-  },
-  {
-    name: 'grasp-gaps',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-gaps/run-query.mjs'),
-  },
-  {
-    name: 'grasp-domain',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-domain/run-query.mjs'),
   },
 ];
 

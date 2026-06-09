@@ -21,7 +21,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getNeo4jConfig } from "./neo4j-config-loader.mjs";
+import { getNeo4jConfig } from "../../grasp/neo4j-config-loader.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 

@@ -21,16 +21,12 @@ function initGitRepo(root) {
 }
 
 // ── Config loaders under test ────────────────────────────────────────────────
-// Both grasp and grasp-domain ship identical copies of neo4j-config-loader.mjs.
+// neo4j-config-loader.mjs lives in the grasp skill as the canonical source.
 
 const LOADERS = [
   {
     name: 'grasp',
     path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/neo4j-config-loader.mjs'),
-  },
-  {
-    name: 'grasp-domain',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-domain/neo4j-config-loader.mjs'),
   },
 ];
 

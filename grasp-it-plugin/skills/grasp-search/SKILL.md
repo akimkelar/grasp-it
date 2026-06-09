@@ -39,8 +39,8 @@ Before querying the graph, check whether it is stale relative to the current HEA
 
 1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   NEO4J_RESULT=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
    if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
      echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
      echo "Ensure Neo4j is running and accessible, then re-run /grasp-search."
@@ -64,8 +64,8 @@ Before querying the graph, check whether it is stale relative to the current HEA
 Run this before broader graph exploration when using the skill in a fresh environment:
 
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3"
+GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3"
 QUERY_EXIT=$?
 
 if [ $QUERY_EXIT -eq 2 ]; then
@@ -87,8 +87,8 @@ If this fails:
 Basic query execution:
 
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5"
+GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5"
 ```
 
 For multi-line queries, pass a single-line query or use a temporary `.cypher` file with `cypher-shell -f`.

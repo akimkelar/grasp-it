@@ -28,7 +28,7 @@ function initGitRepo(root) {
 }
 
 // ── Scripts under test ────────────────────────────────────────────────────────
-// Both grasp and grasp-domain ship their own copy of load-project-meta.mjs.
+// load-project-meta.mjs lives in the grasp skill as the canonical source.
 
 const SCRIPTS = [
   {
@@ -37,13 +37,6 @@ const SCRIPTS = [
     expectNoNeo4jExits0: true,   // graceful: exits 0 with {} when no config
     expectNoProjectExits0: true, // graceful: exits 0 with {} when no singleton
     hasMockEnvVar: true,          // LOAD_PROJECT_META_MOCK is handled
-  },
-  {
-    name: 'grasp-domain',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-domain/load-project-meta.mjs'),
-    expectNoNeo4jExits0: false,  // strict: exits 1 when no config
-    expectNoProjectExits0: false, // strict: exits 1 when no singleton
-    hasMockEnvVar: false,         // LOAD_PROJECT_META_MOCK is NOT handled
   },
 ];
 
@@ -104,13 +97,8 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
       });
-      // grasp version exits 0 with {} when no project data; grasp-domain exits 1 (no graceful skip)
-      if (expectNoNeo4jExits0) {
-        expect(result.status).toBe(0);
-        expect(result.stdout.trim()).toBe('{}');
-      } else {
-        expect(result.status).toBe(1);
-      }
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim()).toBe('{}');
     });
   });
 
@@ -126,9 +114,7 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
       if (root) rmSync(root, { recursive: true, force: true });
     });
 
-    it(expectNoProjectExits0
-      ? 'exits 0 with {} when Project singleton does not exist'
-      : 'exits 1 with error when Project singleton does not exist', () => {
+    it('exits 0 with {} when Project singleton does not exist', () => {
         // Configure a real-ish connection that will succeed but return no rows
         const result = runScript(SCRIPT, [root], {
           NEO4J_URI: 'bolt://localhost:19999',
@@ -136,18 +122,13 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
           NEO4J_PASSWORD: 'password',
           NEO4J_CONNECTION_TYPE: 'driver',
         });
-        if (expectNoProjectExits0) {
-          // Connection fails → graceful {} (or unreachable db → exit 2)
-          expect(result.status === 0 || result.status === 2).toBe(true);
-          if (result.status === 0) expect(result.stdout.trim()).toBe('{}');
-        } else {
-          // grasp-domain exits 1 on query failure
-          expect(result.status).toBe(1);
-        }
+        // Connection fails → graceful {} (or unreachable db → exit 2)
+        expect(result.status === 0 || result.status === 2).toBe(true);
+        if (result.status === 0) expect(result.stdout.trim()).toBe('{}');
       });
   });
 
-  describe('mock environment variable (grasp only)', () => {
+  describe('mock environment variable', () => {
     let root;
 
     beforeEach(() => {
@@ -160,7 +141,6 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
 
     it('exits 0 and outputs JSON when LOAD_PROJECT_META_MOCK is set', () => {
-      if (!hasMockEnvVar) return; // skip for grasp-domain
       const result = runScript(SCRIPT, [root], {
         LOAD_PROJECT_META_MOCK: 'abc123def456',
       });
@@ -173,7 +153,6 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
 
     it('exits 0 with {} when LOAD_PROJECT_META_MOCK is empty string', () => {
-      if (!hasMockEnvVar) return; // skip for grasp-domain
       const result = runScript(SCRIPT, [root], {
         LOAD_PROJECT_META_MOCK: '',
       });
@@ -182,7 +161,6 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
 
     it('exits 0 with {} when LOAD_PROJECT_META_MOCK is "null"', () => {
-      if (!hasMockEnvVar) return; // skip for grasp-domain
       const result = runScript(SCRIPT, [root], {
         LOAD_PROJECT_META_MOCK: 'null',
       });
@@ -191,7 +169,7 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
   });
 
-  describe('output structure (grasp only — uses LOAD_PROJECT_META_MOCK)', () => {
+  describe('output structure', () => {
     let root;
 
     beforeEach(() => {
@@ -204,7 +182,6 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
 
     it('outputs correct JSON structure: { gitCommitHash, lastAnalyzedAt, version, analyzedFiles }', () => {
-      if (!hasMockEnvVar) return; // skip for grasp-domain
       const result = runScript(SCRIPT, [root], {
         LOAD_PROJECT_META_MOCK: 'deadbeef123456',
       });
@@ -233,7 +210,7 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
       if (root) rmSync(root, { recursive: true, force: true });
     });
 
-    it('exits 2 when cypher-shell is configured but database is unreachable (grasp only)', () => {
+    it('exits 2 when cypher-shell is configured but database is unreachable', () => {
       const result = runScript(SCRIPT, [root], {
         NEO4J_URI: 'bolt://localhost:19999',
         NEO4J_USERNAME: 'neo4j',
@@ -241,28 +218,15 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
         NEO4J_CONNECTION_TYPE: 'cypher-shell',
         PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
       });
-      // grasp: graceful skip via {} (exit 0) or unreachable → exit 2
-      // grasp-domain: exits 1 on query failure
-      if (expectNoNeo4jExits0) {
-        expect(result.status === 0 || result.status === 2).toBe(true);
-      } else {
-        expect(result.status).toBe(1);
-      }
+      // graceful skip via {} (exit 0) or unreachable → exit 2
+      expect(result.status === 0 || result.status === 2).toBe(true);
     });
   });
 
-  describe('cypher-shell -d flag (grasp only — config loader test coverage)', () => {
+  describe('cypher-shell -d flag', () => {
     // The -d flag passing in cypher-shell mode is covered by test_neo4j_config_loader.test.mjs
     // which verifies NEO4J_DATABASE is correctly read from env/.env files.
     // load-project-meta.mjs uses the same config loader + cypher-shell path as run-query.mjs.
-    // Note: grasp-domain's load-project-meta.mjs uses driver-only mode, so this test
-    // only applies to the grasp version.
-    if (!expectNoNeo4jExits0) {
-      it('skipped for grasp-domain (driver-only mode)', () => {
-        expect(true).toBe(true);
-      });
-      return;
-    }
 
     let root;
     let mockDir;

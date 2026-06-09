@@ -235,20 +235,6 @@ const CONFIG_LOADER_SCRIPTS = [
     name: 'grasp',
     path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/neo4j-config-loader.mjs'),
   },
-  {
-    name: 'grasp-search',
-    path: resolve(
-      __dirname,
-      '../../../grasp-it-plugin/skills/grasp-search/neo4j-config-loader.mjs',
-    ),
-  },
-  {
-    name: 'grasp-gaps',
-    path: resolve(
-      __dirname,
-      '../../../grasp-it-plugin/skills/grasp-gaps/neo4j-config-loader.mjs',
-    ),
-  },
 ];
 
 describe.each(CONFIG_LOADER_SCRIPTS)(
@@ -395,14 +381,6 @@ const RUN_QUERY_SCRIPTS = [
   {
     name: 'grasp',
     path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/run-query.mjs'),
-  },
-  {
-    name: 'grasp-search',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-search/run-query.mjs'),
-  },
-  {
-    name: 'grasp-gaps',
-    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-gaps/run-query.mjs'),
   },
 ];
 
