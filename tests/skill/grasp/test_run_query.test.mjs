@@ -44,6 +44,10 @@ const SCRIPTS = [
     name: 'grasp-gaps',
     path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-gaps/run-query.mjs'),
   },
+  {
+    name: 'grasp-domain',
+    path: resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-domain/run-query.mjs'),
+  },
 ];
 
 // ── Shared test suite — runs against every script copy ────────────────────────

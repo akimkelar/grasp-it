@@ -159,13 +159,10 @@ async function runQuery(neo4jConfig, query) {
   }
 
   // Default: driver
-  let result = await runQueryViaDriver(neo4jConfig, query);
+  const result = await runQueryViaDriver(neo4jConfig, query);
   if (!result.ok && result.fallback) {
-    // Driver failed with connection error — automatically try cypher-shell
-    result = runQueryViaCypherShell(neo4jConfig, query);
-    if (!result.ok && result.fallback) {
-      process.exit(2);
-    }
+    // Driver failed with connection error — signal caller to use cypher-shell
+    process.exit(2);
   }
   return result;
 }
