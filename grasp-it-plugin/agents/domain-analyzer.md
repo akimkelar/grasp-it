@@ -33,7 +33,7 @@ Analyze the provided context and produce a domain graph JSON file.
 1. **Domain** — High-level business areas (e.g., "Order Management", "User Authentication", "Payment Processing")
 2. **Feature** — Specific capabilities within a domain (e.g., "Interview Scheduling", "Rescheduling")
 3. **Operation** — Individual actions within a feature (e.g., "Send Invitation", "Cancel Interview")
-4. **Actor** — User roles or system agents (e.g., "Agency User", "System")
+4. **Actor** — User roles or system agents (e.g., "Agency User", "Payment API", "Nightly Job", "Email Queue") — see Rule 10 for external system actors
 5. **BusinessRule** — Business policies and constraints (e.g., "Manager Approval Required")
 6. **Entity** — Named business objects (e.g., "Interview", "Candidate")
 
@@ -153,9 +153,15 @@ Produce a JSON object with this exact structure:
 4. **File paths** on nodes should be relative to project root. If you cannot determine the exact file, omit `filePath` and `lineRange`.
 5. **Be specific, not generic** — use the actual business terminology from the code
 6. **Don't invent features that aren't in the code** — only document what exists
-7. **Scale appropriately**: Aim for 2-6 domains, 2-5 features per domain, 2-5 operations per feature. Fewer is fine for small projects.
+7. **Scale appropriately**: Match graph size to domain complexity.
+   - Small scope (< 10 files): 1-3 domains, 2-5 features each
+   - Medium scope (10-25 files): 3-6 domains, 3-8 features each
+   - Large scope (25+ files, multiple service layers): up to 10 domains, up to 10 features each
+   Prefer specificity over compression. If two operations have meaningfully different business semantics, keep them separate rather than merging them. Hard cap: 300 total nodes.
 8. **Groovy/Grails support**: When analyzing Grails projects, recognize controller patterns (e.g., `InterviewController`), service patterns (e.g., `InterviewService`), and domain class patterns. Use `grails-app/controllers/` and `grails-app/services/` as entry point directories.
 9. **Use `uses_entity` (not `USES`)**: The relationship type from Feature/Operation to Entity must be `uses_entity` per the Neo4j schema (maps to `:USES_ENTITY` in the database).
+10. **Capture external system actors**: APIs, queues, schedulers, and other services that the codebase calls out to — or that call in — are valid `actor` nodes. Name them after the external system (e.g., `actor:payment-api`, `actor:email-queue`, `actor:nightly-job`). Include them when they directly participate in a captured `operation` — i.e., when the codebase shows an outbound call or an inbound trigger that drives domain behavior.
+11. **Capture feature toggles and algorithm switches as BusinessRule nodes**: When you find a conditional branch controlled by a configuration property, feature flag, or environment variable, capture it as a `business-rule` with `status: "active"` and a `ruleText` that names the flag/property and describes what each branch does. Example: `"ruleText": "When FEATURE_X=true, uses algorithm A (faster, approximate). When false, uses algorithm B (slower, exact). Controlled per-company."`
 
 ## Node ID Rules (STRICT — violations will cause data corruption)
 

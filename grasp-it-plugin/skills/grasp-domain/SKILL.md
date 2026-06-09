@@ -353,9 +353,21 @@ fi
 
 The preprocessing script does NOT produce a domain graph — it produces **raw material** (file tree, entry points, exports/imports) so the domain-analyzer agent can focus on the actual domain analysis instead of spending dozens of tool calls exploring the codebase. Think of it as a cheat sheet: cheap Python preprocessing → expensive LLM gets a clean, small input → better results for less cost.
 
-1. Run the preprocessing script bundled with this skill, passing `$PROJECT_ROOT` from Phase 0:
+1. Parse `--files` from `$ARGUMENTS` and forward to the preprocessing script:
+   ```bash
+   # Parse --files from ARGUMENTS if present
+   SCOPED_FILES_ARG=""
+   if echo "$ARGUMENTS" | grep -qE "\-\-files[= ]"; then
+     SCOPED_FILES=$(echo "$ARGUMENTS" | sed -E 's/.*--files[= ]([^ ]+).*/\1/')
+     if [ -n "$SCOPED_FILES" ]; then
+       SCOPED_FILES_ARG="--files $SCOPED_FILES"
+       echo "[grasp-domain] Scoping analysis to files: $SCOPED_FILES"
+     fi
+   fi
    ```
-   python ./extract-domain-context.py "$PROJECT_ROOT"
+2. Run the preprocessing script bundled with this skill, passing `$PROJECT_ROOT` and the optional `--files` scope:
+   ```
+   python ./extract-domain-context.py "$PROJECT_ROOT" $SCOPED_FILES_ARG
    ```
    This outputs `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json` containing:
    - File tree (respecting `.gitignore`)
@@ -370,10 +382,30 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 **`HAS_CODEBASE_GRAPH="true"` from Phase 1.** The existing knowledge graph contains `:File`/`:Function`/`:Class` nodes that `implemented_by` edges can link to.
 
-1. Query Neo4j for the existing knowledge graph:
+1. Query Neo4j for the existing knowledge graph (scoped to `--files` if provided):
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   GRAPH_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+
+   # Parse --files from ARGUMENTS for Phase 4 scope filtering
+   SCOPED_FILES_ARG=""
+   if echo "$ARGUMENTS" | grep -qE "\-\-files[= ]"; then
+     SCOPED_FILES=$(echo "$ARGUMENTS" | sed -E 's/.*--files[= ]([^ ]+).*/\1/')
+     if [ -n "$SCOPED_FILES" ]; then
+       SCOPED_FILES_ARG="$SCOPED_FILES"
+       echo "[grasp-domain] Scoping Phase 4 graph query to files: $SCOPED_FILES"
+     fi
+   fi
+
+   # Build scoped or unscoped query
+   if [ -n "$SCOPED_FILES_ARG" ]; then
+     # Build JSON array for Cypher: convert "a,b,c" to '["a","b","c"]'
+     SCOPED_FILES_JSON="[$(echo "$SCOPED_FILES_ARG" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')]"
+     CYPHER_QUERY="MATCH (n) WHERE any(f IN $SCOPED_FILES_JSON WHERE n.filePath CONTAINS f) OR n.kind = 'knowledge' RETURN n ORDER BY n.name"
+   else
+     CYPHER_QUERY="MATCH (n) RETURN n ORDER BY n.name"
+   fi
+
+   GRAPH_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "$CYPHER_QUERY" 2>/dev/null)
    GRAPH_EXIT=$?
 
    # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
@@ -388,7 +420,11 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
        URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+       if [ -n "$SCOPED_FILES_ARG" ]; then
+         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "$CYPHER_QUERY" 2>/dev/null)
+       else
+         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+       fi
        GRAPH_EXIT=$?
      fi
    fi
