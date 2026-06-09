@@ -68,8 +68,13 @@ SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pw
 COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-domain 2>/dev/null || readlink -f ~/.copilot/skills/grasp-domain 2>/dev/null || echo "")
 COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
+# Probe Claude plugin cache first — it always has the freshly-updated version.
+CACHE_BASE="$HOME/.claude/plugins/cache/grasp-it/grasp-it"
+LATEST_CACHE=$(ls -d "$CACHE_BASE"/*/ 2>/dev/null | sort -V | tail -1 | sed 's|/$||')
+
 PLUGIN_ROOT=""
 for candidate in \
+  "$LATEST_CACHE" \
   "$HOME/.grasp-it-plugin" \
   "$SELF_RELATIVE" \
   "$COPILOT_SELF_RELATIVE" \
@@ -85,6 +90,7 @@ done
 if [ -z "$PLUGIN_ROOT" ]; then
   echo "Error: Cannot find the grasp-it plugin root."
   echo "Checked:"
+  echo "  - ${LATEST_CACHE:-<no Claude cache found>}"
   echo "  - $HOME/.grasp-it-plugin"
   echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/grasp-domain>}"
   echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/grasp-domain>}"
@@ -95,11 +101,26 @@ if [ -z "$PLUGIN_ROOT" ]; then
   exit 1
 fi
 
+# Upgrade to newer cache version if one exists and is newer than resolved PLUGIN_ROOT.
+if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/package.json" ]; then
+  PLUGIN_VERSION=$(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "0")
+  CACHE_VERSION=$(jq -r '.version' "$LATEST_CACHE/package.json" 2>/dev/null || echo "0")
+  if [ "$(printf '%s\n' "$CACHE_VERSION" "$PLUGIN_VERSION" | sort -V | tail -1)" = "$CACHE_VERSION" ] \
+     && [ "$CACHE_VERSION" != "$PLUGIN_VERSION" ]; then
+    echo "[grasp-domain] NOTE: Upgrading from $PLUGIN_VERSION to cache version $CACHE_VERSION"
+    PLUGIN_ROOT="$LATEST_CACHE"
+  fi
+fi
+
+echo "[grasp-domain] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "unknown"))"
+# Print which Neo4j database will be used — surfaces misconfiguration immediately.
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+NEO4J_DB=$(node -e "import('$GRASP_SKILL_DIR/neo4j-config-loader.mjs').then(m=>{const c=m.getNeo4jConfig('$PROJECT_ROOT');console.log(c&&c.NEO4J_DATABASE?c.NEO4J_DATABASE:'grasp');}).catch(()=>{console.log('grasp');})" 2>/dev/null)
+echo "[grasp-domain] Using Neo4j database: ${NEO4J_DB:-grasp}"
+
 # Validate that the resolved PLUGIN_ROOT has all required skill files.
 # run-query.mjs and neo4j-config-loader.mjs live in the grasp skill as the canonical source.
 if [ ! -f "$PLUGIN_ROOT/skills/grasp/run-query.mjs" ]; then
-  CACHE_BASE="$HOME/.claude/plugins/cache/grasp-it/grasp-it"
-  LATEST_CACHE=$(ls -d "$CACHE_BASE"/*/  2>/dev/null | sort -V | tail -1 | sed 's|/$||')
   if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/skills/grasp/run-query.mjs" ]; then
     echo "[grasp-domain] WARNING: Installed plugin at $PLUGIN_ROOT is outdated."
     echo "[grasp-domain] Falling back to cache version: $LATEST_CACHE"
@@ -266,57 +287,17 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 3. If validation fails, log warnings but save what's valid (error tolerance)
 4. **All nodes written to the graph must include `"kind": "knowledge"` and `"source": "code-analysis"`** — this is required by the schema and distinguishes code-mined knowledge from specialist-described knowledge
 
-### Phase 6b: Merge into Domain Graph
+### Phase 6b: Push to Neo4j
 
-The domain graph is stored in Neo4j. When merging new domain analysis results:
+**Call the dedicated push script — do NOT write MERGE queries manually.** The script handles the dual-label pattern (`DomainElement` + specific label), correct UPPER_SNAKE_CASE relationship types, and `NEO4J_DATABASE` from the project `.env`.
 
-#### 6b-1. Load existing domain graph
-
-Query Neo4j for existing domain elements:
 ```bash
-GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d) WHERE d.kind = 'knowledge' AND d.source = 'code-analysis' RETURN d"
+node "$PLUGIN_ROOT/skills/grasp-domain/push-domain-graph.mjs" "$PROJECT_ROOT"
 ```
-If Neo4j query fails, report the error and **STOP**.
 
-Read the new domain analysis output as `incomingNodes` and `incomingEdges`.
+The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-it/intermediate/` and writes all nodes and edges to Neo4j in a single operation. It will report any nodes that ended up with no secondary label (orphan check) and exit with code 1 if the write fails.
 
-#### 6b-2. Classify each incoming node
-
-For each incoming node, compare against all existing nodes by `id`:
-
-- **Same `id`, same `source: "code-analysis"`** — re-run of the same skill on the same topic:
-  - Update `summary`, `name`, `tags` with the incoming values
-  - If the existing node has `status: "accepted"` or `"implemented"`, keep that status (do not downgrade)
-  - Keep all existing edges; append incoming edges that are not already present (deduplicate by `(source, target, type)`)
-
-- **Same `id`, different `source`** (e.g., existing has `source: "interview"`, incoming has `source: "code-analysis"`) — concurrent runs with different perspectives:
-  - **Do not overwrite.** Rename the incoming node's `id` by appending a double-dash suffix and the source name: `feature:invoice-assignment` becomes `feature:invoice-assignment--code-analysis`
-  - This preserves both perspectives explicitly.
-
-- **New `id`** (no existing node with that id):
-  - Append the incoming node as-is
-
-#### 6b-3. Track conflicts for user reporting
-
-Maintain a `conflicts[]` list: for every same-`id`, different-`source` rename, record `{ id, existingSource, incomingSource, existingSummary, incomingSummary }`.
-
-#### 6b-4. Merge edges
-
-Edges: deduplicate by `(source, target, type)` composite. All new edges are appended; existing edges are preserved.
-
-#### 6b-5. Validate and write
-
-1. Validate the merged graph against the schema
-2. Write the merged domain graph to Neo4j:
-   ```bash
-   GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   # Write domain elements to Neo4j
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
-   ```
-   For each domain element, use cypher to `MERGE` (upsert) the node.
-   If the Neo4j write fails, report the error and **STOP** — the domain graph must be persisted to Neo4j.
-3. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
+If the push fails, report the error and **STOP** — the domain graph must be persisted to Neo4j.
 
 ### Phase 7: Clean Up
 

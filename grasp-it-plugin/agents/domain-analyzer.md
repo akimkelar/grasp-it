@@ -1,7 +1,7 @@
 ---
 name: domain-analyzer
 description: |
-  Analyzes codebases to extract business domain knowledge — domains, features, operations, actors, business rules, and entities. Produces a domain-graph.json that maps how business logic flows through the code.
+  Analyzes codebases to extract business domain knowledge — domains, features, operations, actors, business rules, and entities. Produces a domain-analysis.json that maps how business logic flows through the code.
 ---
 
 # Domain Analyzer Agent

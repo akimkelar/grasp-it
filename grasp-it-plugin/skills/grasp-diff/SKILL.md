@@ -55,8 +55,13 @@ SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pw
 COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-diff 2>/dev/null || readlink -f ~/.copilot/skills/grasp-diff 2>/dev/null || echo "")
 COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
+# Probe Claude plugin cache first — it always has the freshly-updated version.
+CACHE_BASE="$HOME/.claude/plugins/cache/grasp-it/grasp-it"
+LATEST_CACHE=$(ls -d "$CACHE_BASE"/*/ 2>/dev/null | sort -V | tail -1 | sed 's|/$||')
+
 PLUGIN_ROOT=""
 for candidate in \
+  "$LATEST_CACHE" \
   "$HOME/.grasp-it-plugin" \
   "$SELF_RELATIVE" \
   "$COPILOT_SELF_RELATIVE" \
@@ -68,6 +73,19 @@ for candidate in \
     break
   fi
 done
+
+# Upgrade to newer cache version if one exists and is newer than resolved PLUGIN_ROOT.
+if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/package.json" ]; then
+  PLUGIN_VERSION=$(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "0")
+  CACHE_VERSION=$(jq -r '.version' "$LATEST_CACHE/package.json" 2>/dev/null || echo "0")
+  if [ "$(printf '%s\n' "$CACHE_VERSION" "$PLUGIN_VERSION" | sort -V | tail -1)" = "$CACHE_VERSION" ] \
+     && [ "$CACHE_VERSION" != "$PLUGIN_VERSION" ]; then
+    echo "[grasp-diff] NOTE: Upgrading from $PLUGIN_VERSION to cache version $CACHE_VERSION"
+    PLUGIN_ROOT="$LATEST_CACHE"
+  fi
+fi
+
+echo "[grasp-diff] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "unknown"))"
 
 GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 ```

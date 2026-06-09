@@ -82,8 +82,13 @@ Determine whether to run a full analysis or incremental update.
    COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp 2>/dev/null || readlink -f ~/.copilot/skills/grasp 2>/dev/null || echo "")
    COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
+   # Probe Claude plugin cache first — it always has the freshly-updated version.
+   CACHE_BASE="$HOME/.claude/plugins/cache/grasp-it/grasp-it"
+   LATEST_CACHE=$(ls -d "$CACHE_BASE"/*/ 2>/dev/null | sort -V | tail -1 | sed 's|/$||')
+
    PLUGIN_ROOT=""
    for candidate in \
+     "$LATEST_CACHE" \
      "$HOME/.grasp-it-plugin" \
      "$SELF_RELATIVE" \
      "$COPILOT_SELF_RELATIVE" \
@@ -99,6 +104,7 @@ Determine whether to run a full analysis or incremental update.
    if [ -z "$PLUGIN_ROOT" ]; then
      echo "Error: Cannot find the grasp-it plugin root."
      echo "Checked:"
+     echo "  - ${LATEST_CACHE:-<no Claude cache found>}"
      echo "  - $HOME/.grasp-it-plugin"
      echo "  - ${SELF_RELATIVE:-<unresolved path derived from ~/.agents/skills/grasp>}"
      echo "  - ${COPILOT_SELF_RELATIVE:-<unresolved path derived from ~/.copilot/skills/grasp>}"
@@ -108,6 +114,19 @@ Determine whether to run a full analysis or incremental update.
      echo "Make sure the plugin is installed correctly."
      exit 1
    fi
+
+   # Upgrade to newer cache version if one exists and is newer than resolved PLUGIN_ROOT.
+   if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/package.json" ]; then
+     PLUGIN_VERSION=$(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "0")
+     CACHE_VERSION=$(jq -r '.version' "$LATEST_CACHE/package.json" 2>/dev/null || echo "0")
+     if [ "$(printf '%s\n' "$CACHE_VERSION" "$PLUGIN_VERSION" | sort -V | tail -1)" = "$CACHE_VERSION" ] \
+        && [ "$CACHE_VERSION" != "$PLUGIN_VERSION" ]; then
+       echo "[grasp] NOTE: Upgrading from $PLUGIN_VERSION to cache version $CACHE_VERSION"
+       PLUGIN_ROOT="$LATEST_CACHE"
+     fi
+   fi
+
+   echo "[grasp] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "unknown"))"
 
    if [ ! -f "$PLUGIN_ROOT/packages/core/dist/index.js" ]; then
      cd "$PLUGIN_ROOT" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @grasp-it/core build
