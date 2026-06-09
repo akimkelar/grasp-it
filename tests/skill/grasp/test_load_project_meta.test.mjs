@@ -251,4 +251,53 @@ describe.each(SCRIPTS)('load-project-meta.mjs [$name]', ({ path: SCRIPT, expectN
     });
   });
 
+  describe('cypher-shell -d flag (grasp only — config loader test coverage)', () => {
+    // The -d flag passing in cypher-shell mode is covered by test_neo4j_config_loader.test.mjs
+    // which verifies NEO4J_DATABASE is correctly read from env/.env files.
+    // load-project-meta.mjs uses the same config loader + cypher-shell path as run-query.mjs.
+    // Note: grasp-domain's load-project-meta.mjs uses driver-only mode, so this test
+    // only applies to the grasp version.
+    if (!expectNoNeo4jExits0) {
+      it('skipped for grasp-domain (driver-only mode)', () => {
+        expect(true).toBe(true);
+      });
+      return;
+    }
+
+    let root;
+    let mockDir;
+    let origPath;
+
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), 'lpm-csh-db-'));
+      initGitRepo(root);
+      mockDir = mkdtempSync(join(tmpdir(), 'lpm-mock-cypher-'));
+      origPath = process.env.PATH;
+    });
+
+    afterEach(() => {
+      if (root) rmSync(root, { recursive: true, force: true });
+      if (mockDir) rmSync(mockDir, { recursive: true, force: true });
+      process.env.PATH = origPath;
+    });
+
+    it('calls cypher-shell with -d flag present (config loader test coverage)', () => {
+      const mockCypherPath = join(mockDir, 'cypher-shell');
+      writeFileSync(mockCypherPath, `#!/bin/sh
+echo "$@" > /dev/stderr
+echo '[{"keys":["gitCommitHash"],"fields":[]}]'
+`, { mode: 0o755 });
+      process.env.PATH = mockDir + ':' + origPath;
+      const result = runScript(SCRIPT, [root], {
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        NEO4J_DATABASE: 'grasp',
+      });
+      expect(result.status === 0 || result.status === 1).toBe(true);
+      expect(result.stderr).toContain('-d');
+    });
+  });
+
 });

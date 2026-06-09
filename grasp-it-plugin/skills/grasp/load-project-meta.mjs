@@ -54,7 +54,7 @@ async function loadProjectMetaViaDriver(neo4jConfig) {
   }
 
   try {
-    const session = driver.session();
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
     const result = await session.run(
       `MATCH (p:Project {id: $id}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`,
       { id: PROJECT_SINGLETON_ID },
@@ -97,21 +97,21 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
         "-a", cypherUri,
         "-u", username,
         "-p", password,
-        "--format", "plain",
+        "-d", neo4jConfig.NEO4J_DATABASE || "neo4j",
+        "--format", "json",
       ],
       { input: query, encoding: "utf-8" },
     );
 
-    // cypher-shell outputs CSV-style results. Parse the first row.
-    const lines = output.trim().split("\n");
-    if (lines.length < 2) return null; // no data
-    const headers = lines[0].split(",");
-    const values = lines[1].split(",");
-
+    // cypher-shell --format json outputs: [{"keys":[...], "fields":[{"row":[...]}]}]
+    const parsed = JSON.parse(output.trim());
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) return null;
+    const resultSet = parsed[0];
+    const { keys, fields } = resultSet;
+    if (!fields || fields.length === 0) return null;
+    const row = fields[0].row || [];
     const record = {};
-    headers.forEach((h, i) => {
-      record[h.trim()] = values[i]?.trim() ?? null;
-    });
+    keys.forEach((key, i) => { record[key] = row[i] ?? null; });
 
     return {
       gitCommitHash: record.gitCommitHash ?? null,

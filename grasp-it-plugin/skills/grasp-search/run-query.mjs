@@ -50,7 +50,7 @@ async function runQueryViaDriver(neo4jConfig, query) {
   }
 
   try {
-    const session = driver.session();
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
     const result = await session.run(query);
     await session.close();
     // Convert records to plain objects
@@ -109,29 +109,25 @@ function runQueryViaCypherShell(neo4jConfig, query) {
         "-a", cypherUri,
         "-u", username,
         "-p", password,
-        "--format", "plain",
+        "-d", neo4jConfig.NEO4J_DATABASE || "neo4j",
+        "--format", "json",
       ],
       { input: query, encoding: "utf-8" },
     );
 
-    // cypher-shell outputs CSV-style results. Parse into records.
-    const lines = output.trim().split("\n");
-    if (lines.length === 0) {
+    // cypher-shell --format json outputs: [{"keys":[...], "fields":[{"row":[...]}]}]
+    const parsed = JSON.parse(output.trim());
+    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
       return { ok: true, records: [] };
     }
-
-    const headers = lines[0].split(",").map((h) => h.trim());
-    const records = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(",").map((v) => v.trim());
+    const resultSet = parsed[0];
+    const { keys, fields } = resultSet;
+    const records = (fields || []).map((field) => {
+      const row = field.row || [];
       const record = {};
-      headers.forEach((h, idx) => {
-        record[h] = values[idx] ?? null;
-      });
-      records.push(record);
-    }
-
+      keys.forEach((key, i) => { record[key] = row[i] ?? null; });
+      return record;
+    });
     return { ok: true, records };
   } catch (err) {
     // If cypher-shell binary not found, signal fallback

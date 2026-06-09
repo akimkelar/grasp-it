@@ -248,4 +248,100 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
     });
   });
 
+  describe('cypher-shell --format json parsing', () => {
+    // These tests use a mock cypher-shell script that outputs JSON to verify
+    // the JSON parsing logic handles all cypher-shell output shapes correctly.
+
+    let root;
+    let mockDir;
+    let origPath;
+
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), 'rq-json-'));
+      initGitRepo(root);
+      mockDir = mkdtempSync(join(tmpdir(), 'rq-mock-cypher-'));
+      origPath = process.env.PATH;
+    });
+
+    afterEach(() => {
+      if (root) rmSync(root, { recursive: true, force: true });
+      if (mockDir) rmSync(mockDir, { recursive: true, force: true });
+      process.env.PATH = origPath;
+    });
+
+    function runWithMockCypher(scriptContent, extraEnv = {}) {
+      const mockCypherPath = join(mockDir, 'cypher-shell');
+      writeFileSync(mockCypherPath, scriptContent, { mode: 0o755 });
+      // Prepend mock dir to PATH so mock cypher-shell is found, but other commands (node) still work
+      process.env.PATH = mockDir + ':' + origPath;
+      return runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], {
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        ...extraEnv,
+      });
+    }
+
+    it('parses cypher-shell JSON output correctly — single record, multiple columns', () => {
+      const result = runWithMockCypher(`#!/bin/sh
+echo '[{"keys":["name","kind"],"fields":[{"row":["UserService","service"]}]}]'
+`);
+      expect(result.status).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.results).toEqual([{ name: 'UserService', kind: 'service' }]);
+    });
+
+    it('parses cypher-shell JSON output correctly — multiple records', () => {
+      const result = runWithMockCypher(`#!/bin/sh
+echo '[{"keys":["id","score"],"fields":[{"row":["node:1",42]},{"row":["node:2",87]}]}]'
+`);
+      expect(result.status).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.results).toEqual([
+        { id: 'node:1', score: 42 },
+        { id: 'node:2', score: 87 },
+      ]);
+    });
+
+    it('parses cypher-shell JSON output correctly — array values', () => {
+      const result = runWithMockCypher(`#!/bin/sh
+echo '[{"keys":["name","tags"],"fields":[{"row":["UserService",["auth","api","v2"]]}]}]'
+`);
+      expect(result.status).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.results).toEqual([{ name: 'UserService', tags: ['auth', 'api', 'v2'] }]);
+    });
+
+    it('parses cypher-shell JSON output correctly — null values', () => {
+      const result = runWithMockCypher(`#!/bin/sh
+echo '[{"keys":["name","description"],"fields":[{"row":["UserService",null]}]}]'
+`);
+      expect(result.status).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.results).toEqual([{ name: 'UserService', description: null }]);
+    });
+
+    it('parses cypher-shell JSON output correctly — empty results', () => {
+      const result = runWithMockCypher(`#!/bin/sh
+echo '[{"keys":["name"],"fields":[]}]'
+`);
+      expect(result.status).toBe(0);
+      const parsed = JSON.parse(result.stdout);
+      expect(parsed.results).toEqual([]);
+    });
+
+    it('passes -d <database> flag to cypher-shell (verified via config loader test)', () => {
+      // The -d flag passing is verified by test_neo4j_config_loader.test.mjs which
+      // tests that NEO4J_DATABASE is read from env/.env and the run-query.mjs uses it.
+      // This test verifies the cypher-shell integration works end-to-end.
+      const result = runWithMockCypher(`#!/bin/sh
+echo "$@" > /dev/stderr
+echo '[{"keys":["n"],"fields":[]}]'
+`);
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain('-d');
+    });
+  });
+
 });

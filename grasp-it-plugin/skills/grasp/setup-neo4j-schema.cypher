@@ -1,10 +1,10 @@
--- Neo4j Schema Setup for grasp-it
--- Applies all required constraints and indexes before graph data is written.
--- Safe to re-run: all constraints/indexes use IF NOT EXISTS / IF NOT EXISTS guards.
+// Neo4j Schema Setup for grasp-it
+// Applies all required constraints and indexes before graph data is written.
+// Safe to re-run: all constraints/indexes use IF NOT EXISTS / IF NOT EXISTS guards.
 
--- =============================================================================
--- UNIQUE ID CONSTRAINTS (one per node label)
--- =============================================================================
+// =============================================================================
+// UNIQUE ID CONSTRAINTS (one per node label)
+// =============================================================================
 
 CREATE CONSTRAINT file_id IF NOT EXISTS FOR (n:File) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT function_id IF NOT EXISTS FOR (n:Function) REQUIRE n.id IS UNIQUE;
@@ -25,60 +25,51 @@ CREATE CONSTRAINT concept_id IF NOT EXISTS FOR (n:Concept) REQUIRE n.id IS UNIQU
 CREATE CONSTRAINT claim_id IF NOT EXISTS FOR (n:Claim) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT risk_id IF NOT EXISTS FOR (n:Risk) REQUIRE n.id IS UNIQUE;
 
--- Project singleton — single node per database, holds shared gitCommitHash across users
+// Project singleton — single node per database, holds shared gitCommitHash across users
 CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS UNIQUE;
--- Distinguishes codebase vs knowledge subgraphs
--- =============================================================================
+// Distinguishes codebase vs knowledge subgraphs
+// =============================================================================
 
-CREATE INDEX kind_idx IF NOT EXISTS FOR (n) ON (n.kind);
+// =============================================================================
+// NAME SEARCH INDEXES (kind-scoped for efficient filtering)
+// =============================================================================
 
--- =============================================================================
--- NAME SEARCH INDEXES (kind-scoped for efficient filtering)
--- =============================================================================
+CREATE INDEX codebase_name IF NOT EXISTS FOR (n:Codebase) ON (n.name);
+CREATE INDEX knowledge_name IF NOT EXISTS FOR (n:Knowledge) ON (n.name);
 
-CREATE INDEX codebase_name IF NOT EXISTS FOR (n) WHERE n.kind = "codebase" ON (n.name);
-CREATE INDEX knowledge_name IF NOT EXISTS FOR (n) WHERE n.kind = "knowledge" ON (n.name);
-
--- =============================================================================
--- STATUS FILTERING INDEXES
--- Enables fast filtering of planned/implemented/partial features and operations
--- =============================================================================
+// =============================================================================
+// STATUS FILTERING INDEXES
+// Enables fast filtering of planned/implemented/partial features and operations
+// =============================================================================
 
 CREATE INDEX feature_status IF NOT EXISTS FOR (n:Feature) ON (n.status);
 CREATE INDEX operation_status IF NOT EXISTS FOR (n:Operation) ON (n.status);
 
--- =============================================================================
--- SOURCE FILTERING INDEX
--- Enables efficient queries like "all nodes produced from interviews" vs "all nodes mined from code"
--- =============================================================================
+// =============================================================================
+// SOURCE FILTERING INDEX
+// Enables efficient queries like "all nodes produced from interviews" vs "all nodes mined from code"
+// =============================================================================
 
-CREATE INDEX knowledge_source IF NOT EXISTS FOR (n) WHERE n.kind = "knowledge" ON (n.source);
+CREATE INDEX knowledge_source IF NOT EXISTS FOR (n:Knowledge) ON (n.source);
 
--- =============================================================================
--- RISK SEVERITY FILTERING INDEX
--- Enables filtering risks by severity without scanning all Risk nodes
--- =============================================================================
+// =============================================================================
+// RISK SEVERITY FILTERING INDEX
+// Enables filtering risks by severity without scanning all Risk nodes
+// =============================================================================
 
 CREATE INDEX risk_severity IF NOT EXISTS FOR (n:Risk) ON (n.severity);
 
--- =============================================================================
--- COMPLEXITY FILTERING INDEX
--- Enables fast lookup of complex functions for review
--- =============================================================================
+// =============================================================================
+// COMPLEXITY FILTERING INDEX
+// Enables fast lookup of complex functions for review
+// =============================================================================
 
 CREATE INDEX function_complexity IF NOT EXISTS FOR (n:Function) ON (n.complexity);
 
--- =============================================================================
--- TAG FILTERING INDEXES (kind-scoped)
--- Enables tag-based discovery across both subgraphs
--- =============================================================================
+// =============================================================================
+// TAG FILTERING INDEXES (kind-scoped)
+// Enables tag-based discovery across both subgraphs
+// =============================================================================
 
-CREATE INDEX codebase_tags IF NOT EXISTS FOR (n) WHERE n.kind = "codebase" ON (n.tags);
-CREATE INDEX knowledge_tags IF NOT EXISTS FOR (n) WHERE n.kind = "knowledge" ON (n.tags);
-
--- =============================================================================
--- RELATIONSHIP TRAVERSAL INDEX
--- Speeds up weighted relationship queries
--- =============================================================================
-
-CREATE INDEX rel_weight IF NOT EXISTS FOR ()-[r]-() ON (r.weight);
+CREATE INDEX codebase_tags IF NOT EXISTS FOR (n:Codebase) ON (n.tags);
+CREATE INDEX knowledge_tags IF NOT EXISTS FOR (n:Knowledge) ON (n.tags);
