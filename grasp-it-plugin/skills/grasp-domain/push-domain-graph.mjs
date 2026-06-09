@@ -21,7 +21,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getNeo4jConfig } from "../../skills/grasp/neo4j-config-loader.mjs";
+import { execFileSync } from "child_process";
+import { getNeo4jConfig, getConnectionType } from "../../skills/grasp/neo4j-config-loader.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -38,6 +39,159 @@ const TYPE_TO_LABEL = {
 };
 
 const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Escape a string value for safe inline use in cypher-shell queries.
+ * Handles single quotes, backslashes, and null bytes.
+ */
+function cypherEscape(value) {
+  if (value == null) return "null";
+  const str = String(value);
+  // Escape backslashes first, then single quotes
+  return "'" + str.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+}
+
+/**
+ * Run a cypher-shell command with the given Neo4j config and query.
+ * Returns { ok: true } on success, { ok: false, reason } on failure.
+ */
+function runCypherShell(neo4jConfig, query) {
+  const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
+  const uri = NEO4J_URI || "neo4j://localhost:7687";
+  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+  const database = neo4jConfig.NEO4J_DATABASE || "grasp";
+
+  try {
+    execFileSync(
+      "cypher-shell",
+      [
+        "-a", cypherUri,
+        "-u", NEO4J_USERNAME || "neo4j",
+        "-p", NEO4J_PASSWORD || "password",
+        "-d", database,
+        "--format", "plain",
+      ],
+      { input: query, encoding: "utf-8" }
+    );
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err.message };
+  }
+}
+
+/**
+ * Build a cypher-shell query string for pushing nodes.
+ */
+function buildNodesCypher(graphData, neo4jConfig) {
+  const lines = [];
+  if (graphData.nodes && Array.isArray(graphData.nodes)) {
+    for (const node of graphData.nodes) {
+      const secondaryLabel = TYPE_TO_LABEL[node.type];
+      const props = {
+        id: node.id,
+        name: node.name || "",
+        summary: node.summary || "",
+        kind: "knowledge",
+        source: "code-analysis",
+        type: node.type,
+        tags: node.tags || [],
+      };
+      if (node.complexity) props.complexity = node.complexity;
+      if (node.status) props.status = node.status;
+
+      const setParts = Object.entries(props)
+        .map(([k, v]) => {
+          if (Array.isArray(v)) return `n.${k} = ${cypherEscape(JSON.stringify(v))}`;
+          return `n.${k} = ${cypherEscape(v)}`;
+        })
+        .join(", ");
+
+      // Dual-label pattern: MERGE DomainElement base label, then add secondary label and Knowledge
+      // Using backtick escaping for the secondary label which may contain special chars
+      lines.push(
+        `MERGE (n:DomainElement {id: ${cypherEscape(node.id)}}) SET n += {${setParts}} SET n:\`${secondaryLabel}\`:\`Knowledge\`;`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Build a cypher-shell query string for pushing edges.
+ */
+function buildEdgesCypher(graphData) {
+  const lines = [];
+  if (graphData.edges && Array.isArray(graphData.edges)) {
+    for (const edge of graphData.edges) {
+      const relType = edge.type.toUpperCase().replace(/-/g, "_");
+      lines.push(
+        `MATCH (a:DomainElement {id: ${cypherEscape(edge.source)}}), (b:DomainElement {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Push domain graph using cypher-shell (fallback when driver is unavailable).
+ */
+function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
+  // Push nodes
+  const nodesCypher = buildNodesCypher(graphData, neo4jConfig);
+  if (nodesCypher) {
+    const result = runCypherShell(neo4jConfig, nodesCypher);
+    if (!result.ok) {
+      console.error(`push-domain-graph.mjs: cypher-shell node push failed: ${result.reason}`);
+      process.exit(1);
+    }
+  }
+
+  // Push edges
+  const edgesCypher = buildEdgesCypher(graphData);
+  if (edgesCypher) {
+    const result = runCypherShell(neo4jConfig, edgesCypher);
+    if (!result.ok) {
+      console.error(`push-domain-graph.mjs: cypher-shell edge push failed: ${result.reason}`);
+      process.exit(1);
+    }
+  }
+
+  // Update Project singleton domainCommit
+  const updateCypher = `MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash;`;
+  runCypherShell(neo4jConfig, updateCypher); // best-effort — don't fail if Project doesn't exist yet
+
+  // Orphan check via cypher-shell
+  const orphanQuery = `MATCH (n:DomainElement) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule) RETURN n.id AS id, n.type AS type;`;
+  try {
+    const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
+    const uri = NEO4J_URI || "neo4j://localhost:7687";
+    const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+    const database = neo4jConfig.NEO4J_DATABASE || "grasp";
+    const output = execFileSync(
+      "cypher-shell",
+      ["-a", cypherUri, "-u", NEO4J_USERNAME || "neo4j", "-p", NEO4J_PASSWORD || "password", "-d", database, "--format", "plain"],
+      { input: orphanQuery, encoding: "utf-8" }
+    );
+    const lines = output.trim().split("\n").filter(l => l && !l.startsWith("+"));
+    for (const line of lines) {
+      try {
+        const [id, type] = line.split("\t");
+        if (id) {
+          console.error(`push-domain-graph.mjs: WARNING — node has no secondary label: ${id} (type: ${type})`);
+        }
+      } catch {}
+    }
+  } catch {
+    // Orphan check is best-effort
+  }
+
+  console.error("push-domain-graph.mjs: Domain graph pushed to Neo4j via cypher-shell successfully.");
+  process.exit(0);
+}
+
+// ── Main push logic ─────────────────────────────────────────────────────────────
 
 async function pushDomainGraph(projectRoot) {
   const domainAnalysisPath = join(projectRoot, INTERMEDIATE_DIR, DOMAIN_ANALYSIS_FILE);
@@ -86,16 +240,23 @@ async function pushDomainGraph(projectRoot) {
     process.exit(1);
   }
 
+  // Try driver first; fall back to cypher-shell if driver is unavailable
   let driver;
+  let driverAvailable = false;
   try {
     const { default: neo4j } = await import("neo4j-driver");
     driver = neo4j.driver(
       neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",
       neo4j.auth.basic(neo4jConfig.NEO4J_USERNAME || "neo4j", neo4jConfig.NEO4J_PASSWORD || "password"),
     );
+    driverAvailable = true;
   } catch (err) {
-    console.error(`push-domain-graph.mjs: Failed to load neo4j-driver: ${err.message}`);
-    process.exit(1);
+    console.error(`push-domain-graph.mjs: neo4j-driver not available (${err.message}) — will use cypher-shell fallback.`);
+  }
+
+  if (!driverAvailable) {
+    pushDomainGraphViaCypherShell(neo4jConfig, graphData);
+    return; // never reached
   }
 
   try {
@@ -121,10 +282,10 @@ async function pushDomainGraph(projectRoot) {
         if (node.complexity) props.complexity = node.complexity;
         if (node.status) props.status = node.status;
 
-        // Dual-label pattern: MERGE DomainElement base label, then add secondary label
+        // Dual-label pattern: MERGE DomainElement base label, then add secondary label and Knowledge
         // Using backtick escaping for the secondary label which may contain special chars
         await session.run(
-          `MERGE (n:DomainElement {id: $id}) SET n += $props SET n:\`${secondaryLabel}\``,
+          `MERGE (n:DomainElement {id: $id}) SET n += $props SET n:\`${secondaryLabel}\`:\`Knowledge\``,
           { id: node.id, props }
         );
       }
@@ -168,6 +329,11 @@ async function pushDomainGraph(projectRoot) {
     process.exit(0);
   } catch (err) {
     console.error(`push-domain-graph.mjs: Failed to push domain graph: ${err.message}`);
+    // Driver failed — try cypher-shell as last resort
+    if (err.message.includes("neo4j-driver") || !driverAvailable) {
+      console.error("push-domain-graph.mjs: Retrying via cypher-shell fallback...");
+      pushDomainGraphViaCypherShell(neo4jConfig, graphData);
+    }
     process.exit(1);
   } finally {
     if (driver) await driver.close();

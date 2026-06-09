@@ -136,37 +136,94 @@ fi
 
 Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases.
 
-### Phase 1: Git Staleness Check
+### Phase 1: Neo4j Reachability and Graph State Check
 
-Before deriving domain knowledge, check whether the underlying knowledge graph is stale relative to the current HEAD:
+Before deriving domain knowledge, check whether Neo4j is reachable and what graph state exists:
 
 1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
-   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
+   EXIT_CODE=$?
+
+   # Exit code 2 means driver was unavailable — fall back to cypher-shell
+   if [ $EXIT_CODE -eq 2 ]; then
+     echo "[grasp-domain] neo4j-driver unavailable — falling back to cypher-shell..."
+     if command -v cypher-shell >/dev/null 2>&1; then
+       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
+       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
+       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
+       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
+       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       [ -z "$URI_HOST" ] && URI_HOST="localhost"
+       [ -z "$URI_PORT" ] && URI_PORT="7687"
+       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+       EXIT_CODE=$?
+     else
+       echo "Error: neo4j-driver is unavailable and cypher-shell is not installed."
+       echo "Cannot proceed. Install neo4j-driver or cypher-shell."
+       exit 1
+     fi
+   fi
+
+   # Any other non-zero exit code means Neo4j is unreachable
+   if [ $EXIT_CODE -ne 0 ]; then
      echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
      echo "Ensure Neo4j is running and accessible, then re-run /grasp-domain."
      exit 1
    fi
-   LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
-   if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
-     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
-     exit 1
+
+   # Empty result means no Project singleton — /grasp has never run
+   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty\|\[\]"; then
+     echo "[grasp-domain] No existing knowledge graph found in Neo4j."
+     echo "[grasp-domain] Will run in standalone mode — IMPLEMENTED_BY edges will not be produced."
+     echo "[grasp-domain] Run /grasp first for full codebase connectivity."
+     HAS_CODEBASE_GRAPH="false"
+     LAST_COMMIT=""
+   else
+     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty' 2>/dev/null)
+     if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
+       echo "[grasp-domain] No existing knowledge graph found (no gitCommitHash)."
+       echo "[grasp-domain] Will run in standalone mode — IMPLEMENTED_BY edges will not be produced."
+       echo "[grasp-domain] Run /grasp first for full codebase connectivity."
+       HAS_CODEBASE_GRAPH="false"
+       LAST_COMMIT=""
+     else
+       HAS_CODEBASE_GRAPH="true"
+     fi
    fi
    ```
-2. Compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
+2. If `HAS_CODEBASE_GRAPH="true"`, compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
 3. If stale, print a warning:
    > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
-> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`. Neo4j is the only source of truth — there is no JSON fallback.
+> **Three-way decision logic:**
+> - Neo4j connection error → **STOP** (cannot proceed)
+> - Neo4j reachable but no `Project` singleton → **continue to Phase 2 standalone mode** (HAS_CODEBASE_GRAPH=false)
+> - Neo4j has `Project.gitCommitHash` → **continue to Phase 2** (HAS_CODEBASE_GRAPH=true, check staleness)
 
-5. **Apply Neo4j schema if needed (Bug C fix):** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
+5. **Apply Neo4j schema if needed:** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    # Detect already-applied schema: query for one well-known constraint (project_id)
    SCHEMA_CHECK=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "SHOW CONSTRAINTS" 2>/dev/null)
+   SCHEMA_EXIT=$?
+   # If driver exited with 2, use cypher-shell for schema check too
+   if [ $SCHEMA_EXIT -eq 2 ]; then
+     if command -v cypher-shell >/dev/null 2>&1; then
+       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
+       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
+       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
+       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
+       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       [ -z "$URI_HOST" ] && URI_HOST="localhost"
+       [ -z "$URI_PORT" ] && URI_PORT="7687"
+       SCHEMA_CHECK=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "SHOW CONSTRAINTS YIELD name WHERE name = 'project_id' RETURN name AS name" 2>/dev/null)
+     fi
+   fi
    if echo "$SCHEMA_CHECK" | grep -q "project_id"; then
      echo "[grasp-domain] Neo4j schema already applied."
    else
@@ -192,52 +249,107 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
 
 ### Phase 2: Detect Existing Graph and Preflight Staleness
 
-**Standalone mode:** If `Project.gitCommitHash` is absent (meaning `/grasp` has never run), the skill runs in lightweight standalone mode. In this mode, `IMPLEMENTED_BY` edges cannot be produced because there is no existing knowledge graph with `:File`/`:Function`/`:Class` nodes to link to. The domain analysis will still produce domain elements, but they will not be connected to implementation details.
+**`HAS_CODEBASE_GRAPH` is already set in Phase 1.** Use it directly — do not re-check via `load-project-meta.mjs`.
 
-1. Check if `Project` singleton has `gitCommitHash` (meaning `/grasp` has run):
+The skill has two paths:
+- **Path A (HAS_CODEBASE_GRAPH="true"):** Derive domain knowledge from the existing knowledge graph. `IMPLEMENTED_BY` edges can be produced.
+- **Path B (HAS_CODEBASE_GRAPH="false"):** Perform a lightweight standalone scan. No `IMPLEMENTED_BY` edges will be produced because `:File`/`:Function`/`:Class` nodes do not exist.
+
+**Path B — Standalone mode enforcement:**
+If `HAS_CODEBASE_GRAPH="false"` and `--standalone` was **not** passed, block with a prominent error:
+
+```bash
+if [ "$HAS_CODEBASE_GRAPH" = "false" ] && [ "${FORCE_STANDALONE:-0}" != "1" ]; then
+  if echo "$ARGUMENTS" | grep -qv "\-\-standalone"; then
+    echo ""
+    echo "=============================================="
+    echo "ERROR: No codebase graph found in Neo4j."
+    echo "       /grasp-domain requires /grasp to run first."
+    echo ""
+    echo "       Please run: /grasp"
+    echo "       Then re-run: /grasp-domain [your args]"
+    echo ""
+    echo "       Without /grasp, no File/Function/Class nodes exist"
+    echo "       and the domain graph cannot be linked to implementation."
+    echo ""
+    echo "       To proceed without codebase connectivity (domain-only mode),"
+    echo "       pass --standalone explicitly."
+    echo "=============================================="
+    exit 1
+  fi
+fi
+```
+
+**Path A — Staleness check for existing graph:**
+
+1. Query Neo4j for the `Project` singleton's `domainCommit`:
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   PROJECT_META=$(node "$GRASP_SKILL_DIR/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
-   GIT_COMMIT_HASH=$(echo "$PROJECT_META" | jq -r '.gitCommitHash // empty')
+   DOMAIN_COMMIT_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
+   DOMAIN_COMMIT_EXIT=$?
 
-   if [ -z "$GIT_COMMIT_HASH" ]; then
-     echo "[grasp-domain] Warning: No full /grasp analysis found." >&2
-     echo "[grasp-domain] Running in standalone mode — IMPLEMENTED_BY edges will not be produced." >&2
-     echo "[grasp-domain] Run /grasp first for best results, then re-run /grasp-domain." >&2
-     HAS_CODEBASE_GRAPH="false"
-   else
-     HAS_CODEBASE_GRAPH="true"
+   # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
+   if [ $DOMAIN_COMMIT_EXIT -eq 2 ]; then
+     echo "[grasp-domain] neo4j-driver unavailable — falling back to cypher-shell..."
+     if command -v cypher-shell >/dev/null 2>&1; then
+       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
+       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
+       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
+       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
+       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       [ -z "$URI_HOST" ] && URI_HOST="localhost"
+       [ -z "$URI_PORT" ] && URI_PORT="7687"
+       DOMAIN_COMMIT_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
+     fi
+   fi
+
+   if [ $? -ne 0 ]; then
+     echo "Error: Failed to query Neo4j for domainCommit."
+     exit 1
+   fi
+   ```
+2. If `--full` was passed:
+   - Force a fresh domain analysis — proceed to Phase 4
+3. If `--full` was NOT passed:
+   - Parse `domainCommit` from the result
+   - Compare `domainCommit` against `Project.gitCommitHash` (already in `LAST_COMMIT` from Phase 1) — if they match, the domain graph is current
+   - If domain graph is current: report "Domain graph is up to date" and **STOP**
+4. Proceed to Phase 4 to derive/update domain knowledge
+
+5. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`:
+   ```bash
+   GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+   DOMAIN_UPDATE_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash" 2>/dev/null)
+   DOMAIN_UPDATE_EXIT=$?
+
+   # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
+   if [ $DOMAIN_UPDATE_EXIT -eq 2 ]; then
+     if command -v cypher-shell >/dev/null 2>&1; then
+       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
+       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
+       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
+       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
+       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       [ -z "$URI_HOST" ] && URI_HOST="localhost"
+       [ -z "$URI_PORT" ] && URI_PORT="7687"
+       cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash" 2>/dev/null && DOMAIN_UPDATE_EXIT=0 || DOMAIN_UPDATE_EXIT=1
+     fi
+   fi
+
+   if [ $DOMAIN_UPDATE_EXIT -ne 0 ]; then
+     echo "Error: Failed to update Project.domainCommit in Neo4j."
+     echo "Domain graph consistency depends on this write succeeding."
+     exit 1
    fi
    ```
 
-2. Query Neo4j for the `Project` singleton to get `domainCommit`:
-   ```bash
-   GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash, p.domainCommit"
-   ```
-   If Neo4j returns no results, the graph does not exist. Report "No knowledge graph found. Run `/grasp` first." and **STOP**.
-
-3. If `--full` was passed:
-   - Force a fresh domain analysis — proceed to Phase 3 or Phase 4
-
-4. If `--full` was NOT passed:
-   - Compare `Project.domainCommit` against `Project.gitCommitHash` — if they match, the domain graph is current
-   - If domain graph is current: report "Domain graph is up to date" and **STOP**
-
-5. Proceed to Phase 3 or Phase 4 to derive/update domain knowledge
-
-6. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`:
-   ```bash
-   GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
-   ```
-   If this update fails, report the error and **STOP** — domain graph consistency depends on this write succeeding.
-
 > **Staleness rule:** Domain graph staleness is determined by comparing `Project.gitCommitHash` (the commit when full analysis ran) against `Project.domainCommit` (the commit when domain analysis last ran). If they differ, the domain graph is stale. The `domainGraphStale` flag from `meta.json` is deprecated and no longer used.
 
-### Phase 3: Lightweight Scan (Path 1 — No Existing Graph)
+### Phase 3: Lightweight Scan (Path B — HAS_CODEBASE_GRAPH=false)
 
-**Set `HAS_CODEBASE_GRAPH=false`** — there is no existing knowledge graph with `:File`/`:Function`/`:Class` nodes, so `implemented_by` edges cannot be produced.
+**`HAS_CODEBASE_GRAPH="false"` from Phase 1.** No `:File`/`:Function`/`:Class` nodes exist, so `implemented_by` edges cannot be produced.
 
 The preprocessing script does NOT produce a domain graph — it produces **raw material** (file tree, entry points, exports/imports) so the domain-analyzer agent can focus on the actual domain analysis instead of spending dozens of tool calls exploring the codebase. Think of it as a cheat sheet: cheap Python preprocessing → expensive LLM gets a clean, small input → better results for less cost.
 
@@ -254,17 +366,38 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 2. Read the generated `domain-context.json` as context for Phase 5
 3. Proceed to Phase 5
 
-### Phase 4: Derive from Existing Graph (Path 2 — Has Codebase Graph)
+### Phase 4: Derive from Existing Graph (Path A — HAS_CODEBASE_GRAPH=true)
 
-**Set `HAS_CODEBASE_GRAPH=true`** — the existing knowledge graph contains `:File`/`:Function`/`:Class` nodes that `implemented_by` edges can link to.
+**`HAS_CODEBASE_GRAPH="true"` from Phase 1.** The existing knowledge graph contains `:File`/`:Function`/`:Class` nodes that `implemented_by` edges can link to.
 
 1. Query Neo4j for the existing knowledge graph:
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name"
-   ```
-   If Neo4j query fails, report the error and **STOP**.
+   GRAPH_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+   GRAPH_EXIT=$?
 
+   # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
+   if [ $GRAPH_EXIT -eq 2 ]; then
+     echo "[grasp-domain] neo4j-driver unavailable — falling back to cypher-shell..."
+     if command -v cypher-shell >/dev/null 2>&1; then
+       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
+       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
+       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
+       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
+       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
+       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       [ -z "$URI_HOST" ] && URI_HOST="localhost"
+       [ -z "$URI_PORT" ] && URI_PORT="7687"
+       GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+       GRAPH_EXIT=$?
+     fi
+   fi
+
+   if [ $GRAPH_EXIT -ne 0 ]; then
+     echo "Error: Failed to query Neo4j for existing knowledge graph."
+     exit 1
+   fi
+   ```
 2. Format the graph data as structured context:
    - All nodes with their types, names, summaries, and tags
    - All edges with their types (especially `calls`, `imports`, `contains`)
@@ -289,21 +422,41 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 6b: Push to Neo4j
 
-**Call the dedicated push script — do NOT write MERGE queries manually.** The script handles the dual-label pattern (`DomainElement` + specific label), correct UPPER_SNAKE_CASE relationship types, and `NEO4J_DATABASE` from the project `.env`.
+**Call the dedicated push script — do NOT write MERGE queries manually.** The script handles the dual-label pattern (`DomainElement` + specific label + `Knowledge`), correct UPPER_SNAKE_CASE relationship types, and `NEO4J_DATABASE` from the project `.env`. It automatically falls back to cypher-shell if the neo4j-driver is unavailable.
 
 ```bash
 node "$PLUGIN_ROOT/skills/grasp-domain/push-domain-graph.mjs" "$PROJECT_ROOT"
+PUSH_EXIT=$?
+
+# Handle exit code 2 — driver unavailable, but script should have already retried via cypher-shell
+if [ $PUSH_EXIT -eq 2 ]; then
+  echo "[grasp-domain] push-domain-graph.mjs exited with code 2 (driver unavailable)."
+  echo "[grasp-domain] The script should have retried via cypher-shell automatically."
+  echo "[grasp-domain] If you see this message, the cypher-shell fallback also failed."
+  exit 1
+fi
+
+if [ $PUSH_EXIT -ne 0 ]; then
+  echo "Error: Failed to push domain graph to Neo4j (exit code: $PUSH_EXIT)."
+  exit 1
+fi
 ```
 
 The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-it/intermediate/` and writes all nodes and edges to Neo4j in a single operation. It will report any nodes that ended up with no secondary label (orphan check) and exit with code 1 if the write fails.
-
-If the push fails, report the error and **STOP** — the domain graph must be persisted to Neo4j.
 
 ### Phase 7: Clean Up
 
 1. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
 
-### Phase 8: Launch Dashboard
+### Phase 8: Visualization
 
-1. Auto-trigger `/grasp-dashboard` to visualize the domain graph
-2. The dashboard will query Neo4j for domain elements and show the domain view by default
+The domain graph is now in Neo4j. To explore it visually:
+- Open Neo4j Browser at http://localhost:7474 (or your Aura console URL)
+- Run: `MATCH (n:DomainElement) RETURN n LIMIT 100`
+- Or for a domain-specific view: `MATCH (n:Domain) RETURN n`
+
+To query the domain graph via Claude Code:
+- `/grasp-search <your question>`
+
+To check the domain graph was persisted correctly:
+- `/grasp-search "what domains were extracted from the codebase"`
