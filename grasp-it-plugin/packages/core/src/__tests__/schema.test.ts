@@ -1034,8 +1034,8 @@ describe("normalizeGraph", () => {
       layers: [],
       tour: [],
     };
-    const result = normalizeGraph(graph) as Record<string, unknown>;
-    expect((result.nodes[0] as any).type).toBe("function");
+    const result = normalizeGraph(graph) as any;
+    expect(result.nodes[0].type).toBe("function");
   });
 
   it("applies edge type aliases", () => {
@@ -1045,8 +1045,8 @@ describe("normalizeGraph", () => {
       layers: [],
       tour: [],
     };
-    const result = normalizeGraph(graph) as Record<string, unknown>;
-    expect((result.edges[0] as any).type).toBe("inherits");
+    const result = normalizeGraph(graph) as any;
+    expect(result.edges[0].type).toBe("inherits");
   });
 
   it("leaves non-aliased types unchanged", () => {
@@ -1056,9 +1056,9 @@ describe("normalizeGraph", () => {
       layers: [],
       tour: [],
     };
-    const result = normalizeGraph(graph) as Record<string, unknown>;
-    expect((result.nodes[0] as any).type).toBe("file");
-    expect((result.edges[0] as any).type).toBe("imports");
+    const result = normalizeGraph(graph) as any;
+    expect(result.nodes[0].type).toBe("file");
+    expect(result.edges[0].type).toBe("imports");
   });
 
   it("passes through non-object input", () => {

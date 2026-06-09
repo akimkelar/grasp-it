@@ -192,7 +192,7 @@ describe("MCPServer", () => {
     it("creates server with project root", () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -202,7 +202,7 @@ describe("MCPServer", () => {
     it("handles initialize request", () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -226,7 +226,7 @@ describe("MCPServer", () => {
     it("lists available resources", () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -248,7 +248,7 @@ describe("MCPServer", () => {
     it("returns empty graph stats when no graph exists", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -292,7 +292,7 @@ describe("MCPServer", () => {
     it("returns error for unknown resource", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -312,7 +312,7 @@ describe("MCPServer", () => {
     it("lists available tools", () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -337,7 +337,7 @@ describe("MCPServer", () => {
     it("search_nodes returns error when no graph exists", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -549,7 +549,7 @@ describe("MCPServer", () => {
     it("get_schema returns schema information", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -576,7 +576,7 @@ describe("MCPServer", () => {
     it("returns error for unknown tool", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -599,7 +599,7 @@ describe("MCPServer", () => {
     it("handles method not found", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
@@ -662,7 +662,7 @@ describe("MCPServer", () => {
     it("handles async tool call for run_query", async () => {
       vi.mocked(createNeo4jSession).mockResolvedValue({
         success: false,
-        session: null,
+        session: undefined,
       });
 
       const server = createMCPServer({ projectRoot });
