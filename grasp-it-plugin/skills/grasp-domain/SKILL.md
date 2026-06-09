@@ -104,7 +104,8 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
 
 1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    NEO4J_RESULT=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
    if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
      echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
@@ -126,7 +127,8 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
 
 5. **Apply Neo4j schema if needed (Bug C fix):** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    # Detect already-applied schema: query for one well-known constraint (project_id)
    SCHEMA_CHECK=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "SHOW CONSTRAINTS" 2>/dev/null)
    if echo "$SCHEMA_CHECK" | grep -q "project_id"; then
@@ -135,12 +137,12 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
      echo "[grasp-domain] Applying Neo4j schema (first-use setup)..."
      # Apply schema via cypher-shell if available, otherwise via driver
      if command -v cypher-shell >/dev/null 2>&1; then
-       source "$SKILL_DIR/../grasp/neo4j-config-loader.mjs" 2>/dev/null || true
+       source "$SKILL_DIR/neo4j-config-loader.mjs" 2>/dev/null || true
        { NEO4J_URI="neo4j://localhost:7687" NEO4J_USERNAME="neo4j" NEO4J_PASSWORD="password"; }
-       if [ -f "$SKILL_DIR/../grasp/neo4j-config-loader.mjs" ]; then
-         . <(node -e "import('$SKILL_DIR/../grasp/neo4j-config-loader.mjs').then(m=>{const c=m.getNeo4jConfig('$PROJECT_ROOT');console.log('NEO4J_URI='+c.NEO4J_URI);console.log('NEO4J_USERNAME='+c.NEO4J_USERNAME);console.log('NEO4J_PASSWORD='+c.NEO4J_PASSWORD);})" 2>/dev/null)2>/dev/null || true
+       if [ -f "$SKILL_DIR/neo4j-config-loader.mjs" ]; then
+         . <(node -e "import('$SKILL_DIR/neo4j-config-loader.mjs').then(m=>{const c=m.getNeo4jConfig('$PROJECT_ROOT');console.log('NEO4J_URI='+c.NEO4J_URI);console.log('NEO4J_USERNAME='+c.NEO4J_USERNAME);console.log('NEO4J_PASSWORD='+c.NEO4J_PASSWORD);})" 2>/dev/null)2>/dev/null || true
        fi
-       cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" --format plain -f "$SKILL_DIR/../grasp/setup-neo4j-schema.cypher" 2>/dev/null && \
+       cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" --format plain -f "$GRASP_SKILL_DIR/setup-neo4j-schema.cypher" 2>/dev/null && \
          echo "[grasp-domain] Neo4j schema applied successfully." || \
          echo "[grasp-domain] Warning: schema setup failed via cypher-shell"
      else
@@ -148,7 +150,7 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
        while IFS= read -r line && [ -n "$line" ]; do
          [ "${line:0:1}" = "/" ] && continue  # skip Cypher comments
          node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "$line" 2>/dev/null || true
-       done < "$SKILL_DIR/../grasp/setup-neo4j-schema.cypher"
+       done < "$GRASP_SKILL_DIR/setup-neo4j-schema.cypher"
        echo "[grasp-domain] Neo4j schema applied via driver."
      fi
    fi
@@ -156,25 +158,29 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
 
 ### Phase 2: Detect Existing Graph and Preflight Staleness
 
-**Bug D fix: Hard-fail when no codebase graph exists.** If `Project.gitCommitHash` is absent (meaning `/grasp` has never run), the skill must not silently fall through to the lightweight scan — it must fail with a clear error message.
+**Standalone mode:** If `Project.gitCommitHash` is absent (meaning `/grasp` has never run), the skill runs in lightweight standalone mode. In this mode, `IMPLEMENTED_BY` edges cannot be produced because there is no existing knowledge graph with `:File`/`:Function`/`:Class` nodes to link to. The domain analysis will still produce domain elements, but they will not be connected to implementation details.
 
 1. Check if `Project` singleton has `gitCommitHash` (meaning `/grasp` has run):
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   PROJECT_META=$(node "$SKILL_DIR/../grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+   PROJECT_META=$(node "$SKILL_DIR/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
    GIT_COMMIT_HASH=$(echo "$PROJECT_META" | jq -r '.gitCommitHash // empty')
 
    if [ -z "$GIT_COMMIT_HASH" ]; then
-     echo "ERROR: No full /grasp analysis found." >&2
-     echo "Running /grasp-domain standalone will produce degraded domain extraction quality." >&2
-     echo "Run /grasp first for best results, then re-run /grasp-domain." >&2
-     exit 1
+     echo "[grasp-domain] Warning: No full /grasp analysis found." >&2
+     echo "[grasp-domain] Running in standalone mode — IMPLEMENTED_BY edges will not be produced." >&2
+     echo "[grasp-domain] Run /grasp first for best results, then re-run /grasp-domain." >&2
+     HAS_CODEBASE_GRAPH="false"
+   else
+     HAS_CODEBASE_GRAPH="true"
    fi
    ```
 
 2. Query Neo4j for the `Project` singleton to get `domainCommit`:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash, p.domainCommit"
    ```
    If Neo4j returns no results, the graph does not exist. Report "No knowledge graph found. Run `/grasp` first." and **STOP**.
@@ -190,7 +196,8 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
 
 6. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
    ```
    If this update fails, report the error and **STOP** — domain graph consistency depends on this write succeeding.
@@ -222,7 +229,8 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 1. Query Neo4j for the existing knowledge graph:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name"
    ```
    If Neo4j query fails, report the error and **STOP**.
@@ -257,8 +265,9 @@ The domain graph is stored in Neo4j. When merging new domain analysis results:
 
 Query Neo4j for existing domain elements:
 ```bash
-SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:DomainElement)-[:PART_OF]->(p:Project) WHERE p.id = 'project:singleton' RETURN d"
+SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
+node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d) WHERE d.kind = 'knowledge' AND d.source = 'code-analysis' RETURN d"
 ```
 If Neo4j query fails, report the error and **STOP**.
 
@@ -293,11 +302,12 @@ Edges: deduplicate by `(source, target, type)` composite. All new edges are appe
 1. Validate the merged graph against the schema
 2. Write the merged domain graph to Neo4j:
    ```bash
-   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   SKILL_DIR="$PLUGIN_ROOT/skills/grasp-domain"
+GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    # Write domain elements to Neo4j
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
    ```
-   For each domain element, use cypher to `MERGE` (upsert) the node and create the `PART_OF` relationship.
+   For each domain element, use cypher to `MERGE` (upsert) the node.
    If the Neo4j write fails, report the error and **STOP** — the domain graph must be persisted to Neo4j.
 3. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
 
