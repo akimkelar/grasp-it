@@ -6,7 +6,7 @@ argument-hint: [file-path]
 
 # /grasp-explain
 
-Provide a thorough, in-depth explanation of a specific code component using the Neo4j knowledge graph (with JSON fallback).
+Provide a thorough, in-depth explanation of a specific code component using the Neo4j knowledge graph.
 
 ## Graph Structure Reference
 
@@ -32,7 +32,7 @@ Key relationships:
    SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
    ```
-2. If Neo4j returns no results, fall back to checking `.grasp-it/knowledge-graph.json` exists. If neither has graph data, tell the user to run `/grasp` first.
+2. If Neo4j returns no results, tell the user to run `/grasp` first.
 
 ### Phase 1: Find the Target Node
 
@@ -44,8 +44,7 @@ node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (f:File) WHERE f.name CON
 # For function/method names
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (fn:Function) WHERE fn.name CONTAINS '$ARGUMENTS' RETURN fn LIMIT 5"
 ```
-
-If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for `"filePath"` or `"name"` matches.
+If Neo4j query fails, report the error and **STOP**.
 
 Note the exact node `id`, `type`, `summary`, `tags`, and `complexity` (if available).
 
@@ -59,8 +58,7 @@ node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-
 # Incoming edges (what calls/imports/depends on this node)
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (m)-[r]->(n {name: '$NODE_NAME'}) RETURN m.name, type(r), labels(m)[0], n.name LIMIT 30"
 ```
-
-If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for the node ID in edges.
+If Neo4j query fails, report the error and **STOP**.
 
 ### Phase 3: Read Connected Nodes
 
@@ -79,8 +77,7 @@ Query Neo4j for layer membership:
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n {name: '$NODE_NAME'})-[:IN_LAYER]->(l) RETURN l.name, l.description"
 ```
-
-If Neo4j is unavailable, use Grep for the node ID in `"layers"` section.
+If Neo4j query fails, report the error and **STOP**.
 
 ### Phase 5: Read the Actual Source File
 

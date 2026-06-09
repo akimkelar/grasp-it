@@ -162,13 +162,13 @@ export class MCPServer {
     };
   }
 
-  private handleResourcesRead(params?: Record<string, unknown>): { contents: MCPResourceContent[] } {
+  private async handleResourcesRead(params?: Record<string, unknown>): Promise<{ contents: MCPResourceContent[] }> {
     const uri = params?.uri as string;
     if (!uri) {
       throw new Error("uri parameter is required");
     }
 
-    const content = this.resources.readResource(uri);
+    const content = await this.resources.readResource(uri);
     if (!content) {
       throw new Error(`Resource not found: ${uri}`);
     }

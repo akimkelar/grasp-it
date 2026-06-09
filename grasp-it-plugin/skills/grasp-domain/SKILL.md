@@ -10,8 +10,8 @@ Extracts business domain knowledge — domains, features, operations, actors, bu
 
 ## How It Works
 
-- If a knowledge graph already exists (`.grasp-it/knowledge-graph.json`), derives domain knowledge from it (cheap, no file scanning)
-- If no knowledge graph exists, performs a lightweight scan: file tree + entry point detection + sampled files
+- If a knowledge graph already exists in Neo4j, derives domain knowledge from it (cheap, no file scanning)
+- If no knowledge graph exists in Neo4j, performs a lightweight scan: file tree + entry point detection + sampled files
 - Use `--full` flag to force a fresh scan even if a knowledge graph exists
 - Groovy/Grails entry point patterns (controllers, services, domain classes) are automatically recognized
 
@@ -102,17 +102,19 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
 
 Before deriving domain knowledge, check whether the underlying knowledge graph is stale relative to the current HEAD:
 
-1. Query Neo4j `Project` singleton for `gitCommitHash` using `load-project-meta.mjs`:
+1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
-   # Try Neo4j first
    SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   NEO4J_RESULT=$(node "$SKILL_DIR/../grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
-   if [ -n "$NEO4J_RESULT" ] && [ "$NEO4J_RESULT" != "{}" ]; then
-     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   NEO4J_RESULT=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
+     echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
+     echo "Ensure Neo4j is running and accessible, then re-run /grasp-domain."
+     exit 1
    fi
-   # Fallback to meta.json only if Neo4j unavailable or returned empty
-   if [ -z "$LAST_COMMIT" ] && [ -f "$PROJECT_ROOT/.grasp-it/meta.json" ]; then
-     LAST_COMMIT=$(grep -o '"gitCommitHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/.grasp-it/meta.json" | head -1 | sed 's/.*: "\(.*\)"/\1/')
+   LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
+     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
+     exit 1
    fi
    ```
 2. Compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
@@ -120,23 +122,84 @@ Before deriving domain knowledge, check whether the underlying knowledge graph i
    > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
-> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`, falling back to `meta.json` only if Neo4j is unavailable. To check whether your local graph is in sync with a shared Neo4j database, run `check-sync.mjs` separately.
+> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`. Neo4j is the only source of truth — there is no JSON fallback.
+
+5. **Apply Neo4j schema if needed (Bug C fix):** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   # Detect already-applied schema: query for one well-known constraint (project_id)
+   SCHEMA_CHECK=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "SHOW CONSTRAINTS" 2>/dev/null)
+   if echo "$SCHEMA_CHECK" | grep -q "project_id"; then
+     echo "[grasp-domain] Neo4j schema already applied."
+   else
+     echo "[grasp-domain] Applying Neo4j schema (first-use setup)..."
+     # Apply schema via cypher-shell if available, otherwise via driver
+     if command -v cypher-shell >/dev/null 2>&1; then
+       source "$SKILL_DIR/../grasp/neo4j-config-loader.mjs" 2>/dev/null || true
+       { NEO4J_URI="neo4j://localhost:7687" NEO4J_USERNAME="neo4j" NEO4J_PASSWORD="password"; }
+       if [ -f "$SKILL_DIR/../grasp/neo4j-config-loader.mjs" ]; then
+         . <(node -e "import('$SKILL_DIR/../grasp/neo4j-config-loader.mjs').then(m=>{const c=m.getNeo4jConfig('$PROJECT_ROOT');console.log('NEO4J_URI='+c.NEO4J_URI);console.log('NEO4J_USERNAME='+c.NEO4J_USERNAME);console.log('NEO4J_PASSWORD='+c.NEO4J_PASSWORD);})" 2>/dev/null)2>/dev/null || true
+       fi
+       cypher-shell -a "$NEO4J_URI" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" --format plain -f "$SKILL_DIR/../grasp/setup-neo4j-schema.cypher" 2>/dev/null && \
+         echo "[grasp-domain] Neo4j schema applied successfully." || \
+         echo "[grasp-domain] Warning: schema setup failed via cypher-shell"
+     else
+       # Driver path: apply schema line by line via run-query.mjs
+       while IFS= read -r line && [ -n "$line" ]; do
+         [ "${line:0:1}" = "/" ] && continue  # skip Cypher comments
+         node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "$line" 2>/dev/null || true
+       done < "$SKILL_DIR/../grasp/setup-neo4j-schema.cypher"
+       echo "[grasp-domain] Neo4j schema applied via driver."
+     fi
+   fi
+   ```
 
 ### Phase 2: Detect Existing Graph and Preflight Staleness
 
-1. Check if a `Project` singleton exists in Neo4j (using `load-project-meta.mjs`)
-2. If `--full` was passed:
+**Bug D fix: Hard-fail when no codebase graph exists.** If `Project.gitCommitHash` is absent (meaning `/grasp` has never run), the skill must not silently fall through to the lightweight scan — it must fail with a clear error message.
+
+1. Check if `Project` singleton has `gitCommitHash` (meaning `/grasp` has run):
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   PROJECT_META=$(node "$SKILL_DIR/../grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
+   GIT_COMMIT_HASH=$(echo "$PROJECT_META" | jq -r '.gitCommitHash // empty')
+
+   if [ -z "$GIT_COMMIT_HASH" ]; then
+     echo "ERROR: No full /grasp analysis found." >&2
+     echo "Running /grasp-domain standalone will produce degraded domain extraction quality." >&2
+     echo "Run /grasp first for best results, then re-run /grasp-domain." >&2
+     exit 1
+   fi
+   ```
+
+2. Query Neo4j for the `Project` singleton to get `domainCommit`:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash, p.domainCommit"
+   ```
+   If Neo4j returns no results, the graph does not exist. Report "No knowledge graph found. Run `/grasp` first." and **STOP**.
+
+3. If `--full` was passed:
    - Force a fresh domain analysis — proceed to Phase 3 or Phase 4
-3. If `--full` was NOT passed:
-   - Query Neo4j for `Project.domainCommit` to check if domain analysis is current
+
+4. If `--full` was NOT passed:
    - Compare `Project.domainCommit` against `Project.gitCommitHash` — if they match, the domain graph is current
    - If domain graph is current: report "Domain graph is up to date" and **STOP**
-4. Proceed to Phase 3 or Phase 4 to derive/update domain knowledge
-5. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`
 
-> **Note:** The `domainGraphStale` flag from `meta.json` is deprecated. Staleness is now determined by comparing `Project.gitCommitHash` (the commit when full analysis ran) against `Project.domainCommit` (the commit when domain analysis last ran). If they differ, the domain graph is stale.
+5. Proceed to Phase 3 or Phase 4 to derive/update domain knowledge
 
-### Phase 3: Lightweight Scan (Path 1)
+6. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
+   ```
+   If this update fails, report the error and **STOP** — domain graph consistency depends on this write succeeding.
+
+> **Staleness rule:** Domain graph staleness is determined by comparing `Project.gitCommitHash` (the commit when full analysis ran) against `Project.domainCommit` (the commit when domain analysis last ran). If they differ, the domain graph is stale. The `domainGraphStale` flag from `meta.json` is deprecated and no longer used.
+
+### Phase 3: Lightweight Scan (Path 1 — No Existing Graph)
+
+**Set `HAS_CODEBASE_GRAPH=false`** — there is no existing knowledge graph with `:File`/`:Function`/`:Class` nodes, so `implemented_by` edges cannot be produced.
 
 The preprocessing script does NOT produce a domain graph — it produces **raw material** (file tree, entry points, exports/imports) so the domain-analyzer agent can focus on the actual domain analysis instead of spending dozens of tool calls exploring the codebase. Think of it as a cheat sheet: cheap Python preprocessing → expensive LLM gets a clean, small input → better results for less cost.
 
@@ -150,16 +213,20 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
    - File signatures (exports, imports per file)
    - Code snippets for each entry point (signature + first few lines)
    - Project metadata (package.json, README, etc.)
-2. Read the generated `domain-context.json` as context for Phase 4
-3. Proceed to Phase 4
+2. Read the generated `domain-context.json` as context for Phase 5
+3. Proceed to Phase 5
 
-### Phase 4: Derive from Existing Graph (Path 2)
+### Phase 4: Derive from Existing Graph (Path 2 — Has Codebase Graph)
+
+**Set `HAS_CODEBASE_GRAPH=true`** — the existing knowledge graph contains `:File`/`:Function`/`:Class` nodes that `implemented_by` edges can link to.
 
 1. Query Neo4j for the existing knowledge graph:
    ```bash
    SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n ORDER BY n.name"
    ```
+   If Neo4j query fails, report the error and **STOP**.
+
 2. Format the graph data as structured context:
    - All nodes with their types, names, summaries, and tags
    - All edges with their types (especially `calls`, `imports`, `contains`)
@@ -168,13 +235,12 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 3. This is the context for the domain analyzer — no file reading needed
 4. Proceed to Phase 5
 
-> **Fallback:** If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` for backward compatibility.
-
 ### Phase 5: Domain Analysis
 
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
-2. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 3 or 4
-3. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
+2. Pass `HAS_CODEBASE_GRAPH` (from Phase 3 or 4) to the agent — this flag controls whether `implemented_by` edges are emitted
+3. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 3 or 4
+4. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
 
 ### Phase 6: Validate and Save
 
@@ -185,7 +251,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 6b: Merge into Domain Graph
 
-The domain graph is stored in Neo4j (primary) with optional backup at `$PROJECT_ROOT/.grasp-it/domain-graph.json`. When merging new domain analysis results:
+The domain graph is stored in Neo4j. When merging new domain analysis results:
 
 #### 6b-1. Load existing domain graph
 
@@ -194,8 +260,7 @@ Query Neo4j for existing domain elements:
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:DomainElement)-[:PART_OF]->(p:Project) WHERE p.id = 'project:singleton' RETURN d"
 ```
-
-If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/domain-graph.json`.
+If Neo4j query fails, report the error and **STOP**.
 
 Read the new domain analysis output as `incomingNodes` and `incomingEdges`.
 
@@ -233,15 +298,8 @@ Edges: deduplicate by `(source, target, type)` composite. All new edges are appe
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash"
    ```
    For each domain element, use cypher to `MERGE` (upsert) the node and create the `PART_OF` relationship.
-3. Optionally write to `$PROJECT_ROOT/.grasp-it/domain-graph.json` as a local backup:
-   ```bash
-   node -e "
-   const fs = require('fs');
-   const backup = { nodes: mergedNodes, edges: mergedEdges, updatedAt: new Date().toISOString() };
-   fs.writeFileSync('$PROJECT_ROOT/.grasp-it/domain-graph.json', JSON.stringify(backup, null, 2));
-   "
-   ```
-4. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
+   If the Neo4j write fails, report the error and **STOP** — the domain graph must be persisted to Neo4j.
+3. Report any conflicts to the user (same format as Phase 5g in grasp-requirements)
 
 ### Phase 7: Clean Up
 
@@ -250,4 +308,4 @@ Edges: deduplicate by `(source, target, type)` composite. All new edges are appe
 ### Phase 8: Launch Dashboard
 
 1. Auto-trigger `/grasp-dashboard` to visualize the domain graph
-2. The dashboard will detect `domain-graph.json` and show the domain view by default
+2. The dashboard will query Neo4j for domain elements and show the domain view by default

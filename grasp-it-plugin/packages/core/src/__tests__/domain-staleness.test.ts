@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { KnowledgeGraph, GraphNode, ProjectSingletonMeta } from "../types.js";
+import type { GraphNode } from "../types.js";
 
 /**
  * Domain staleness is determined by comparing:
@@ -7,13 +7,7 @@ import type { KnowledgeGraph, GraphNode, ProjectSingletonMeta } from "../types.j
  *   Project.domainCommit   — commit when /grasp-domain last ran
  *
  * If they differ, the domain graph is stale.
- *
- * The old domainGraphStale flag in meta.json is deprecated.
  */
-
-vi.mock("child_process", () => ({
-  execFileSync: vi.fn(),
-}));
 
 // ─────────────────────────────────────────────────────────────────
 // Domain staleness types
@@ -287,54 +281,5 @@ describe("domain graph nodes in Neo4j (DomainElement label)", () => {
     );
 
     expect(result.records).toHaveLength(0);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────
-// Deprecated domainGraphStale flag behavior
-// ─────────────────────────────────────────────────────────────────
-
-describe("deprecated domainGraphStale flag in AnalysisMeta", () => {
-  it("domainGraphStale field is optional in AnalysisMeta", () => {
-    // The old domainGraphStale flag is deprecated.
-    // New code should use Project.gitCommitHash !== Project.domainCommit instead.
-    const meta = {
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      gitCommitHash: "abc123",
-      version: "1.0.0",
-      analyzedFiles: 10,
-      // domainGraphStale intentionally omitted
-    };
-
-    // No TypeScript error — field is optional
-    expect(meta.gitCommitHash).toBe("abc123");
-  });
-
-  it("domainGraphStale: true in meta.json means domain was stale at write time (legacy)", () => {
-    // This test documents the OLD behavior that is being replaced.
-    // Old: meta.json had domainGraphStale: true/false
-    // New: staleness is computed from Project.gitCommitHash vs Project.domainCommit
-    const oldStyleMeta = {
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      gitCommitHash: "def456",
-      version: "1.0.0",
-      analyzedFiles: 10,
-      domainGraphStale: true,
-    };
-
-    // In the old system, domainGraphStale: true meant the domain graph was out of sync
-    expect(oldStyleMeta.domainGraphStale).toBe(true);
-  });
-
-  it("domainGraphStale: false means domain was in sync at write time (legacy)", () => {
-    const oldStyleMeta = {
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      gitCommitHash: "abc123",
-      version: "1.0.0",
-      analyzedFiles: 10,
-      domainGraphStale: false,
-    };
-
-    expect(oldStyleMeta.domainGraphStale).toBe(false);
   });
 });

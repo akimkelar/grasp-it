@@ -6,7 +6,7 @@ argument-hint: ["[path] [--full|--auto-update|--no-auto-update|--review|--langua
 
 # /grasp
 
-Analyze the current codebase and produce a `knowledge-graph.json` file in `.grasp-it/`. This file powers the interactive dashboard for exploring the project's architecture.
+Analyze the current codebase and produce a knowledge graph stored in Neo4j. The graph powers the interactive dashboard for exploring the project's architecture.
 
 ## Options
 
@@ -526,28 +526,19 @@ Determine whether to run a full analysis or incremental update.
       > **Language directive**: Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in **{language}**. Maintain technical accuracy while using natural, native-level phrasing in the target language. Keep technical terms in English when no standard translation exists (e.g., "middleware", "hook", "barrel").
       ```
 
- 4. **Check for subdomain knowledge graphs to merge:**
-   List all `*knowledge-graph*.json` files in `$PROJECT_ROOT/.grasp-it/` **excluding** `knowledge-graph.json` itself (e.g. `frontend-knowledge-graph.json`, `backend-knowledge-graph.json`). If any subdomain graphs exist, run the merge script bundled with this skill (located next to this SKILL.md file — use the skill directory path, not the project root):
-   ```bash
-   python <SKILL_DIR>/merge-subdomain-graphs.py $PROJECT_ROOT
-   ```
-   The script discovers subdomain graphs, loads the existing `knowledge-graph.json` as a base (if present), and merges everything into `knowledge-graph.json` (deduplicating nodes and edges). Report the merge summary to the user, then continue with the merged graph.
-
-5. Check if `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists. If it does, read it.
-6. Check if `$PROJECT_ROOT/.grasp-it/meta.json` exists. If it does, read it to get `gitCommitHash`.
+ 
 6.5. **Read `gitCommitHash` from Neo4j (Phase 0 staleness check):**
    Attempt to load the canonical `gitCommitHash` from the Neo4j `Project` singleton:
    ```bash
-   node <SKILL_DIR>/load-project-meta.mjs "$PROJECT_ROOT"
+   node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash"
    ```
    
-   - If the script outputs non-empty JSON containing a `gitCommitHash` field → use that as `lastCommitHash` (this is the authoritative multi-user hash)
-   - If the script outputs `{}` (no Neo4j, or no Project node yet yet) → use the `gitCommitHash` from `meta.json` or `knowledge-graph.json` as `lastCommitHash` (single-user local fallback)
-   - If neither source has a hash → treat as first run (full analysis)
+   - If the query returns a row with `gitCommitHash` field → use that as `lastCommitHash`
+   - If the query returns no rows (no Project node yet) → treat as first run (full analysis)
    
-   **Graceful degradation:** If Neo4j is not configured, this step outputs `{}` and the skill silently falls back to the local files. The behavior is identical to before this change.
+   **Neo4j-only:** If Neo4j is unavailable or returns empty, the skill fails. There is no JSON fallback.
    
-   **Variable to set:** Store the resolved `lastCommitHash` (from Neo4j or local fallback) as `$LAST_COMMIT_HASH` for use in the decision logic below.
+   **Variable to set:** Store the resolved `lastCommitHash` as `$LAST_COMMIT_HASH` for use in the decision logic below.
 7. **Decision logic:**
 
    | Condition | Action |
@@ -727,25 +718,7 @@ Dispatch prompt template (fill in batch-specific values from `batches.json[i]`):
 
 After ALL batches complete, report to the user: `Phase 2 complete. All <totalBatches> batches analyzed.`
 
-Run the merge-and-normalize script bundled with this skill (located next to this SKILL.md file — use the skill directory path, not the project root):
-```bash
-python <SKILL_DIR>/merge-batch-graphs.py $PROJECT_ROOT
-```
-
-This script reads all `batch-*.json` files (including `batch-<i>-part-<k>.json` produced by file-analyzers that split their output) from `$PROJECT_ROOT/.grasp-it/intermediate/`, then in one pass:
-- Combines all nodes and edges across batches
-- Normalizes node IDs (strips double prefixes, project-name prefixes, adds missing prefixes)
-- Normalizes complexity values (`low`→`simple`, `medium`→`moderate`, `high`→`complex`, etc.)
-- Rewrites edge references to match corrected node IDs
-- Deduplicates nodes by ID (keeps last occurrence) and edges by `(source, target, type)`
-- Drops dangling edges referencing missing nodes
-- Logs all corrections and dropped items to stderr
-
-The merge script also runs a `tested_by` linker that canonicalizes test-coverage edges in two passes. **Pass 1** walks LLM-emitted `tested_by` edges and flips inverted ones in place; semantically broken edges (test↔test, prod↔prod, orphan endpoints) are dropped. **Pass 2** supplements with path-convention pairings. Production nodes that end up sourcing any `tested_by` edge get a `"tested"` tag. All resulting edges run `production → test`.
-
-Output: `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`
-
-Include the script's warnings in `$PHASE_WARNINGS` for the reviewer.
+The batch analysis results are assembled by the `assemble-reviewer` agent in Phase 3. Batch files (`batch-*.json`, `batch-<i>-part-<k>.json`) are written to `$PROJECT_ROOT/.grasp-it/intermediate/` by file-analyzer subagents.
 
 ### Incremental update path
 
@@ -779,10 +752,7 @@ After batches complete:
 1. Remove old nodes whose `filePath` matches any **structural** changed file from the existing graph
 2. Remove old edges whose `source` or `target` references a removed node
 3. Write the pruned existing nodes/edges as `batch-existing.json` in the intermediate directory
-4. Run the same merge script — it will combine `batch-existing.json` with the fresh `batch-*.json` files:
-   ```bash
-   python <SKILL_DIR>/merge-batch-graphs.py $PROJECT_ROOT
-   ```
+4. Run the assemble-reviewer agent — it combines `batch-existing.json` with the fresh `batch-*.json` files and writes `assembled-graph.json`.
 
 ---
 
@@ -799,10 +769,7 @@ Pass these parameters in the dispatch prompt:
 > Batch files are at: `$PROJECT_ROOT/.grasp-it/intermediate/batch-*.json`
 > Write review output to: `$PROJECT_ROOT/.grasp-it/intermediate/assemble-review.json`
 >
-> **Merge script report:**
-> ```
-> <paste the full stderr output from merge-batch-graphs.py>
-> ```
+> **Assembly report:** (review the assembled graph directly — the merge is handled by the assemble-reviewer agent)
 >
 > **Import map for cross-batch edge verification:**
 > ```json
@@ -1135,9 +1102,9 @@ Pass these parameters in the dispatch prompt:
 
 Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
-1. Write the final knowledge graph to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`.
+**Neo4j-only:** The knowledge graph is written directly to Neo4j. There is no JSON file fallback. If Neo4j is unavailable, the skill fails.
 
-2. **Generate structural fingerprints baseline.** This creates the basis for future automatic incremental updates and **must succeed before `meta.json` is written** — otherwise auto-update sees a fresh commit hash with no fingerprints to compare against, classifies every file as STRUCTURAL, and escalates to `FULL_UPDATE` on every subsequent commit (issue #152).
+1. **Generate structural fingerprints baseline.** This creates the basis for future automatic incremental updates and **must succeed before the graph is saved** — otherwise auto-update sees a fresh commit hash with no fingerprints to compare against, classifies every file as STRUCTURAL, and escalates to `FULL_UPDATE` on every subsequent commit (issue #152).
 
    Write the input file:
    ```bash
@@ -1158,72 +1125,33 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
    The script uses `TreeSitterPlugin + PluginRegistry` exactly like `extract-structure.mjs`, so the baseline matches the comparison logic used during auto-updates.
 
-   **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 3 (writing `meta.json`).**
+   **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 2.**
 
-3. Write metadata to `$PROJECT_ROOT/.grasp-it/meta.json` (only after step 2 succeeded), then check domain graph staleness:
+2. **Persist knowledge graph to Neo4j:**
+   After fingerprints are saved, persist the knowledge graph to Neo4j via the `Project` singleton:
    ```bash
-   # First write the base meta.json
-   cat > $PROJECT_ROOT/.grasp-it/meta.json <<EOF
-   {
-     "lastAnalyzedAt": "<ISO 8601 timestamp>",
-     "gitCommitHash": "<commit hash>",
-     "version": "1.0.0",
-     "analyzedFiles": <number of files analyzed>
-   }
-   EOF
-
-   # Check if domain-graph.json exists and is out of sync
-   DOMAIN_GRAPH_PATH="$PROJECT_ROOT/.grasp-it/domain-graph.json"
-   if [ -f "$DOMAIN_GRAPH_PATH" ]; then
-     DOMAIN_COMMIT=$(node -e "try{const g=JSON.parse(require('fs').readFileSync('$DOMAIN_GRAPH_PATH','utf8'));console.log(g.project?.gitCommitHash||'')}catch(e){console.log('')}")
-     if [ -n "$DOMAIN_COMMIT" ] && [ "$DOMAIN_COMMIT" != "<commit hash>" ]; then
-       # Domain graph is stale — add the flag to meta.json
-       node -e "
-       const fs=require('fs');
-       const meta=JSON.parse(fs.readFileSync('$PROJECT_ROOT/.grasp-it/meta.json','utf8'));
-       meta.domainGraphStale=true;
-       fs.writeFileSync('$PROJECT_ROOT/.grasp-it/meta.json',JSON.stringify(meta,null,2));
-       "
-       echo ""
-       echo "⚠ Domain graph is out of sync with the updated codebase. Re-run \`/grasp-domain\` to refresh domain links."
-       echo ""
-     fi
-   fi
-   ```
-
-   **Optional auto-trigger:** If `$PROJECT_ROOT/.grasp-it/config.json` contains `"autoUpdate": true`, invoke `/grasp-domain` automatically after Phase 7 completes instead of just printing the warning:
-   ```bash
-   AUTO_UPDATE_ENABLED=$(node -e "try{const c=JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/.grasp-it/config.json','utf8'));console.log(c.autoUpdate===true?'true':'false')}catch(e){console.log('false')}")
-   if [ "$AUTO_UPDATE_ENABLED" = "true" ]; then
-     echo "[grasp-it] Auto-updating domain graph (autoUpdate enabled)..."
-     /grasp-domain
-   fi
-   ```
-
-3.5. **Persist project metadata to Neo4j (Phase 7):**
-   After `meta.json` is written (step 3), also persist the project metadata to the Neo4j `Project` singleton:
-   ```bash
-   node <SKILL_DIR>/save-project-meta.mjs "$PROJECT_ROOT" <number of files analyzed>
+   node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" "MERGE (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = '$(git rev-parse HEAD)', p.lastAnalyzedAt = datetime(), p.version = '1.0.0', p.analyzedFiles = <number of files analyzed>"
    EXIT_CODE=$?
    if [ $EXIT_CODE -ne 0 ]; then
      echo ""
-     echo "Warning: Neo4j Project singleton could not be updated (see above). Other users may see a stale commit hash until the next successful \`/grasp\` run."
+     echo "Error: Failed to persist knowledge graph to Neo4j. The skill cannot continue without a successful Neo4j write."
      echo ""
+     exit 1
    fi
    ```
    
-   - Exit code 0 → Neo4j write succeeded, or Neo4j not configured (graceful skip)
-   - Exit code 1 → Neo4j was configured but the write failed — print the warning above; the skill itself still exits 0 (the local graph was saved successfully; this is a sync warning, not a local failure)
+   - Exit code 0 → Neo4j write succeeded
+   - Exit code 1 → Neo4j write failed — the skill exits with an error
    
    **Note:** The `analyzedFiles` count should be the total number of source files scanned in Phase 1 (not just the files that had structural changes in an incremental run).
 
-4. Clean up intermediate files:
+3. Clean up intermediate files:
    ```bash
    rm -rf $PROJECT_ROOT/.grasp-it/intermediate
    rm -rf $PROJECT_ROOT/.grasp-it/tmp
    ```
 
-5. Report a summary to the user containing:
+4. Report a summary to the user containing:
    - Project name and description
    - Files analyzed / total files (with breakdown by fileCategory: code, config, docs, infra, data, script, markup)
    - Nodes created (broken down by type: file, function, class, config, document, service, table, endpoint, pipeline, schema, resource)
@@ -1231,9 +1159,9 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    - Layers identified (with names)
    - Tour steps generated (count)
    - Any warnings from the reviewer
-   - Path to the output file: `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+   - Confirmation that the graph was saved to Neo4j
 
-6. Only automatically launch the dashboard by invoking the `/grasp-dashboard` skill if final graph validation passed after normalization/review fixes.
+5. Only automatically launch the dashboard by invoking the `/grasp-dashboard` skill if final graph validation passed after normalization/review fixes.
    If final validation did not pass, report that the graph was saved with warnings and dashboard launch was skipped.
 
 ---

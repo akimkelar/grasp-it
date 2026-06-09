@@ -6,27 +6,15 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn(),
-  readFileSync: vi.fn(),
-}));
-
-vi.mock("node:path", () => ({
-  join: vi.fn((...args: string[]) => args.join("/")),
-}));
-
 // Import after mocking
 import { execFileSync } from "child_process";
-import { existsSync, readFileSync } from "node:fs";
 import {
   getChangedFiles,
   isStale,
   checkGraphFreshness,
-  checkGraphFreshnessFromFiles,
   mergeGraphUpdate,
   findStaleImplementedBy,
 } from "../staleness.js";
-import { loadProjectMeta } from "../persistence/index.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -174,18 +162,15 @@ describe("isStale", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// checkGraphFreshness — Neo4j-first
+// checkGraphFreshness — Neo4j-only (no JSON fallback)
 // ─────────────────────────────────────────────────────────────────
 
-describe("checkGraphFreshness (Neo4j-first)", () => {
-  const mockedExistsSync = vi.mocked(existsSync);
-  const mockedReadFileSync = vi.mocked(readFileSync);
-
+describe("checkGraphFreshness (Neo4j-only)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("queries Neo4j when session is provided", async () => {
+  it("queries Neo4j and returns stale=false when commit matches HEAD", async () => {
     const session = makeNeo4jSession({
       gitCommitHash: "abc123",
       lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
@@ -228,83 +213,28 @@ describe("checkGraphFreshness (Neo4j-first)", () => {
     });
   });
 
-  it("falls back to JSON files when session throws (Neo4j unavailable)", async () => {
+  it("throws when session.run() throws (Neo4j unavailable)", async () => {
     const session = makeFailingNeo4jSession();
-    // Mock JSON fallback — knowledge-graph.json exists with matching commit
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
+
+    await expect(checkGraphFreshness("/project", session)).rejects.toThrow(
+      "Connection refused",
     );
-    mockedExecFileSync.mockReturnValue("abc123");
-
-    const result = await checkGraphFreshness("/project", session);
-
-    // Should fall through to JSON files and succeed
-    expect(result).toEqual({
-      stale: false,
-      lastCommit: "abc123",
-      headCommit: "abc123",
-      commitsBehind: 0,
-    });
   });
 
-  it("falls back to JSON files when session is undefined", async () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
-    );
-    mockedExecFileSync.mockReturnValue("abc123");
-
-    const result = await checkGraphFreshness("/project");
-
-    expect(result).toEqual({
-      stale: false,
-      lastCommit: "abc123",
-      headCommit: "abc123",
-      commitsBehind: 0,
-    });
-  });
-
-  it("falls back to JSON files when Neo4j returns no records (first run)", async () => {
+  it("throws with 'No analysis found. Run /grasp first.' when Neo4j returns no records", async () => {
     const session = makeNeo4jSession(null);
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
+
+    await expect(checkGraphFreshness("/project", session)).rejects.toThrow(
+      "No analysis found. Run /grasp first.",
     );
-    mockedExecFileSync.mockReturnValue("abc123");
-
-    const result = await checkGraphFreshness("/project", session);
-
-    expect(result).toEqual({
-      stale: false,
-      lastCommit: "abc123",
-      headCommit: "abc123",
-      commitsBehind: 0,
-    });
   });
 
-  it("returns stale=true when neither Neo4j nor JSON files have data", async () => {
-    const session = makeNeo4jSession(null);
-    mockedExistsSync.mockReturnValue(false);
-    mockedReadFileSync.mockReturnValue("{}");
+  it("throws with 'No analysis found. Run /grasp first.' when session is undefined", async () => {
+    mockedExecFileSync.mockReturnValue("abc123");
 
-    const result = await checkGraphFreshness("/project", session);
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "",
-      headCommit: "",
-      commitsBehind: 0,
-    });
+    await expect(checkGraphFreshness("/project")).rejects.toThrow(
+      "No analysis found. Run /grasp first.",
+    );
   });
 
   it("gracefully handles HEAD git error after Neo4j success", async () => {
@@ -326,185 +256,6 @@ describe("checkGraphFreshness (Neo4j-first)", () => {
     expect(result).toEqual({
       stale: true,
       lastCommit: "abc123",
-      headCommit: "",
-      commitsBehind: 0,
-    });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────
-// checkGraphFreshnessFromFiles — legacy JSON fallback
-// ─────────────────────────────────────────────────────────────────
-
-describe("checkGraphFreshnessFromFiles (legacy JSON fallback)", () => {
-  const mockedExistsSync = vi.mocked(existsSync);
-  const mockedReadFileSync = vi.mocked(readFileSync);
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("returns stale=true when neither knowledge-graph.json nor meta.json exists", () => {
-    mockedExistsSync.mockReturnValue(false);
-    mockedReadFileSync.mockReturnValue("{}");
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "",
-      headCommit: "",
-      commitsBehind: 0,
-    });
-  });
-
-  it("returns stale=false when graph commit matches HEAD", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({
-        project: { gitCommitHash: "abc123", name: "test" },
-      }),
-    );
-    mockedExecFileSync.mockReturnValue("abc123");
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: false,
-      lastCommit: "abc123",
-      headCommit: "abc123",
-      commitsBehind: 0,
-    });
-  });
-
-  it("returns stale=true with correct commitsBehind when graph is behind HEAD", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({
-        project: { gitCommitHash: "abc123", name: "test" },
-      }),
-    );
-    mockedExecFileSync.mockImplementation((cmd, args) => {
-      if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
-      if (cmd === "git" && args?.[0] === "rev-list") return "5";
-      return "";
-    });
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "abc123",
-      headCommit: "def456",
-      commitsBehind: 5,
-    });
-  });
-
-  it("falls back to meta.json when knowledge-graph.json is not available", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return false;
-      if (path === "/project/.grasp-it/meta.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(JSON.stringify({ gitCommitHash: "abc123" }));
-    mockedExecFileSync.mockReturnValue("abc123");
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: false,
-      lastCommit: "abc123",
-      headCommit: "abc123",
-      commitsBehind: 0,
-    });
-  });
-
-  it("handles git error when getting HEAD gracefully", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
-    );
-    mockedExecFileSync.mockImplementation((cmd, args) => {
-      if (cmd === "git" && args?.[0] === "rev-parse") {
-        throw new Error("fatal: not a git repo");
-      }
-      return "";
-    });
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "abc123",
-      headCommit: "",
-      commitsBehind: 0,
-    });
-  });
-
-  it("handles git error when counting commits (e.g., rebased commit)", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(
-      JSON.stringify({ project: { gitCommitHash: "abc123", name: "test" } }),
-    );
-    mockedExecFileSync.mockImplementation((cmd, args) => {
-      if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
-      if (cmd === "git" && args?.[0] === "rev-list") {
-        throw new Error("fatal: bad revision");
-      }
-      return "";
-    });
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "abc123",
-      headCommit: "def456",
-      commitsBehind: 0,
-    });
-  });
-
-  it("falls back gracefully when knowledge-graph.json contains invalid JSON", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue("not-valid-json{{");
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "",
-      headCommit: "",
-      commitsBehind: 0,
-    });
-  });
-
-  it("falls back gracefully when knowledge-graph.json is missing project.gitCommitHash", () => {
-    mockedExistsSync.mockImplementation((path) => {
-      if (path === "/project/.grasp-it/knowledge-graph.json") return true;
-      return false;
-    });
-    mockedReadFileSync.mockReturnValue(JSON.stringify({ nodes: [], edges: [] }));
-
-    const result = checkGraphFreshnessFromFiles("/project");
-
-    expect(result).toEqual({
-      stale: true,
-      lastCommit: "",
       headCommit: "",
       commitsBehind: 0,
     });

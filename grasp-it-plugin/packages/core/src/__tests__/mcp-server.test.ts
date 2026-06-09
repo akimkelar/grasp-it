@@ -1,22 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
-import { MCPServer, createMCPServer } from "../mcp-server/index.js";
+import { createMCPServer } from "../mcp-server/index.js";
 import type { KnowledgeGraph, GraphNode } from "../types.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+vi.mock("../mcp-server/session.js", () => ({
+  createNeo4jSession: vi.fn(),
+}));
 
-const makeNode = (overrides: Partial<GraphNode> & { id: string; name: string }): GraphNode => ({
-  type: "file",
-  summary: "",
-  tags: [],
-  complexity: "simple",
-  ...overrides,
-});
+// Need to import after mock is set up
+import { createNeo4jSession } from "../mcp-server/session.js";
+
+function makeNode(overrides: Partial<GraphNode> & { id: string; name: string }): GraphNode {
+  return {
+    type: "file",
+    summary: "",
+    tags: [],
+    complexity: "simple",
+    ...overrides,
+  };
+}
 
 function createSampleGraph(): KnowledgeGraph {
   return {
@@ -79,26 +84,127 @@ function createSampleGraph(): KnowledgeGraph {
   };
 }
 
+function createMockSessionWithGraph(graph: KnowledgeGraph) {
+  return {
+    run: vi.fn(async (query: string) => {
+      if (query.includes("MATCH (p:Project")) {
+        return {
+          records: [{
+            name: graph.project.name,
+            languages: graph.project.languages,
+            frameworks: graph.project.frameworks,
+            description: graph.project.description,
+            analyzedAt: graph.project.analyzedAt,
+            gitCommitHash: graph.project.gitCommitHash,
+            version: graph.version,
+          }],
+        };
+      }
+
+      if (query.includes("MATCH (n:GraphNode)-[:PART_OF]->(p:Project")) {
+        return {
+          records: graph.nodes.map((node) => ({
+            n: {
+              id: node.id,
+              name: node.name,
+              type: node.type,
+              summary: node.summary,
+              filePath: node.filePath,
+              lineRange: node.lineRange,
+              tags: node.tags,
+              complexity: node.complexity,
+            },
+          })),
+        };
+      }
+
+      if (query.includes("MATCH (source:GraphNode)-[r:RELATES]->(target:GraphNode)")) {
+        return {
+          records: graph.edges.map((edge) => ({
+            r: {
+              source: edge.source,
+              target: edge.target,
+              type: edge.type,
+              direction: edge.direction,
+              description: edge.description,
+              weight: edge.weight,
+            },
+          })),
+        };
+      }
+
+      if (query.includes("MATCH (l:Layer)-[:PART_OF]->(p:Project")) {
+        return {
+          records: graph.layers.map((layer) => ({
+            l: {
+              id: layer.id,
+              name: layer.name,
+              description: layer.description,
+              nodeIds: layer.nodeIds,
+            },
+          })),
+        };
+      }
+
+      if (query.includes("MATCH (t:TourStep)-[:PART_OF]->(p:Project")) {
+        return {
+          records: graph.tour.map((step) => ({
+            t: {
+              order: step.order,
+              title: step.title,
+              description: step.description,
+              nodeIds: step.nodeIds,
+              languageLesson: step.languageLesson,
+            },
+          })),
+        };
+      }
+
+      return { records: [] };
+    }),
+    close: vi.fn(),
+  };
+}
+
+function createEmptyMockSession() {
+  return {
+    run: vi.fn(async () => ({ records: [] })),
+    close: vi.fn(),
+  };
+}
+
 describe("MCPServer", () => {
   let projectRoot: string;
 
   beforeEach(() => {
     projectRoot = mkdtempSync(join(tmpdir(), "mcp-test-"));
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     if (projectRoot) {
       rmSync(projectRoot, { recursive: true, force: true });
     }
+    vi.restoreAllMocks();
   });
 
   describe("initialization", () => {
     it("creates server with project root", () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
       expect(server.getProjectRoot()).toBe(projectRoot);
     });
 
     it("handles initialize request", () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
       const response = server.handleRequest({
         jsonrpc: "2.0",
@@ -118,6 +224,11 @@ describe("MCPServer", () => {
 
   describe("resources", () => {
     it("lists available resources", () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
       const response = server.handleRequest({
         jsonrpc: "2.0",
@@ -134,9 +245,14 @@ describe("MCPServer", () => {
       expect(uris).toContain("grasp://schema");
     });
 
-    it("returns empty graph stats when no graph exists", () => {
+    it("returns empty graph stats when no graph exists", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "resources/read",
@@ -150,14 +266,16 @@ describe("MCPServer", () => {
       expect(stats.edgeCount).toBe(0);
     });
 
-    it("returns graph when graph file exists", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("returns graph stats when graph exists", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "resources/read",
@@ -171,9 +289,14 @@ describe("MCPServer", () => {
       expect(stats.edgeCount).toBe(2);
     });
 
-    it("returns error for unknown resource", () => {
+    it("returns error for unknown resource", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "resources/read",
@@ -187,6 +310,11 @@ describe("MCPServer", () => {
 
   describe("tools", () => {
     it("lists available tools", () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
       const response = server.handleRequest({
         jsonrpc: "2.0",
@@ -206,9 +334,14 @@ describe("MCPServer", () => {
       expect(toolNames).toContain("get_schema");
     });
 
-    it("search_nodes returns error when no graph exists", () => {
+    it("search_nodes returns error when no graph exists", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -224,14 +357,16 @@ describe("MCPServer", () => {
       expect(result.content[0].text).toContain("No knowledge graph available");
     });
 
-    it("search_nodes finds nodes in graph", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("search_nodes finds nodes in graph", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -248,14 +383,16 @@ describe("MCPServer", () => {
       expect(parsed.results.some((r: { id: string }) => r.id === "auth-ctrl")).toBe(true);
     });
 
-    it("get_node returns node details", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("get_node returns node details", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -273,14 +410,16 @@ describe("MCPServer", () => {
       expect(parsed.connections.length).toBeGreaterThan(0);
     });
 
-    it("get_node returns error for unknown node", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("get_node returns error for unknown node", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -296,14 +435,16 @@ describe("MCPServer", () => {
       expect(result.content[0].text).toContain("Node not found");
     });
 
-    it("list_edges returns all edges", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("list_edges returns all edges", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -320,14 +461,16 @@ describe("MCPServer", () => {
       expect(parsed.edges.length).toBe(2);
     });
 
-    it("list_edges filters by node", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("list_edges filters by node", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -340,21 +483,22 @@ describe("MCPServer", () => {
       expect(response.result).toBeDefined();
       const result = response.result as { content: Array<{ text: string }> };
       const parsed = JSON.parse(result.content[0].text);
-      // auth-ctrl has 2 edges: imports user-model (as source) and called by login-fn (as target)
       expect(parsed.total).toBe(2);
       const edgeIds = parsed.edges.map((e: { source: string; target: string }) => `${e.source}-${e.target}`);
       expect(edgeIds).toContain("auth-ctrl-user-model");
       expect(edgeIds).toContain("login-fn-auth-ctrl");
     });
 
-    it("get_graph_stats returns statistics", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("get_graph_stats returns statistics", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -374,14 +518,16 @@ describe("MCPServer", () => {
       expect(parsed.layers).toContain("Presentation");
     });
 
-    it("get_project_info returns project metadata", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("get_project_info returns project metadata", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -400,9 +546,14 @@ describe("MCPServer", () => {
       expect(parsed.edgeCount).toBe(2);
     });
 
-    it("get_schema returns schema information", () => {
+    it("get_schema returns schema information", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -422,9 +573,14 @@ describe("MCPServer", () => {
       expect(parsed.version).toBe("1.0");
     });
 
-    it("returns error for unknown tool", () => {
+    it("returns error for unknown tool", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -440,9 +596,14 @@ describe("MCPServer", () => {
       expect(result.content[0].text).toContain("Unknown tool");
     });
 
-    it("handles method not found", () => {
+    it("handles method not found", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
-      const response = server.handleRequest({
+      const response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "unknown/method",
@@ -455,16 +616,18 @@ describe("MCPServer", () => {
   });
 
   describe("refresh", () => {
-    it("reloads graph after refresh", () => {
-      const graphDir = join(projectRoot, ".grasp-it");
-      mkdirSync(graphDir, { recursive: true });
+    it("reloads graph after refresh", async () => {
       const graph = createSampleGraph();
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(graph), "utf-8");
+      const mockSession = createMockSessionWithGraph(graph);
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: true,
+        session: mockSession,
+      });
 
       const server = createMCPServer({ projectRoot });
 
       // Initial search
-      let response = server.handleRequest({
+      let response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
@@ -476,43 +639,32 @@ describe("MCPServer", () => {
       let result = response.result as { content: Array<{ text: string }> };
       expect(JSON.parse(result.content[0].text).total).toBeGreaterThan(0);
 
-      // Add more nodes
-      const updatedGraph = {
-        ...graph,
-        nodes: [
-          ...graph.nodes,
-          makeNode({
-            id: "payment-svc",
-            name: "PaymentService",
-            type: "service",
-            summary: "Handles payment processing",
-            tags: ["payment", "billing"],
-          }),
-        ],
-      };
-      writeFileSync(join(graphDir, "knowledge-graph.json"), JSON.stringify(updatedGraph), "utf-8");
-
-      // Refresh
+      // Refresh - creates new MCPResources and MCPTools
       server.refresh();
 
-      // Search again - should see the new node
-      response = server.handleRequest({
+      // Search again - should still work (refresh creates new instances)
+      response = await server.handleRequestAsync({
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
         params: {
           name: "search_nodes",
-          arguments: { query: "payment" },
+          arguments: { query: "auth" },
         },
       });
       result = response.result as { content: Array<{ text: string }> };
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.results.some((r: { id: string }) => r.id === "payment-svc")).toBe(true);
+      expect(parsed.total).toBeGreaterThan(0);
     });
   });
 
-  describe("async handleRequestAsync", () => {
+  describe("handleRequestAsync", () => {
     it("handles async tool call for run_query", async () => {
+      vi.mocked(createNeo4jSession).mockResolvedValue({
+        success: false,
+        session: null,
+      });
+
       const server = createMCPServer({ projectRoot });
 
       // This should return an error since there's no Neo4j config

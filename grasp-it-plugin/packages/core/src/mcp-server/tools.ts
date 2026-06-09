@@ -4,10 +4,11 @@
  * Provides tools for querying and searching the knowledge graph.
  */
 
-import { loadGraph } from "../persistence/index.js";
+import { loadGraphFromNeo4j } from "../persistence/index.js";
 import { SearchEngine, type SearchOptions } from "../search.js";
 import { loadConfig } from "../neo4j-config.js";
-import type { GraphNode } from "../types.js";
+import type { KnowledgeGraph, GraphNode } from "../types.js";
+import { createNeo4jSession } from "./session.js";
 import type {
   MCPTool,
   MCPToolResult,
@@ -26,18 +27,42 @@ export class MCPTools {
   private resources: MCPResources;
   private searchEngine: SearchEngine | null = null;
   private cachedNodes: GraphNode[] = [];
+  private cachedGraph: KnowledgeGraph | null = null;
+  private initialized: boolean = false;
 
   constructor(projectRoot: string) {
     this.projectRoot = projectRoot;
     this.resources = new MCPResources(projectRoot);
-    this.initializeSearchEngine();
   }
 
-  private initializeSearchEngine(): void {
-    const graph = loadGraph(this.projectRoot, { validate: false });
-    if (graph?.nodes) {
-      this.cachedNodes = graph.nodes;
-      this.searchEngine = new SearchEngine(graph.nodes);
+  /**
+   * Initialize the tools by loading the graph from Neo4j.
+   * Call this after construction, before using search/list methods.
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+
+    const sessionResult = await createNeo4jSession(this.projectRoot);
+    if (!sessionResult.success || !sessionResult.session) {
+      this.initialized = true;
+      return;
+    }
+
+    try {
+      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session);
+      if (this.cachedGraph?.nodes) {
+        this.cachedNodes = this.cachedGraph.nodes;
+        this.searchEngine = new SearchEngine(this.cachedGraph.nodes);
+      }
+    } finally {
+      await sessionResult.session.close();
+    }
+    this.initialized = true;
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize();
     }
   }
 
@@ -144,7 +169,7 @@ export class MCPTools {
     ];
   }
 
-  callTool(toolName: string, args: Record<string, unknown>): MCPToolResult {
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<MCPToolResult> {
     switch (toolName) {
       case "search_nodes":
         return this.searchNodes(args as unknown as NodeSearchParams);
@@ -180,7 +205,8 @@ export class MCPTools {
     }
   }
 
-  private searchNodes(params: NodeSearchParams): MCPToolResult {
+  private async searchNodes(params: NodeSearchParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
     if (!this.searchEngine) {
       return {
         content: [{ type: "text", text: "No knowledge graph available. Run /grasp first." }],
@@ -228,8 +254,9 @@ export class MCPTools {
     };
   }
 
-  private getNode(params: NodeGetParams): MCPToolResult {
-    const node = this.resources.getNode(params.nodeId);
+  private async getNode(params: NodeGetParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
+    const node = await this.resources.getNode(params.nodeId);
 
     if (!node) {
       return {
@@ -238,7 +265,7 @@ export class MCPTools {
       };
     }
 
-    const edges = this.resources.getEdgesForNode(params.nodeId);
+    const edges = await this.resources.getEdgesForNode(params.nodeId);
 
     return {
       content: [
@@ -262,8 +289,9 @@ export class MCPTools {
     };
   }
 
-  private listEdges(params: EdgeListParams): MCPToolResult {
-    const graph = loadGraph(this.projectRoot, { validate: false });
+  private async listEdges(params: EdgeListParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
+    const graph = this.cachedGraph;
     if (!graph) {
       return {
         content: [{ type: "text", text: "No knowledge graph available. Run /grasp first." }],
@@ -308,17 +336,18 @@ export class MCPTools {
     };
   }
 
-  private getGraphStats(_params: GraphStatsParams): MCPToolResult {
-    const graph = loadGraph(this.projectRoot, { validate: false });
-    const stats = this.resources.computeStats(graph);
+  private async getGraphStats(_params: GraphStatsParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
+    const stats = this.resources.computeStats(this.cachedGraph);
 
     return {
       content: [{ type: "text", text: JSON.stringify(stats, null, 2) }],
     };
   }
 
-  private getProjectInfo(_params: ProjectInfoParams): MCPToolResult {
-    const info = this.resources.getProjectInfo();
+  private async getProjectInfo(_params: ProjectInfoParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
+    const info = await this.resources.getProjectInfo();
 
     if (!info) {
       return {
@@ -332,9 +361,9 @@ export class MCPTools {
     };
   }
 
-  private getSchema(_params: SchemaInfoParams): MCPToolResult {
-    const graph = loadGraph(this.projectRoot, { validate: false });
-    const schema = this.resources.computeSchema(graph);
+  private async getSchema(_params: SchemaInfoParams): Promise<MCPToolResult> {
+    await this.ensureInitialized();
+    const schema = this.resources.computeSchema(this.cachedGraph);
 
     return {
       content: [{ type: "text", text: JSON.stringify(schema, null, 2) }],

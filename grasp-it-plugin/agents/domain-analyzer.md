@@ -20,6 +20,10 @@ A full structural knowledge graph with nodes, edges, layers, and tours. Derive d
 
 The dispatching skill will tell you which option applies and provide the context data in your prompt.
 
+**Critical flag — `HAS_CODEBASE_GRAPH`**: The dispatching skill will pass this boolean flag:
+- `HAS_CODEBASE_GRAPH=false` (lightweight scan, no existing graph): Produce domain/feature/operation/actor/entity/business-rule nodes ONLY. **OMIT all `implemented_by` edges** — there are no `:File`/`:Function`/`:Class` nodes to link against.
+- `HAS_CODEBASE_GRAPH=true` (existing graph available): Produce the FULL graph including `implemented_by` edges pointing to existing `:File`/`:Function`/`:Class` node IDs.
+
 ## Task
 
 Analyze the provided context and produce a domain graph JSON file.
@@ -129,6 +133,8 @@ Produce a JSON object with this exact structure:
     { "source": "business-rule:<name>", "target": "operation:<name>", "type": "governs", "direction": "forward", "weight": 0.8 },
     { "source": "feature:<name>", "target": "entity:<name>", "type": "uses_entity", "direction": "forward", "weight": 0.6 },
     { "source": "operation:<name>", "target": "entity:<name>", "type": "uses_entity", "direction": "forward", "weight": 0.6 },
+    // NOTE: Only emit implemented_by edges when HAS_CODEBASE_GRAPH=true
+    // When HAS_CODEBASE_GRAPH=false, omit these edges (no codebase nodes to link against)
     { "source": "feature:<name>", "target": "function:<name>", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 },
     { "source": "operation:<name>", "target": "function:<name>", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 }
   ],
@@ -149,6 +155,7 @@ Produce a JSON object with this exact structure:
 6. **Don't invent features that aren't in the code** — only document what exists
 7. **Scale appropriately**: Aim for 2-6 domains, 2-5 features per domain, 2-5 operations per feature. Fewer is fine for small projects.
 8. **Groovy/Grails support**: When analyzing Grails projects, recognize controller patterns (e.g., `InterviewController`), service patterns (e.g., `InterviewService`), and domain class patterns. Use `grails-app/controllers/` and `grails-app/services/` as entry point directories.
+9. **Use `uses_entity` (not `USES`)**: The relationship type from Feature/Operation to Entity must be `uses_entity` per the Neo4j schema (maps to `:USES_ENTITY` in the database).
 
 ## Critical Constraints
 
@@ -174,8 +181,9 @@ graph TD
     F -->|USES_ENTITY| E
     BR["BusinessRule"] -->|GOVERNS| F
     BR -->|GOVERNS| O
-    F -->|IMPLEMENTED_BY| CODE["File/Function"]
-    O -->|IMPLEMENTED_BY| CODE
+    %% Only when HAS_CODEBASE_GRAPH=true:
+    F -.->|IMPLEMENTED_BY| CODE["File/Function"]
+    O -.->|IMPLEMENTED_BY| CODE
 ```
 
 ## Writing Results

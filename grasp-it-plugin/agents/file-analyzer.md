@@ -261,9 +261,9 @@ Using the script's structural data and file categories, create edges:
 | `implements` | A class implements an interface in the project | `0.9` | `forward` |
 | `exports` | File exports a function or class node you created (only for exported items — use IN ADDITION to `contains`, not instead of it) | `0.8` | `forward` |
 | `depends_on` | File has runtime dependency on another project file (broader than imports -- includes dynamic requires, lazy loads) | `0.6` | `forward` |
-| `tested_by` | Production file is exercised by a test file. Emit when you see the test importing/using the production file. Use direction `production → test` if you can; the merge script will flip inverted edges and dedupe. | `0.5` | `forward` |
+| `tested_by` | Production file is exercised by a test file. Emit when you see the test importing/using the production file. Use direction `production → test`. | `0.5` | `forward` |
 
-**Note on `tested_by`:** It's fine to emit even if you're unsure of the direction (you typically see the relationship while analyzing the *test* file, where the import points back at production). The merge script (`merge-batch-graphs.py`) canonicalizes direction to `production → test` and drops semantically broken edges (test↔test, prod↔prod, orphan endpoint). Path-convention pairing supplements anything you miss.
+**Note on `tested_by`:** It's fine to emit even if you're unsure of the direction (you typically see the relationship while analyzing the *test* file, where the import points back at production). The assembly process canonicalizes direction to `production → test` and drops semantically broken edges (test↔test, prod↔prod, orphan endpoint). Path-convention pairing supplements anything you miss.
 
 #### Edges for non-code files:
 
@@ -291,7 +291,7 @@ For every code file in this batch:
 
 The `batchImportData` values contain only resolved project-internal paths — external packages have already been filtered out, so every path is safe to emit. Do NOT attempt to re-resolve imports from source. Do NOT skip imports because the target lives in another batch (cross-batch references are explicitly allowed for `imports` edges, since the project-scanner already verified the path exists).
 
-**Self-check before writing the batch JSON:** sum `batchImportData[file].length` across every code file in your batch. The number of `imports` edges in your output MUST equal that sum. If it doesn't, you dropped some during enumeration — go back and add them. (A deterministic post-processing pass in `merge-batch-graphs.py` will recover anything you still miss, but it is your job to get this right at emission time so the recovery report stays empty.)
+**Self-check before writing the batch JSON:** sum `batchImportData[file].length` across every code file in your batch. The number of `imports` edges in your output MUST equal that sum. If it doesn't, you dropped some during enumeration — go back and add them.
 
 **Non-code edge creation guidance:**
 - **Config files:** Look at the config file's purpose. `tsconfig.json` configures all `.ts` files; `package.json` configures the build. Create `configures` edges to the most relevant entry points or directories.
@@ -486,7 +486,7 @@ Use these hints for common edge patterns:
 
 `<batchIndex>` is the **ORIGINAL integer batch index** from the input `batches.json`. Even if your dispatch prompt fused multiple batches into one call (e.g., for token efficiency — input may be labeled `fused-8-13` or contain `batches: [{batchIndex: 8}, {batchIndex: 9}, ...]`), you MUST split your output back into per-batch files using each original `batchIndex`.
 
-**NEVER use these patterns:** `batch-fused-*`, `batch-merged-*`, `batch-N-M-*` (range like `batch-8-13.json`), `batches-*`, or any other variant. The downstream merge script (`merge-batch-graphs.py`) requires the regex `batch-(\d+)(?:-part-(\d+))?\.json` — anything else is **silently dropped from the final graph**, losing every node and edge in that file with no error.
+**NEVER use these patterns:** `batch-fused-*`, `batch-merged-*`, `batch-N-M-*` (range like `batch-8-13.json`), `batches-*`, or any other variant. The assembly process requires the regex `batch-(\d+)(?:-part-(\d+))?\.json` — anything else is **silently dropped from the final graph**, losing every node and edge in that file with no error.
 
 **Example.** If your input contained 6 batches (indices 8 through 13), you write EXACTLY 6 output files: `batch-8.json`, `batch-9.json`, `batch-10.json`, `batch-11.json`, `batch-12.json`, `batch-13.json`. Not one combined `batch-fused-8-13.json`. Not one `batch-8-13.json`. Six files, one per original `batchIndex`. Run Steps A–F below independently for each batch's nodes/edges.
 

@@ -146,8 +146,8 @@ Compare `graphCommit` against the local `git rev-parse HEAD` using `git merge-ba
 
 | Check | Compares | Answers |
 |-------|----------|---------|
-| **Phase 0 staleness check** (per-skill) | Local graph `gitCommitHash` vs. local git HEAD | "Do I need to re-run `/grasp`?" |
-| **`check-sync.mjs`** | Local graph `gitCommitHash` vs. Neo4j `Project` singleton | "Is my analysis in sync with the shared Neo4j database?" |
+| **Phase 0 staleness check** (per-skill) | Neo4j `Project.gitCommitHash` vs. local git HEAD | "Do I need to re-run `/grasp`?" |
+| **Cross-user sync check** | Local graph vs. shared Neo4j database | "Is my analysis in sync with the shared Neo4j database?" |
 
 In single-user setups, both checks often agree. In multi-user setups, they can diverge: your local graph may be up-to-date with HEAD while Neo4j still holds an older commit hash (because another user pushed their analysis more recently).
 
@@ -235,7 +235,7 @@ When `/grasp` performs an incremental update and removes/re-creates nodes for ch
 ### Gap 5 — Subdomain graph merge has no staleness check
 **Task:** 29
 
-`merge-subdomain-graphs.py` does not check whether all subdomain graphs were built at the same git commit. Subdomain graphs from different commits can be merged without warning.
+When merging subdomain graphs, there is no check to verify all subdomain graphs were built at the same git commit. Subdomain graphs from different commits can be merged without warning.
 
 ### Gap 6 — No pre-flight staleness warning in skills
 **Task:** 28

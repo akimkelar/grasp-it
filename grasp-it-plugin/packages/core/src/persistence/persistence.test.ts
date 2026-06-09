@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeFileSync } from "node:fs";
 import {
-  saveGraph, loadGraph, saveMeta, loadMeta,
   saveFingerprints, loadFingerprints, saveConfig, loadConfig,
-  saveProjectMeta, loadProjectMeta,
+  saveProjectMetaToNeo4j, loadProjectMetaFromNeo4j,
   saveDomainGraphToNeo4j, loadDomainGraphFromNeo4j,
+  saveGraphToNeo4j, loadGraphFromNeo4j,
 } from "./index.js";
 import type { KnowledgeGraph, AnalysisMeta, GraphNode } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
@@ -23,55 +22,6 @@ describe("persistence", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  const sampleGraph: KnowledgeGraph = {
-    version: "1.0.0",
-    project: {
-      name: "test-project",
-      languages: ["typescript"],
-      frameworks: ["vitest"],
-      description: "A test project",
-      analyzedAt: "2026-03-14T00:00:00.000Z",
-      gitCommitHash: "abc123",
-    },
-    nodes: [
-      {
-        id: "node-1",
-        type: "file",
-        name: "index.ts",
-        filePath: "src/index.ts",
-        lineRange: [1, 50],
-        summary: "Entry point",
-        tags: ["entry"],
-        complexity: "simple",
-      },
-    ],
-    edges: [
-      {
-        source: "node-1",
-        target: "node-1",
-        type: "imports",
-        direction: "forward",
-        weight: 0.8,
-      },
-    ],
-    layers: [
-      {
-        id: "layer-1",
-        name: "Core",
-        description: "Core layer",
-        nodeIds: ["node-1"],
-      },
-    ],
-    tour: [
-      {
-        order: 1,
-        title: "Start here",
-        description: "Begin with the entry point",
-        nodeIds: ["node-1"],
-      },
-    ],
-  };
-
   const sampleMeta: AnalysisMeta = {
     lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
     gitCommitHash: "abc123",
@@ -79,69 +29,11 @@ describe("persistence", () => {
     analyzedFiles: 42,
   };
 
-  describe("saveGraph / loadGraph", () => {
-    it("should write knowledge-graph.json to .grasp-it/", () => {
-      saveGraph(tempDir, sampleGraph);
+  // ─────────────────────────────────────────────────────────────────
+// saveFingerprints / loadFingerprints
+// ─────────────────────────────────────────────────────────────────
 
-      const filePath = join(tempDir, ".grasp-it", "knowledge-graph.json");
-      expect(existsSync(filePath)).toBe(true);
-    });
-
-    it("should read back the saved graph correctly", () => {
-      saveGraph(tempDir, sampleGraph);
-      const loaded = loadGraph(tempDir);
-
-      expect(loaded).not.toBeNull();
-      expect(loaded).toEqual(sampleGraph);
-    });
-
-    it("should return null when no graph exists", () => {
-      const loaded = loadGraph(tempDir);
-      expect(loaded).toBeNull();
-    });
-
-    it("should throw error when loading a fatally invalid graph", () => {
-      const invalidGraph = { ...sampleGraph, project: null };
-      saveGraph(tempDir, invalidGraph as unknown as KnowledgeGraph);
-
-      expect(() => {
-        loadGraph(tempDir);
-      }).toThrow(/Invalid knowledge graph/);
-    });
-
-    it("should skip validation when validate option is false", () => {
-      const invalidGraph = { ...sampleGraph, version: 123 };
-      saveGraph(tempDir, invalidGraph as unknown as KnowledgeGraph);
-
-      const loaded = loadGraph(tempDir, { validate: false });
-      expect(loaded).not.toBeNull();
-      expect(loaded?.version).toBe(123);
-    });
-  });
-
-  describe("saveMeta / loadMeta", () => {
-    it("should write meta.json to .grasp-it/", () => {
-      saveMeta(tempDir, sampleMeta);
-
-      const filePath = join(tempDir, ".grasp-it", "meta.json");
-      expect(existsSync(filePath)).toBe(true);
-    });
-
-    it("should read back the saved meta correctly", () => {
-      saveMeta(tempDir, sampleMeta);
-      const loaded = loadMeta(tempDir);
-
-      expect(loaded).not.toBeNull();
-      expect(loaded).toEqual(sampleMeta);
-    });
-
-    it("should return null when no meta exists", () => {
-      const loaded = loadMeta(tempDir);
-      expect(loaded).toBeNull();
-    });
-  });
-
-  describe("saveFingerprints / loadFingerprints", () => {
+describe("saveFingerprints / loadFingerprints", () => {
     const sampleFingerprints: FingerprintStore = {
       version: "1.0.0",
       gitCommitHash: "abc123",
@@ -371,6 +263,126 @@ describe("saveDomainGraphToNeo4j", () => {
     const lastCall = calls[calls.length - 1]!;
     expect(lastCall[1].domainCommit).toBe("abc123");
   });
+
+  it("correctly sets kind = \"knowledge\" for domain nodes", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    const graphWithDomainNodes: KnowledgeGraph = {
+      version: "1.0.0",
+      project: {
+        name: "test",
+        languages: ["typescript"],
+        frameworks: [],
+        description: "test",
+        analyzedAt: "2026-04-01T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [
+        {
+          id: "domain:orders",
+          type: "domain",
+          name: "Orders",
+          summary: "Order domain",
+          tags: [],
+          complexity: "complex",
+        },
+        {
+          id: "feature:create-order",
+          type: "feature",
+          name: "Create Order",
+          summary: "Create a new order",
+          tags: [],
+          complexity: "moderate",
+        },
+      ],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    await saveDomainGraphToNeo4j(mockSession as never, graphWithDomainNodes, "project:singleton", "abc123");
+
+    // Verify domain node CREATE calls include kind = "knowledge"
+    const nodeCalls = calls.slice(1, 3); // After DELETE, before SET
+    expect(nodeCalls[0]![0]).toContain("CREATE (d:DomainElement:Domain");
+    expect(nodeCalls[0]![1].kind).toBe("knowledge");
+
+    expect(nodeCalls[1]![0]).toContain("CREATE (d:DomainElement:Feature");
+    expect(nodeCalls[1]![1].kind).toBe("knowledge");
+  });
+
+  it("throws on invalid node label", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const graphWithBadNode = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "test",
+        languages: [],
+        frameworks: [],
+        description: "",
+        analyzedAt: "",
+        gitCommitHash: "",
+      },
+      nodes: [
+        {
+          id: "bad-node",
+          type: "unknown-type",
+          name: "Bad Node",
+        },
+      ],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    await expect(
+      saveDomainGraphToNeo4j(mockSession as never, graphWithBadNode as never, "project:singleton"),
+    ).rejects.toThrow(/Invalid node label/);
+  });
+
+  it("throws on wrong kind for node type", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const graphWithWrongKind = {
+      version: "1.0.0",
+      kind: "codebase",
+      project: {
+        name: "test",
+        languages: [],
+        frameworks: [],
+        description: "",
+        analyzedAt: "",
+        gitCommitHash: "",
+      },
+      nodes: [
+        {
+          id: "domain:test",
+          type: "domain",
+          name: "Test Domain",
+          kind: "codebase", // Wrong - domain must be "knowledge"
+        },
+      ],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+
+    await expect(
+      saveDomainGraphToNeo4j(mockSession as never, graphWithWrongKind as never, "project:singleton"),
+    ).rejects.toThrow(/must have kind = "knowledge"/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -480,10 +492,10 @@ describe("loadDomainGraphFromNeo4j", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// saveProjectMeta / loadProjectMeta
+// saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j
 // ─────────────────────────────────────────────────────────────────
 
-describe("saveProjectMeta / loadProjectMeta", () => {
+describe("saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j", () => {
     it("should call session.run with correct MERGE query and params", async () => {
       const sampleMeta: AnalysisMeta = {
         lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
@@ -503,7 +515,7 @@ describe("saveProjectMeta / loadProjectMeta", () => {
         },
       };
 
-      await saveProjectMeta(mockSession as never, sampleMeta);
+      await saveProjectMetaToNeo4j(mockSession as never, sampleMeta);
 
       expect(ranQuery).toContain("MERGE (p:Project");
       expect(ranQuery).toContain("SET");
@@ -512,7 +524,7 @@ describe("saveProjectMeta / loadProjectMeta", () => {
       expect(ranQuery).toContain("p.version");
       expect(ranQuery).toContain("p.analyzedFiles");
       expect(ranQuery).toContain("p.kind");
-      expect(ranParams.id).toBe("project:singleton");
+      expect(ranParams.projectId).toBe("project:singleton");
       expect(ranParams.gitCommitHash).toBe("abc123def456");
       expect(ranParams.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
       expect(ranParams.version).toBe("1.0.0");
@@ -526,7 +538,7 @@ describe("saveProjectMeta / loadProjectMeta", () => {
         },
       };
 
-      const result = await loadProjectMeta(mockSession as never);
+      const result = await loadProjectMetaFromNeo4j(mockSession as never);
       expect(result).toBeNull();
     });
 
@@ -537,7 +549,7 @@ describe("saveProjectMeta / loadProjectMeta", () => {
         },
       };
 
-      await expect(saveProjectMeta(mockSession as never, sampleMeta)).rejects.toThrow(
+      await expect(saveProjectMetaToNeo4j(mockSession as never, sampleMeta)).rejects.toThrow(
         "Connection timeout",
       );
     });
@@ -558,7 +570,7 @@ describe("saveProjectMeta / loadProjectMeta", () => {
         },
       };
 
-      const result = await loadProjectMeta(mockSession as never);
+      const result = await loadProjectMetaFromNeo4j(mockSession as never);
       // The function casts fields directly; null gitCommitHash becomes null in the result.
       // Current behavior: returns object with null gitCommitHash (not null itself).
       // Task expectation: return null or safe default, not throw.
@@ -582,12 +594,551 @@ describe("saveProjectMeta / loadProjectMeta", () => {
         },
       };
 
-      const result = await loadProjectMeta(mockSession as never);
+      const result = await loadProjectMetaFromNeo4j(mockSession as never);
       expect(result).not.toBeNull();
       expect(result!.gitCommitHash).toBe("abc123def456");
       expect(result!.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
       expect(result!.version).toBe("1.0.0");
       expect(result!.analyzedFiles).toBe(42);
     });
+  });
+});
+// ─────────────────────────────────────────────────────────────────
+// saveGraphToNeo4j
+// ─────────────────────────────────────────────────────────────────
+
+describe("saveGraphToNeo4j", () => {
+  const sampleGraph: KnowledgeGraph = {
+    version: "1.0.0",
+    project: {
+      name: "test-project",
+      languages: ["typescript"],
+      frameworks: ["vitest"],
+      description: "A test project",
+      analyzedAt: "2026-03-14T00:00:00.000Z",
+      gitCommitHash: "abc123",
+    },
+    nodes: [
+      {
+        id: "node-1",
+        type: "file",
+        name: "index.ts",
+        filePath: "src/index.ts",
+        lineRange: [1, 50],
+        summary: "Entry point",
+        tags: ["entry"],
+        complexity: "simple",
+      },
+    ],
+    edges: [
+      {
+        source: "node-1",
+        target: "node-1",
+        type: "imports",
+        direction: "forward",
+        weight: 0.8,
+      },
+    ],
+    layers: [
+      {
+        id: "layer-1",
+        name: "Core",
+        description: "Core layer",
+        nodeIds: ["node-1"],
+      },
+    ],
+    tour: [
+      {
+        order: 1,
+        title: "Start here",
+        description: "Begin with the entry point",
+        nodeIds: ["node-1"],
+      },
+    ],
+  };
+
+  it("clears existing nodes and relationships before writing", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    // First two calls should be DELETE queries to clear existing data
+    expect(calls[0]![0]).toContain("DELETE");
+    expect(calls[1]![0]).toContain("DELETE");
+  });
+
+  it("merges Project singleton with correct properties", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    // Find the MERGE Project call (after DELETE calls)
+    const projectCall = calls.find(([q]) => q.includes("MERGE (p:Project"));
+    expect(projectCall).toBeDefined();
+    expect(projectCall![1]).toMatchObject({
+      projectId: "project:singleton",
+      name: "test-project",
+      gitCommitHash: "abc123",
+    });
+  });
+
+  it("creates one GraphNode per node in the graph", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    // Count CREATE calls for GraphNode (not Layer or TourStep)
+    const nodeCalls = calls.filter(([q]) => q.includes("CREATE (n:GraphNode"));
+    expect(nodeCalls).toHaveLength(1);
+    expect(nodeCalls[0]![1]).toMatchObject({ id: "node-1", name: "index.ts" });
+  });
+
+  it("creates RELATES edge for each edge in the graph", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    const edgeCalls = calls.filter(([q]) => q.includes("CREATE (src)-[r:RELATES]"));
+    expect(edgeCalls).toHaveLength(1);
+    expect(edgeCalls[0]![1]).toMatchObject({
+      edgeSource: "node-1",
+      edgeTarget: "node-1",
+      type: "imports",
+    });
+  });
+
+  it("creates Layer nodes for each layer", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    const layerCalls = calls.filter(([q]) => q.includes("CREATE (l:Layer"));
+    expect(layerCalls).toHaveLength(1);
+    expect(layerCalls[0]![1]).toMatchObject({ id: "layer-1", name: "Core" });
+  });
+
+  it("creates TourStep nodes for each tour step", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    const tourCalls = calls.filter(([q]) => q.includes("CREATE (t:TourStep"));
+    expect(tourCalls).toHaveLength(1);
+    expect(tourCalls[0]![1]).toMatchObject({ title: "Start here", order: 1 });
+  });
+
+  it("throws on invalid label", async () => {
+    const mockSession = {
+      run: async (_query: string, _params: Record<string, unknown>) => {
+        return { records: [] };
+      },
+    };
+
+    const graphWithInvalidLabel: KnowledgeGraph = {
+      ...sampleGraph,
+      nodes: [
+        {
+          id: "node-invalid",
+          type: "codenode" as any,
+          name: "Invalid Node",
+          summary: "Test",
+          tags: [],
+          complexity: "simple",
+        },
+      ],
+    };
+
+    await expect(saveGraphToNeo4j(mockSession as never, graphWithInvalidLabel, "project:singleton")).rejects.toThrow(
+      /Invalid node label/,
+    );
+  });
+
+  it("throws on wrong kind for node type", async () => {
+    const mockSession = {
+      run: async (_query: string, _params: Record<string, unknown>) => {
+        return { records: [] };
+      },
+    };
+
+    const graphWithWrongKind: KnowledgeGraph = {
+      ...sampleGraph,
+      nodes: [
+        {
+          id: "node-wrong-kind",
+          type: "file",
+          name: "File Node",
+          summary: "Test",
+          tags: [],
+          complexity: "simple",
+          kind: "knowledge" as any,
+        },
+      ],
+    };
+
+    await expect(saveGraphToNeo4j(mockSession as never, graphWithWrongKind, "project:singleton")).rejects.toThrow(
+      /must have kind = "codebase"/,
+    );
+  });
+
+  it("correctly sets kind = \"codebase\" for File/Function/Class nodes", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    const graphWithCodebaseNodes: KnowledgeGraph = {
+      ...sampleGraph,
+      nodes: [
+        {
+          id: "file-node",
+          type: "file",
+          name: "Test File",
+          summary: "Test",
+          tags: [],
+          complexity: "simple",
+        },
+        {
+          id: "function-node",
+          type: "function",
+          name: "Test Function",
+          summary: "Test",
+          tags: [],
+          complexity: "simple",
+        },
+        {
+          id: "class-node",
+          type: "class",
+          name: "Test Class",
+          summary: "Test",
+          tags: [],
+          complexity: "simple",
+        },
+      ],
+    };
+
+    await saveGraphToNeo4j(mockSession as never, graphWithCodebaseNodes, "project:singleton");
+
+    const nodeCalls = calls.filter(([q]) => q.includes("CREATE (n:"));
+    expect(nodeCalls).toHaveLength(3);
+    nodeCalls.forEach((call) => {
+      expect(call[1].kind).toBe("codebase");
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// loadGraphFromNeo4j
+// ─────────────────────────────────────────────────────────────────
+
+describe("loadGraphFromNeo4j", () => {
+  it("returns null when no Project singleton exists", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns KnowledgeGraph with project metadata when Project node exists", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test-project",
+                languages: ["typescript"],
+                frameworks: ["vitest"],
+                description: "A test project",
+                analyzedAt: "2026-03-14T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        // Return empty records for all other queries (nodes, edges, layers, tour)
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.project.name).toBe("test-project");
+    expect(result!.project.gitCommitHash).toBe("abc123");
+    expect(result!.project.languages).toEqual(["typescript"]);
+  });
+
+  it("loads nodes from Neo4j and reconstructs GraphNode objects", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: [],
+                frameworks: [],
+                description: "",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (n:GraphNode")) {
+          return {
+            records: [
+              {
+                n: {
+                  id: "node-1",
+                  name: "index.ts",
+                  type: "file",
+                  summary: "Entry point",
+                  filePath: "src/index.ts",
+                  lineRange: [1, 50],
+                  tags: ["entry"],
+                  complexity: "simple",
+                  languageNotes: null,
+                  domainMeta: null,
+                  knowledgeMeta: null,
+                  rationale: null,
+                  status: null,
+                  scope: null,
+                  condition: null,
+                  invariant: null,
+                  confidence: null,
+                  subConcepts: null,
+                  constrainedBy: null,
+                  permissions: null,
+                  restrictions: null,
+                  ruleText: null,
+                  analyzedAtCommit: "abc123",
+                  kind: "codebase",
+                  source: "code-analysis",
+                  severity: null,
+                  probability: null,
+                  mitigation: null,
+                },
+              },
+            ],
+          };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toHaveLength(1);
+    expect(result!.nodes[0].id).toBe("node-1");
+    expect(result!.nodes[0].name).toBe("index.ts");
+    expect(result!.nodes[0].type).toBe("file");
+    expect(result!.nodes[0].filePath).toBe("src/index.ts");
+  });
+
+  it("loads edges from Neo4j as RELATES relationships", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: [],
+                frameworks: [],
+                description: "",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (source:GraphNode)-[r:RELATES]")) {
+          return {
+            records: [
+              {
+                r: {
+                  source: "node-1",
+                  target: "node-2",
+                  type: "calls",
+                  direction: "forward",
+                  description: "calls foo",
+                  weight: 0.9,
+                },
+              },
+            ],
+          };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.edges).toHaveLength(1);
+    expect(result!.edges[0].source).toBe("node-1");
+    expect(result!.edges[0].target).toBe("node-2");
+    expect(result!.edges[0].type).toBe("calls");
+    expect(result!.edges[0].weight).toBe(0.9);
+  });
+
+  it("loads layers from Neo4j", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: [],
+                frameworks: [],
+                description: "",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (l:Layer)")) {
+          return {
+            records: [
+              {
+                l: {
+                  id: "layer-1",
+                  name: "Core",
+                  description: "Core layer",
+                  nodeIds: ["node-1"],
+                },
+              },
+            ],
+          };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.layers).toHaveLength(1);
+    expect(result!.layers[0].id).toBe("layer-1");
+    expect(result!.layers[0].name).toBe("Core");
+  });
+
+  it("loads tour steps ordered by order property", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: [],
+                frameworks: [],
+                description: "",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (t:TourStep)")) {
+          return {
+            records: [
+              { t: { order: 1, title: "Step 1", description: "First", nodeIds: ["node-1"], languageLesson: null } },
+              { t: { order: 2, title: "Step 2", description: "Second", nodeIds: ["node-2"], languageLesson: null } },
+            ],
+          };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.tour).toHaveLength(2);
+    expect(result!.tour[0].order).toBe(1);
+    expect(result!.tour[0].title).toBe("Step 1");
+  });
+
+  it("returns empty arrays when no nodes/edges/layers/tour exist", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: [],
+                frameworks: [],
+                description: "",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toEqual([]);
+    expect(result!.edges).toEqual([]);
+    expect(result!.layers).toEqual([]);
+    expect(result!.tour).toEqual([]);
   });
 });

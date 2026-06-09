@@ -3,6 +3,9 @@ import {
   validateGraph,
   sanitizeGraph,
   autoFixGraph,
+  normalizeGraph,
+  toNeo4jLabel,
+  toNeo4jRelationshipType,
   NODE_TYPE_ALIASES,
   EDGE_TYPE_ALIASES,
 } from "../schema.js";
@@ -965,5 +968,102 @@ describe("NODE_TYPE_ALIASES — all documented aliases", () => {
     const result = validateGraph(graph);
     expect(result.success).toBe(true);
     expect(result.data!.nodes[0].type).toBe("decision");
+  });
+});
+
+describe("toNeo4jLabel", () => {
+  it('converts "business-rule" to "BusinessRule"', () => {
+    expect(toNeo4jLabel("business-rule")).toBe("BusinessRule");
+  });
+
+  it('converts "file" to "File"', () => {
+    expect(toNeo4jLabel("file")).toBe("File");
+  });
+
+  it('converts "function" to "Function"', () => {
+    expect(toNeo4jLabel("function")).toBe("Function");
+  });
+
+  it('converts "endpoint" to "Endpoint"', () => {
+    expect(toNeo4jLabel("endpoint")).toBe("Endpoint");
+  });
+
+  it('converts "domain" to "Domain"', () => {
+    expect(toNeo4jLabel("domain")).toBe("Domain");
+  });
+
+  it("handles single-word types", () => {
+    expect(toNeo4jLabel("class")).toBe("Class");
+    expect(toNeo4jLabel("module")).toBe("Module");
+    expect(toNeo4jLabel("concept")).toBe("Concept");
+  });
+
+  it("lowercases segments after the first", () => {
+    expect(toNeo4jLabel("BUSINESS-RULE")).toBe("BusinessRule");
+    expect(toNeo4jLabel("MyType")).toBe("Mytype");
+  });
+});
+
+describe("toNeo4jRelationshipType", () => {
+  it('converts "implemented_by" to "IMPLEMENTED_BY"', () => {
+    expect(toNeo4jRelationshipType("implemented_by")).toBe("IMPLEMENTED_BY");
+  });
+
+  it('converts "imports" to "IMPORTS"', () => {
+    expect(toNeo4jRelationshipType("imports")).toBe("IMPORTS");
+  });
+
+  it('converts "calls" to "CALLS"', () => {
+    expect(toNeo4jRelationshipType("calls")).toBe("CALLS");
+  });
+
+  it('converts "depends_on" to "DEPENDS_ON"', () => {
+    expect(toNeo4jRelationshipType("depends_on")).toBe("DEPENDS_ON");
+  });
+
+  it("uppercases already-uppercase input", () => {
+    expect(toNeo4jRelationshipType("IMPORTS")).toBe("IMPORTS");
+  });
+});
+
+describe("normalizeGraph", () => {
+  it("applies node type aliases", () => {
+    const graph = {
+      nodes: [{ id: "n1", type: "func", name: "f", summary: "s", tags: [], complexity: "simple" }],
+      edges: [],
+      layers: [],
+      tour: [],
+    };
+    const result = normalizeGraph(graph) as Record<string, unknown>;
+    expect((result.nodes[0] as any).type).toBe("function");
+  });
+
+  it("applies edge type aliases", () => {
+    const graph = {
+      nodes: [{ id: "n1", type: "file", name: "f", summary: "s", tags: [], complexity: "simple" }],
+      edges: [{ source: "n1", target: "n1", type: "extends", direction: "forward", weight: 0.5 }],
+      layers: [],
+      tour: [],
+    };
+    const result = normalizeGraph(graph) as Record<string, unknown>;
+    expect((result.edges[0] as any).type).toBe("inherits");
+  });
+
+  it("leaves non-aliased types unchanged", () => {
+    const graph = {
+      nodes: [{ id: "n1", type: "file", name: "f", summary: "s", tags: [], complexity: "simple" }],
+      edges: [{ source: "n1", target: "n1", type: "imports", direction: "forward", weight: 0.5 }],
+      layers: [],
+      tour: [],
+    };
+    const result = normalizeGraph(graph) as Record<string, unknown>;
+    expect((result.nodes[0] as any).type).toBe("file");
+    expect((result.edges[0] as any).type).toBe("imports");
+  });
+
+  it("passes through non-object input", () => {
+    expect(normalizeGraph(null)).toBe(null);
+    expect(normalizeGraph("string")).toBe("string");
+    expect(normalizeGraph(42)).toBe(42);
   });
 });

@@ -1,41 +1,32 @@
 ---
 name: assemble-reviewer
 description: |
-  Reviews the output of merge-batch-graphs.py for semantic issues the script
-  cannot catch. Recovers dropped nodes/edges and fills cross-batch gaps.
+  Reviews the assembled knowledge graph for semantic issues that require
+  human judgment. Recovers dropped nodes/edges and fills cross-batch gaps.
 ---
 
 # Assemble Reviewer
 
-You are a quality reviewer for the assembled knowledge graph produced by `merge-batch-graphs.py`. The script has already applied all mechanical fixes — your job is to handle what it **could not fix** and verify the fixes look sane.
+You are a quality reviewer for the assembled knowledge graph. Your job is to handle semantic issues that require human judgment and verify the graph looks sane.
 
 ## Context
 
-The merge script reads batch analysis results (`batch-*.json`), combines them, and writes `assembled-graph.json`. It applies these mechanical fixes automatically:
-- Normalizes node IDs (strips double prefixes, project-name prefixes, adds missing prefixes, canonicalizes `func:` → `function:`)
-- Normalizes complexity values to `simple`/`moderate`/`complex` for known mappings
-- Rewrites edge `source`/`target` references to match corrected node IDs
-- Deduplicates nodes by ID (keeps last) and edges by `(source, target, type)` (keeps higher weight)
-- Drops edges referencing nodes that don't exist in the merged set
-
-The script produces a stderr report with two sections:
-- **Fixed**: pattern-grouped counts of what it corrected (e.g., `170 × func: → function:`)
-- **Could not fix**: issues that need your judgment (unknown types, unknown complexity values, dropped items)
+The assembled graph is produced from batch analysis results (`batch-*.json`) combined into `assembled-graph.json`. Mechanical fixes (node ID normalization, complexity mapping, edge deduplication) are applied automatically. Your job is to handle what **could not be fixed automatically** and verify the results look sane.
 
 ## Your Task
 
 You will receive the script's report, the path to `assembled-graph.json`, and the project's `$IMPORT_MAP`. Work through these steps in order.
 
-### Step 1 — Sanity-check the "Fixed" section
+### Step 1 — Review the "Fixed" section (if available)
 
-Review the pattern counts. You do NOT redo any fixes. Just verify the numbers are reasonable:
+If a fixed-section report is available from the assembly process, review the pattern counts. You do NOT redo any fixes. Just verify the numbers are reasonable:
 - If a single pattern dominates (e.g., 100% of function nodes had `func:` prefix), that's a systemic LLM output pattern — expected, move on.
 - If a large percentage of nodes needed ID correction (>30%), flag this as a potential upstream issue in your notes.
 - If complexity values were heavily skewed to one unknown value, note it.
 
-### Step 2 — Investigate the "Could not fix" section
+### Step 2 — Investigate unresolved issues
 
-For each issue listed, take action:
+For each issue found during assembly, take action:
 
 **Nodes with no `id` field:**
 - Read the corresponding batch file to find the original node data.
@@ -60,7 +51,7 @@ For each issue listed, take action:
 
 ### Step 3 — Check for cross-batch edge gaps
 
-The merge script combines what each batch produced independently. Batches don't know about each other's internal nodes (functions, classes). Using the `$IMPORT_MAP` provided in your prompt:
+Batches don't know about each other's internal nodes (functions, classes). Using the `$IMPORT_MAP` provided in your prompt:
 
 - For each import relationship in `$IMPORT_MAP`, verify a corresponding `imports` edge exists in the assembled graph.
 - If an edge is missing between two file nodes that should be connected, add it with `type: "imports"`, `direction: "forward"`, `weight: 0.7`.

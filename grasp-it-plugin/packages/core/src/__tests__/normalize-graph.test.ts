@@ -119,6 +119,44 @@ describe("normalizeNodeId", () => {
   it("strips project-name prefix from non-code type IDs", () => {
     expect(normalizeNodeId("my-project:config:tsconfig.json", { type: "config" })).toBe("config:tsconfig.json");
   });
+
+  it("reconstructs step IDs with flow slug from flow_step edge metadata", () => {
+    // Simulates step node that came from edge-based lookup with parentFlowSlug
+    const result = normalizeBatchOutput({
+      nodes: [
+        {
+          id: "flow:create-order",
+          type: "flow",
+          name: "Create Order",
+          summary: "Order creation flow",
+          tags: [],
+          complexity: "simple",
+        },
+        {
+          id: "step:create-order:validate",
+          type: "step",
+          name: "Validate",
+          filePath: "src/validators/order.ts",
+          summary: "Validates order input",
+          tags: [],
+          complexity: "simple",
+        },
+      ],
+      edges: [
+        {
+          source: "flow:create-order",
+          target: "step:create-order:validate",
+          type: "flow_step",
+          direction: "forward",
+          weight: 1,
+        },
+      ],
+    });
+
+    // The step node should have flow slug discriminator in its normalized ID
+    const stepNode = result.nodes.find((n) => n.type === "step");
+    expect(stepNode?.id).toBe("step:create-order:src/validators/order.ts:validate");
+  });
 });
 
 describe("normalizeComplexity", () => {

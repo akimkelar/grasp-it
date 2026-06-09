@@ -1,8 +1,6 @@
 import { execFileSync } from "child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "./types.js";
-import { loadProjectMeta } from "./persistence/index.js";
+import { loadProjectMetaFromNeo4j } from "./persistence/index.js";
 
 export interface StaleImplementedByResult {
   staleEdges: StaleEdge[];
@@ -67,8 +65,8 @@ export function isStale(
 /**
  * Preflight check: determine whether the stored graph is stale relative to HEAD.
  *
- * Tries Neo4j first via `loadProjectMeta()`, then falls back to JSON files.
- * Compares the last-analyzed git commit hash to the current HEAD.
+ * Queries Neo4j Project singleton for the last-analyzed git commit hash
+ * and compares it to the current HEAD.
  *
  * Returns a result indicating:
  * - Whether the graph is stale
@@ -78,26 +76,24 @@ export function isStale(
  *
  * Does NOT account for whether files actually changed — use `isStale()` for
  * that. This function is for pre-flight warnings only.
+ *
+ * @throws Error if no session is provided or Neo4j returns no records.
  */
 export async function checkGraphFreshness(
   projectDir: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
 ): Promise<GraphFreshnessResult> {
-  // Try Neo4j first if session is provided
-  if (session) {
-    try {
-      const neo4jMeta = await loadProjectMeta(session);
-      if (neo4jMeta?.gitCommitHash) {
-        return checkFreshnessWithCommit(projectDir, neo4jMeta.gitCommitHash);
-      }
-    } catch {
-      // Neo4j unavailable or error — fall through to JSON files
-    }
+  if (!session) {
+    throw new Error("No analysis found. Run /grasp first.");
   }
 
-  // Fallback to JSON files
-  return checkGraphFreshnessFromFiles(projectDir);
+  const neo4jMeta = await loadProjectMetaFromNeo4j(session);
+  if (!neo4jMeta?.gitCommitHash) {
+    throw new Error("No analysis found. Run /grasp first.");
+  }
+
+  return checkFreshnessWithCommit(projectDir, neo4jMeta.gitCommitHash);
 }
 
 /**
@@ -150,52 +146,6 @@ function checkFreshnessWithCommit(
     headCommit,
     commitsBehind,
   };
-}
-
-/**
- * Fallback: check freshness from JSON files (knowledge-graph.json, meta.json).
- * This is the legacy behavior when Neo4j is unavailable.
- */
-export function checkGraphFreshnessFromFiles(
-  projectDir: string,
-): GraphFreshnessResult {
-  // Try to read gitCommitHash from knowledge-graph.json first
-  let lastCommit: string | null = null;
-
-  try {
-    const graphPath = join(projectDir, ".grasp-it", "knowledge-graph.json");
-    if (existsSync(graphPath)) {
-      const graph = JSON.parse(readFileSync(graphPath, "utf-8")) as KnowledgeGraph;
-      lastCommit = graph.project?.gitCommitHash ?? null;
-    }
-  } catch {
-    // Ignore — fall through to meta.json
-  }
-
-  // Fall back to meta.json
-  if (!lastCommit) {
-    try {
-      const metaPath = join(projectDir, ".grasp-it", "meta.json");
-      if (existsSync(metaPath)) {
-        const meta = JSON.parse(readFileSync(metaPath, "utf-8")) as { gitCommitHash?: string };
-        lastCommit = meta.gitCommitHash ?? null;
-      }
-    } catch {
-      // Ignore
-    }
-  }
-
-  // If we still don't have a lastCommit, the graph doesn't exist yet
-  if (!lastCommit) {
-    return {
-      stale: true,
-      lastCommit: "",
-      headCommit: "",
-      commitsBehind: 0,
-    };
-  }
-
-  return checkFreshnessWithCommit(projectDir, lastCommit);
 }
 
 /**

@@ -127,8 +127,7 @@ Query Neo4j for nodes related to the topic:
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE n.name CONTAINS '$TOPIC' OR any(t IN coalesce(n.tags, []) WHERE toLower(t) CONTAINS toLower('$TOPIC')) RETURN n LIMIT 20"
 ```
-
-If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` and searching for matching nodes.
+If Neo4j query fails, report the error and **STOP**.
 
 Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find relevant existing nodes:
 
@@ -435,8 +434,7 @@ SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
 ```
-
-If Neo4j is unavailable, fall back to reading `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` for backward compatibility.
+If Neo4j query fails, report the error and **STOP**.
 
 Read `pr-nodes.json` and `pr-edges.json` as the incoming interview output.
 
@@ -471,7 +469,12 @@ Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed
 ### 5f. Validate and write
 
 1. Validate the merged graph against the schema
-2. Write the merged graph back to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+2. Write the merged graph back to Neo4j:
+   ```bash
+   SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+   # Write nodes and edges to Neo4j via run-query.mjs
+   ```
+   If Neo4j write fails, report the error and **STOP**.
 
 ### 5g. Report conflicts to user
 
@@ -497,7 +500,7 @@ Report to the specialist:
 - **Decisions:** count, with status breakdown (accepted / draft)
 - **Risks:** grouped by severity (critical → high → medium → low), with mitigation status
 - **Open questions:** any items left at `status: "draft"` or `confidence: "tentative"`
-- **Path:** `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+- **Graph:** Stored in Neo4j
 
 If any open questions remain, offer to continue: *"There are [N] open items. Should we resolve them now, or revisit later?"*
 

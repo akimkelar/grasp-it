@@ -71,20 +71,13 @@ Dispatch `article-analyzer` subagents to extract implicit knowledge:
 
 ### Phase 4: MERGE
 
-1. Run the merge script bundled with this skill:
-   ```
-   python3 <SKILL_DIR>/merge-knowledge-graph.py <TARGET_DIR>
-   ```
+1. The `article-analyzer` subagents write analysis results to `analysis-batch-*.json` files in the intermediate directory.
 
-2. The script:
-   - Combines scan-manifest.json + all analysis-batch-*.json files
-   - Deduplicates entities (case-insensitive name matching)
-   - Normalizes node/edge types via alias maps
-   - Builds layers from index.md categories
-   - Builds a tour from index.md section ordering
-   - Writes `assembled-graph.json` to the intermediate directory
+2. Assemble the results: combine scan-manifest.json + all analysis-batch-*.json files, deduplicate entities (case-insensitive name matching), normalize node/edge types via alias maps, build layers from index.md categories, and build a tour from index.md section ordering.
 
-3. Read the merge report from stderr and announce:
+3. Write `assembled-graph.json` to the intermediate directory.
+
+4. Announce the merge summary:
    - Total nodes, edges, layers, tour steps
    - How many entities/claims the LLM analysis added
 

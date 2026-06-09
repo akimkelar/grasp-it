@@ -6,7 +6,7 @@ argument-hint: [query]
 
 # /grasp-chat
 
-Answer questions about a codebase using the knowledge graph stored in Neo4j (with local `.grasp-it/knowledge-graph.json` as fallback for single-user mode).
+Answer questions about a codebase using the knowledge graph stored in Neo4j.
 
 > **Works for non-developers too.** If you do not have the codebase locally, you can still query the knowledge graph as long as Neo4j credentials are configured (see `~/.grasp-it/neo4j.env` or the project `.env`). You do not need to run `/grasp` yourself — a developer must have built the graph first.
 
@@ -34,7 +34,7 @@ Key relationships:
    SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
    node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
    ```
-2. If Neo4j returns no results, fall back to checking `.grasp-it/knowledge-graph.json` exists. If neither has graph data, tell the user to run `/grasp` first.
+2. If Neo4j returns no results, tell the user to run `/grasp` first.
 
 ### Phase 1: Get Project Context
 
@@ -43,8 +43,7 @@ Query for project metadata:
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.name, p.description, p.languages, p.frameworks"
 ```
-
-If Neo4j is unavailable, use Grep to extract the `"project"` section from `.grasp-it/knowledge-graph.json`.
+If Neo4j query fails, report the error and **STOP**.
 
 ### Phase 2: Search for Relevant Nodes
 
@@ -53,8 +52,7 @@ Query Neo4j for nodes matching the user's query:
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE toLower(n.name) CONTAINS toLower('$ARGUMENTS') OR toLower(n.summary) CONTAINS toLower('$ARGUMENTS') RETURN n.name, n.kind, n.summary LIMIT 50"
 ```
-
-If Neo4j is unavailable, use Grep to search `.grasp-it/knowledge-graph.json` for matching `"name"` or `"summary"` fields.
+If Neo4j query fails, report the error and **STOP**.
 
 Note the node IDs of all matching nodes.
 

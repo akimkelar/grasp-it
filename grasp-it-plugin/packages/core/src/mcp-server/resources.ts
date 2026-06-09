@@ -5,7 +5,8 @@
  */
 
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "../types.js";
-import { loadGraph } from "../persistence/index.js";
+import { loadGraphFromNeo4j } from "../persistence/index.js";
+import { createNeo4jSession, type Neo4jSessionResult } from "./session.js";
 import type {
   MCPResource,
   MCPResourceContent,
@@ -112,13 +113,39 @@ function getEdgeTypeDescription(type: string): string {
 
 export class MCPResources {
   private projectRoot: string;
+  private cachedGraph: KnowledgeGraph | null = null;
+  private sessionReady: boolean = false;
 
   constructor(projectRoot: string) {
     this.projectRoot = projectRoot;
   }
 
-  private loadGraphData(): KnowledgeGraph | null {
-    return loadGraph(this.projectRoot, { validate: false });
+  /**
+   * Initialize the graph by loading from Neo4j.
+   * Call this after construction, before using other methods.
+   */
+  async initialize(): Promise<void> {
+    if (this.sessionReady) return;
+
+    const sessionResult = await createNeo4jSession(this.projectRoot);
+    if (!sessionResult.success || !sessionResult.session) {
+      this.sessionReady = true; // Don't retry
+      return;
+    }
+
+    try {
+      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session);
+    } finally {
+      await sessionResult.session.close();
+    }
+    this.sessionReady = true;
+  }
+
+  private async loadGraphData(): Promise<KnowledgeGraph | null> {
+    if (!this.sessionReady) {
+      await this.initialize();
+    }
+    return this.cachedGraph;
   }
 
   listResources(): MCPResource[] {
@@ -156,8 +183,8 @@ export class MCPResources {
     ];
   }
 
-  readResource(uri: string): MCPResourceContent | null {
-    const graph = this.loadGraphData();
+  async readResource(uri: string): Promise<MCPResourceContent | null> {
+    const graph = await this.loadGraphData();
 
     switch (uri) {
       case GRAPH_URI:
@@ -258,28 +285,28 @@ export class MCPResources {
     };
   }
 
-  getNode(nodeId: string): GraphNode | null {
-    const graph = this.loadGraphData();
+  async getNode(nodeId: string): Promise<GraphNode | null> {
+    const graph = await this.loadGraphData();
     if (!graph) return null;
 
     return graph.nodes.find((n) => n.id === nodeId) ?? null;
   }
 
-  getNodeByUri(uri: string): GraphNode | null {
+  async getNodeByUri(uri: string): Promise<GraphNode | null> {
     if (!uri.startsWith("grasp://node/")) return null;
     const nodeId = uri.slice("grasp://node/".length);
     return this.getNode(nodeId);
   }
 
-  getEdgesForNode(nodeId: string): GraphEdge[] {
-    const graph = this.loadGraphData();
+  async getEdgesForNode(nodeId: string): Promise<GraphEdge[]> {
+    const graph = await this.loadGraphData();
     if (!graph) return [];
 
     return graph.edges.filter((e) => e.source === nodeId || e.target === nodeId);
   }
 
-  getProjectInfo(): ProjectInfo | null {
-    const graph = this.loadGraphData();
+  async getProjectInfo(): Promise<ProjectInfo | null> {
+    const graph = await this.loadGraphData();
     if (!graph?.project) return null;
 
     return {

@@ -37,16 +37,19 @@ Credentials are loaded automatically by `run-query.mjs` in this priority order:
 
 Before querying the graph, check whether it is stale relative to the current HEAD:
 
-1. Query Neo4j `Project` singleton for `gitCommitHash` using `load-project-meta.mjs`:
+1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
    SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-   NEO4J_RESULT=$(node "$SKILL_DIR/../grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
-   if [ -n "$NEO4J_RESULT" ] && [ "$NEO4J_RESULT" != "{}" ]; then
-     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   NEO4J_RESULT=$(node "$SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
+     echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
+     echo "Ensure Neo4j is running and accessible, then re-run /grasp-search."
+     exit 1
    fi
-   # Fallback to meta.json only if Neo4j unavailable or returned empty
-   if [ -z "$LAST_COMMIT" ] && [ -f "$PROJECT_ROOT/.grasp-it/meta.json" ]; then
-     LAST_COMMIT=$(grep -o '"gitCommitHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/.grasp-it/meta.json" | head -1 | sed 's/.*: "\(.*\)"/\1/')
+   LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
+     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
+     exit 1
    fi
    ```
 2. Compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
@@ -54,7 +57,7 @@ Before querying the graph, check whether it is stale relative to the current HEA
    > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
 4. **Continue execution regardless** — the warning is advisory only
 
-> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`, falling back to `meta.json` only if Neo4j is unavailable. To check whether your local graph is in sync with the shared Neo4j database, run `check-sync.mjs` separately.
+> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`. Neo4j is the only source of truth — there is no JSON fallback.
 
 ### Quick health check
 

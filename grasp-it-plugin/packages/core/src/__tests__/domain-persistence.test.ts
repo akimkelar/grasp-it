@@ -1,64 +1,116 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { saveDomainGraph, loadDomainGraph } from "../persistence/index.js";
-import type { KnowledgeGraph } from "../types.js";
+import { describe, it, expect, vi } from "vitest";
+import { loadDomainGraphFromNeo4j } from "../persistence/index.js";
 
-const testRoot = join(tmpdir(), "ua-domain-persist-test");
+// ─────────────────────────────────────────────────────────────────
+// loadDomainGraphFromNeo4j
+// ─────────────────────────────────────────────────────────────────
 
-const domainGraph: KnowledgeGraph = {
-  version: "1.0.0",
-  project: {
-    name: "test",
-    languages: ["typescript"],
-    frameworks: [],
-    description: "test",
-    analyzedAt: "2026-04-01T00:00:00.000Z",
-    gitCommitHash: "abc123",
-  },
-  nodes: [
-    {
+describe("loadDomainGraphFromNeo4j", () => {
+  it("returns null when no DomainElement nodes exist", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns KnowledgeGraph with domain nodes when records exist", async () => {
+    const mockRecord = {
       id: "domain:orders",
-      type: "domain",
       name: "Orders",
-      summary: "Order management",
+      summary: "Order management domain",
+      nodeType: "domain",
+      source: "code-analysis",
+      filePath: "src/orders.ts",
+      lineRange: [1, 50],
+      tags: ["core", "domain"],
+      complexity: "complex",
+      labels: ["DomainElement", "Domain"],
+    };
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [mockRecord] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toHaveLength(1);
+    expect(result!.nodes[0].id).toBe("domain:orders");
+    expect(result!.nodes[0].name).toBe("Orders");
+    expect(result!.nodes[0].type).toBe("domain");
+  });
+
+  it("maps all domain element types correctly", async () => {
+    const records = [
+      { id: "domain:core", name: "Core", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Domain"] },
+      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "BusinessRule"] },
+    ];
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.nodes).toHaveLength(6);
+    expect(result!.nodes.map((n) => n.type)).toEqual(["domain", "feature", "operation", "actor", "entity", "business-rule"]);
+  });
+
+  it("returns empty edges, layers, and tour arrays", async () => {
+    const mockRecord = {
+      id: "domain:test",
+      name: "Test Domain",
+      summary: "Test domain element",
+      nodeType: "domain",
+      source: "code-analysis",
+      filePath: "src/test.ts",
+      lineRange: [1, 20],
+      tags: ["test"],
+      complexity: "simple",
+      labels: ["DomainElement", "Domain"],
+    };
+
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [mockRecord] })),
+    };
+
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
+
+    expect(result).not.toBeNull();
+    expect(result!.edges).toEqual([]);
+    expect(result!.layers).toEqual([]);
+    expect(result!.tour).toEqual([]);
+  });
+
+  it("uses domain as default type when secondary label is unrecognized", async () => {
+    const mockRecord = {
+      id: "custom:type",
+      name: "Custom",
+      summary: "Custom element",
+      nodeType: "domain",
+      source: null,
+      filePath: null,
+      lineRange: null,
       tags: [],
-      complexity: "moderate",
-    },
-  ],
-  edges: [],
-  layers: [],
-  tour: [],
-};
+      complexity: "simple",
+      labels: ["DomainElement", "CustomLabel"],
+    };
 
-describe("domain graph persistence", () => {
-  beforeEach(() => {
-    if (existsSync(testRoot)) rmSync(testRoot, { recursive: true });
-    mkdirSync(testRoot, { recursive: true });
-  });
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [mockRecord] })),
+    };
 
-  afterEach(() => {
-    if (existsSync(testRoot)) rmSync(testRoot, { recursive: true });
-  });
+    const result = await loadDomainGraphFromNeo4j(mockSession as never);
 
-  it("saves and loads domain graph", () => {
-    saveDomainGraph(testRoot, domainGraph);
-    const loaded = loadDomainGraph(testRoot);
-    expect(loaded).not.toBeNull();
-    expect(loaded!.nodes[0].id).toBe("domain:orders");
-  });
-
-  it("returns null when no domain graph exists", () => {
-    const loaded = loadDomainGraph(testRoot);
-    expect(loaded).toBeNull();
-  });
-
-  it("saves to domain-graph.json, not knowledge-graph.json", () => {
-    saveDomainGraph(testRoot, domainGraph);
-    const domainPath = join(testRoot, ".grasp-it", "domain-graph.json");
-    const structuralPath = join(testRoot, ".grasp-it", "knowledge-graph.json");
-    expect(existsSync(domainPath)).toBe(true);
-    expect(existsSync(structuralPath)).toBe(false);
+    expect(result).not.toBeNull();
+    expect(result!.nodes[0].type).toBe("domain");
   });
 });

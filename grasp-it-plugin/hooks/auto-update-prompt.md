@@ -10,22 +10,24 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
 
 1. Set `PROJECT_ROOT` to the current working directory.
 
-2. Check that a `Project` singleton exists in Neo4j OR `$PROJECT_ROOT/.grasp-it/knowledge-graph.json` exists.
-   - If neither exists: report "No existing knowledge graph found. Run `/understand` first to create one." and **STOP**.
+2. Check that a `Project` singleton exists in Neo4j.
+   - If not: report "No existing knowledge graph found in Neo4j. Run `/grasp` first to create one." and **STOP**.
 
-3. Query Neo4j `Project` singleton for `gitCommitHash` using `load-project-meta.mjs`:
+3. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
    ```bash
-   # Try Neo4j first
-   NEO4J_RESULT=$(node "$PLUGIN_ROOT/skills/grasp/load-project-meta.mjs" "$PROJECT_ROOT" 2>/dev/null)
-   if [ -n "$NEO4J_RESULT" ] && [ "$NEO4J_RESULT" != "{}" ]; then
-     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   NEO4J_RESULT=$(node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
+     echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
+     echo "Ensure Neo4j is running and accessible."
+     exit 1
    fi
-   # Fallback to meta.json only if Neo4j unavailable or returned empty
-   if [ -z "$LAST_COMMIT" ] && [ -f "$PROJECT_ROOT/.grasp-it/meta.json" ]; then
-     LAST_COMMIT=$(grep -o '"gitCommitHash"[[:space:]]*:[[:space:]]*"[^"]*"' "$PROJECT_ROOT/.grasp-it/meta.json" | head -1 | sed 's/.*: "\(.*\)"/\1/')
+   LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
+   if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
+     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
+     exit 1
    fi
    ```
-   - If no `LAST_COMMIT` found: report "No analysis metadata found. Run `/understand` to create a baseline." and **STOP**.
+   - If no `LAST_COMMIT` found: report "No analysis metadata found. Run `/grasp` to create a baseline." and **STOP**.
 
 4. Get current commit hash:
    ```bash
@@ -38,10 +40,10 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
    ```bash
    git diff <lastCommitHash>..HEAD --name-only
    ```
-   If no files changed: update `meta.json` (and Neo4j if available) with the new commit hash and **STOP**.
+   If no files changed: update Neo4j `Project` singleton with the new commit hash and **STOP**.
 
 7. Filter to source files only (`.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.go`, `.rs`, `.java`, `.rb`, `.cpp`, `.c`, `.h`, `.cs`, `.swift`, `.kt`, `.php`).
-   If no source files changed: update `meta.json` (and Neo4j if available) with the new commit hash, report "Only non-source files changed. Metadata updated." and **STOP**.
+   If no source files changed: update Neo4j `Project` singleton with the new commit hash, report "Only non-source files changed. Metadata updated." and **STOP**.
 
 8. Create intermediate directory:
    ```bash
@@ -98,7 +100,7 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
 
    6. Read `$PROJECT_ROOT/.grasp-it/intermediate/changed-files.json`. Pass the `kept` array as the input file list for Phase 1's fingerprint-check script.
 
-   7. If `kept.length === 0`: update `meta.json` with the new commit hash, report "All changed source files are in ignored paths. Metadata updated." and **STOP**.
+   7. If `kept.length === 0`: update Neo4j `Project` singleton with the new commit hash, report "All changed source files are in ignored paths. Metadata updated." and **STOP**.
 
 ---
 
@@ -153,8 +155,8 @@ The output JSON should have this shape:
 
    | Action | What to do |
    |---|---|
-   | `SKIP` | Update `meta.json` with new commit hash. Report: "No structural changes detected. Graph metadata updated. Zero tokens spent." **STOP.** |
-   | `FULL_UPDATE` | Report: "Major structural changes detected (reason). Recommend running `/understand --full` for a complete rebuild." **STOP.** |
+   | `SKIP` | Update Neo4j `Project` singleton with new commit hash. Report: "No structural changes detected. Graph metadata updated. Zero tokens spent." **STOP.** |
+   | `FULL_UPDATE` | Report: "Major structural changes detected (reason). Recommend running `/grasp --full` for a complete rebuild." **STOP.** |
    | `PARTIAL_UPDATE` | Proceed to Phase 2 with `filesToReanalyze` |
    | `ARCHITECTURE_UPDATE` | Proceed to Phase 2 with `filesToReanalyze`, flag architecture re-run |
 
@@ -164,7 +166,12 @@ The output JSON should have this shape:
 
 Only re-analyze files with structural changes. This is the **only** phase that costs LLM tokens.
 
-1. Read the existing knowledge graph from `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`.
+1. Query Neo4j for the existing knowledge graph:
+   ```bash
+   node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
+   node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
+   ```
+   If Neo4j query fails, report the error and **STOP**.
 
 2. Batch the files from `filesToReanalyze` (from Phase 1). Use a single batch if ≤10 files, otherwise batch into groups of 5-10.
 
@@ -239,25 +246,16 @@ Perform lightweight validation (no graph-reviewer agent):
 
 ### 3d. Save
 
-1. Write the final knowledge graph to `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`.
+**Neo4j-only:** The knowledge graph is written directly to Neo4j. There is no JSON file fallback. If Neo4j is unavailable, the hook fails.
 
-2. Update Neo4j `Project` singleton with latest metadata:
+1. Write the final knowledge graph to Neo4j:
    ```bash
    PLUGIN_ROOT="${PLUGIN_ROOT:-$HOME/.grasp-it-plugin}"
    node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = '$CURRENT_COMMIT', p.lastAnalyzedAt = datetime(), p.version = '1.0.0', p.analyzedFiles = $FILE_COUNT"
    ```
+   If Neo4j write fails, report the error and **STOP**.
 
-3. Write updated metadata to `$PROJECT_ROOT/.grasp-it/meta.json`:
-   ```json
-   {
-     "lastAnalyzedAt": "<ISO 8601 timestamp>",
-     "gitCommitHash": "<current commit hash>",
-     "version": "1.0.0",
-     "analyzedFiles": <total file count in graph>
-   }
-   ```
-
-3. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
+2. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
 
    The most common failure mode here: writing only the freshly-computed batch entries to `fingerprints.json`, discarding every other file's fingerprint. The next auto-update then sees all those files as new (no stored fingerprint), classifies them as STRUCTURAL, and escalates to FULL_UPDATE permanently (issue #152). The script must LOAD ALL existing entries, PATCH only the re-analyzed ones, and SAVE the full dict back.
 
@@ -317,7 +315,7 @@ Perform lightweight validation (no graph-reviewer agent):
    - Cosmetic-only changes: N files (skipped)
    - Nodes updated: N
    - Action taken: PARTIAL_UPDATE / ARCHITECTURE_UPDATE
-   - Path to output: `$PROJECT_ROOT/.grasp-it/knowledge-graph.json`
+   - Graph saved to Neo4j
 
 ---
 
