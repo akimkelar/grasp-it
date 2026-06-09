@@ -157,6 +157,42 @@ Produce a JSON object with this exact structure:
 8. **Groovy/Grails support**: When analyzing Grails projects, recognize controller patterns (e.g., `InterviewController`), service patterns (e.g., `InterviewService`), and domain class patterns. Use `grails-app/controllers/` and `grails-app/services/` as entry point directories.
 9. **Use `uses_entity` (not `USES`)**: The relationship type from Feature/Operation to Entity must be `uses_entity` per the Neo4j schema (maps to `:USES_ENTITY` in the database).
 
+## Critical Field Name Constraints
+
+**Do NOT use `label` — use `name` instead.**
+Every node MUST have a `name` field (the human-readable label). The field name must be exactly `name`, not `label`.
+
+**Do NOT use `description` — use `summary` instead.**
+Every node MUST have a `summary` field (2-3 sentences describing the node). The field name must be exactly `summary`, not `description`.
+
+**Correct example (pay attention to field names):**
+```json
+{
+  "id": "domain:order-management",
+  "type": "domain",
+  "kind": "knowledge",
+  "source": "code-analysis",
+  "name": "Order Management",
+  "summary": "Handles all aspects of order processing including creation, fulfillment, tracking, and cancellation. Integrates with inventory and payment systems.",
+  "tags": ["commerce", "orders", "fulfillment"],
+  "complexity": "moderate"
+}
+```
+
+**Incorrect example (wrong field names):**
+```json
+{
+  "id": "domain:order-management",
+  "type": "domain",
+  "label": "Order Management",
+  "description": "Handles all aspects of order processing...",
+  "tags": ["commerce", "orders", "fulfillment"],
+  "complexity": "moderate"
+}
+```
+
+This applies to ALL node types: Domain, Feature, Operation, Actor, BusinessRule, and Entity.
+
 ## Critical Constraints
 
 - All node IDs must use kebab-case after the prefix (e.g., `domain:order-management`, not `domain:OrderManagement`)

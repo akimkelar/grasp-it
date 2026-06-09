@@ -492,16 +492,6 @@ export async function loadProjectMetaFromNeo4j(
 
 // ── Domain Graph Neo4j Persistence ──────────────────────────────────────────
 
-// Domain element secondary labels map
-const DOMAIN_ELEMENT_LABELS: Record<string, string> = {
-  domain: "Domain",
-  feature: "Feature",
-  operation: "Operation",
-  actor: "Actor",
-  "business-rule": "BusinessRule",
-  entity: "Entity",
-};
-
 /**
  * Load domain graph from Neo4j.
  * Returns nodes with label DomainElement plus their secondary label (Domain/Feature/etc).
@@ -516,7 +506,7 @@ export async function loadDomainGraphFromNeo4j(
 ): Promise<KnowledgeGraph | null> {
   const result = await session.run(
     `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
-     RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS nodeType,
+     RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS type,
             d.source AS source, d.sourceFile AS sourceFile, d.filePath AS filePath,
             d.lineRange AS lineRange, d.tags AS tags, d.complexity AS complexity,
             labels(d) AS labels`,
@@ -530,18 +520,12 @@ export async function loadDomainGraphFromNeo4j(
   const nodes: GraphNode[] = [];
   for (const record of result.records) {
     const rec = record as unknown as Record<string, unknown>;
-    const labels = rec["labels"] as string[];
-    // Get the secondary label (first label that isn't DomainElement)
-    const secondaryLabel = labels?.find((l) => l !== "DomainElement") ?? "domain";
-    const nodeType = Object.entries(DOMAIN_ELEMENT_LABELS).find(
-      ([, v]) => v === secondaryLabel,
-    )?.[0] ?? "domain";
 
     nodes.push({
       id: rec["id"] as string,
       name: rec["name"] as string,
       summary: (rec["summary"] as string) ?? "",
-      type: nodeType as GraphNode["type"],
+      type: (rec["type"] as GraphNode["type"]) ?? "domain",
       source: rec["source"] as GraphNode["source"],
       filePath: rec["filePath"] as string | undefined,
       lineRange: rec["lineRange"] as [number, number] | undefined,
@@ -604,6 +588,7 @@ export async function saveDomainGraphToNeo4j(
        CREATE (d:${labels} {
          id: $id,
          name: $name,
+         type: $type,
          summary: $summary,
          source: $source,
          filePath: $filePath,
@@ -617,6 +602,7 @@ export async function saveDomainGraphToNeo4j(
         projectId,
         id: node.id,
         name: node.name,
+        type: node.type,
         summary: node.summary ?? "",
         source: node.source ?? "code-analysis",
         filePath: node.filePath ?? null,
