@@ -6,7 +6,11 @@ Scans a project directory and produces a structured JSON context file that the
 domain-analyzer agent uses to identify business domains, flows, and steps.
 
 Usage:
-    python extract-domain-context.py <project-root>
+    python extract-domain-context.py <project-root> [--files PATH1,PATH2,...]
+
+Arguments:
+    project-root  — root of the project being analyzed
+    --files       — optional comma-separated list of file paths to scope the scan
 
 Output:
     <project-root>/.grasp-it/intermediate/domain-context.json
@@ -16,6 +20,7 @@ import json
 import os
 import re
 import sys
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -392,14 +397,21 @@ def _truncate_to_fit(context: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("Usage: python extract-domain-context.py <project-root>", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Domain context extractor")
+    parser.add_argument("project_root", type=Path)
+    parser.add_argument("--files", type=str, default=None, help="Comma-separated list of file paths to scope the scan")
+    args = parser.parse_args()
 
-    project_root = Path(sys.argv[1]).resolve()
+    project_root = args.project_root.resolve()
     if not project_root.is_dir():
         print(f"Error: {project_root} is not a directory", file=sys.stderr)
         sys.exit(1)
+
+    # Parse scoped files if provided
+    scoped_files: set[str] | None = None
+    if args.files:
+        scoped_files = set(args.files.split(","))
+        print(f"Scoping scan to {len(scoped_files)} file(s)", file=sys.stderr)
 
     try:
         # Ensure output directory exists
@@ -411,6 +423,11 @@ def main() -> None:
 
         gitignore_patterns = parse_gitignore(project_root)
         file_tree = scan_file_tree(project_root, gitignore_patterns)
+
+        # Filter to scoped files if --files was provided
+        if scoped_files is not None:
+            file_tree = [f for f in file_tree if f in scoped_files]
+
         print(f"  Found {len(file_tree)} source files", file=sys.stderr)
 
         entry_points = detect_entry_points(project_root, file_tree)

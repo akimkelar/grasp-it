@@ -50,7 +50,7 @@ async function runQueryViaDriver(neo4jConfig, query) {
   }
 
   try {
-    const session = driver.session();
+    const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'neo4j' });
     const result = await session.run(query);
     await session.close();
     // Convert records to plain objects
@@ -109,6 +109,7 @@ function runQueryViaCypherShell(neo4jConfig, query) {
         "-a", cypherUri,
         "-u", username,
         "-p", password,
+        "-d", neo4jConfig.NEO4J_DATABASE || "neo4j",
         "--format", "plain",
       ],
       { input: query, encoding: "utf-8" },
@@ -158,10 +159,13 @@ async function runQuery(neo4jConfig, query) {
   }
 
   // Default: driver
-  const result = await runQueryViaDriver(neo4jConfig, query);
+  let result = await runQueryViaDriver(neo4jConfig, query);
   if (!result.ok && result.fallback) {
-    // Driver failed with connection error — signal caller to use cypher-shell
-    process.exit(2);
+    // Driver failed with connection error — automatically try cypher-shell
+    result = runQueryViaCypherShell(neo4jConfig, query);
+    if (!result.ok && result.fallback) {
+      process.exit(2);
+    }
   }
   return result;
 }
