@@ -138,9 +138,18 @@ install_claude_plugin() {
     rm -rf "$cache_target"
     cp -R "$plugin_src" "$cache_target"
     printf -- '  ✓ Plugin installed to %s\n' "$cache_target"
-    printf '\n  Restart Claude Code to pick up the plugin, or run:\n'
-    printf '    /plugin marketplace add akimkelar/Grasp-It\n'
-    printf '    /plugin install grasp-it\n'
+
+    # Detect whether an older version is already active vs. first install.
+    local already_active
+    already_active="$(claude plugin list 2>/dev/null | grep -q "^grasp-it" && echo yes || echo no)"
+    if [[ "$already_active" == "yes" ]]; then
+      printf '\n  An older version is active. To upgrade, restart Claude Code or run:\n'
+      printf '    /plugin update grasp-it\n'
+    else
+      printf '\n  Restart Claude Code to pick up the plugin, or run:\n'
+      printf '    /plugin marketplace add akimkelar/Grasp-It\n'
+      printf '    /plugin install grasp-it\n'
+    fi
   else
     printf -- '→ Claude Code not detected — setting up plugin files for manual installation\n'
     build_plugin

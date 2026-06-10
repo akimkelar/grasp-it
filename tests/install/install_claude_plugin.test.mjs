@@ -56,6 +56,7 @@ function runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
   coreBuildExists = false,
   existingVersion = null,
   testHome = process.env.HOME,
+  pluginListResponse = '',
 } = {}) {
   // Set up the plugin source directory structure
   const pluginSrc = join(repoDir, 'grasp-it-plugin');
@@ -78,6 +79,25 @@ function runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
     const cachePath = join(testHome, '.claude', 'plugins', 'cache', 'grasp-it', 'grasp-it', existingVersion);
     mkdirSync(cachePath, { recursive: true });
     writeFileSync(join(cachePath, 'package.json'), JSON.stringify({ name: '@grasp-it/skill', version: existingVersion }), 'utf-8');
+  }
+
+  // When Claude Code is available, write a claude stub that responds to
+  // 'claude plugin list' with the configured output.
+  if (claudeAvailable) {
+    const claudeStubPath = join(binDir, 'claude');
+    writeFileSync(
+      claudeStubPath,
+      `#!/usr/bin/env bash
+case "$1" in
+  plugin|plugins)
+    printf '%s\\n' ${JSON.stringify(pluginListResponse)}
+    ;;
+esac
+exit 0
+`,
+      'utf-8',
+    );
+    chmodSync(claudeStubPath, 0o755);
   }
 
   // Bash fragment: extract and eval install_claude_plugin(), build_plugin(),
@@ -129,15 +149,6 @@ exit 0
 `,
     'utf-8',
   );
-  chmodSync(stubPath, 0o755);
-}
-
-/**
- * Create a `claude` stub that exits 0 (Claude Code detected).
- */
-function makeClaudeStub(binDir) {
-  const stubPath = join(binDir, 'claude');
-  writeFileSync(stubPath, '#!/usr/bin/env bash\nexit 0\n', 'utf-8');
   chmodSync(stubPath, 0o755);
 }
 
@@ -234,7 +245,6 @@ describe('install_claude_plugin() in install.sh', () => {
     // Use tmpDir as HOME so we control the .claude directory location
     const testHome = tmpDir;
     mkdirSync(join(testHome, '.claude'), { recursive: true });
-    makeClaudeStub(binDir);
 
     const result = runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
       claudeAvailable: true,
@@ -287,7 +297,6 @@ describe('install_claude_plugin() in install.sh', () => {
     // Pre-populate cache with an older version in a temp HOME
     const testHome = tmpDir;
     mkdirSync(join(testHome, '.claude'), { recursive: true });
-    makeClaudeStub(binDir);
 
     const result = runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
       claudeAvailable: true,
@@ -310,7 +319,6 @@ describe('install_claude_plugin() in install.sh', () => {
     // Pre-populate cache with the SAME version as package.json (0.1.0)
     const testHome = tmpDir;
     mkdirSync(join(testHome, '.claude'), { recursive: true });
-    makeClaudeStub(binDir);
 
     const result = runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
       claudeAvailable: true,
@@ -326,6 +334,39 @@ describe('install_claude_plugin() in install.sh', () => {
     // This test documents the current behavior (copies even if same version).
     // If the implementation adds skip-on-same-version logic, update this test.
     expect(copies.length).toBe(1);
+  });
+
+  it('prints /plugin update instructions when plugin is already active', () => {
+    const testHome = tmpDir;
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+
+    // 'claude plugin list' shows grasp-it is already installed
+    const result = runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
+      claudeAvailable: true,
+      testHome,
+      pluginListResponse: 'grasp-it',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('/plugin update grasp-it');
+    expect(result.stdout).not.toContain('/plugin marketplace add');
+  });
+
+  it('prints marketplace install instructions when plugin is not yet active', () => {
+    const testHome = tmpDir;
+    mkdirSync(join(testHome, '.claude'), { recursive: true });
+
+    // 'claude plugin list' is empty — plugin not yet installed
+    const result = runInstallClaudePlugin(repoDir, binDir, copyLogFile, {
+      claudeAvailable: true,
+      testHome,
+      pluginListResponse: '',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('/plugin marketplace add akimkelar/Grasp-It');
+    expect(result.stdout).toContain('/plugin install grasp-it');
+    expect(result.stdout).not.toContain('/plugin update grasp-it');
   });
 
   it('creates .grasp-it-plugin symlink when Claude Code is not detected', () => {
