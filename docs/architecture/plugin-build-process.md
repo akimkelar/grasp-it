@@ -1,5 +1,7 @@
 # Building and Publishing a New Plugin Version
 
+for the information about supporting the plugin for different platforms, read docs/architecture/plugin-platform-resolution.md
+
 ## Version Control
 
 The plugin version is controlled by **three files** that must be kept in sync:
