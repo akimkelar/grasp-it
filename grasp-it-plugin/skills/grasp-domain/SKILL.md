@@ -1,7 +1,7 @@
 ---
 name: grasp-domain
 description: Extract business domain knowledge from a codebase and generate an interactive domain flow graph. Works standalone (lightweight scan) or derives from an existing /grasp knowledge graph.
-argument-hint: [--full]
+argument-hint: [--full] [--standalone]
 ---
 
 # /grasp-domain
@@ -154,11 +154,13 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
        NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
        NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
        NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
-       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       _after_neo4j="${NEO4J_URI#neo4j*://}"
+       URI_HOST="${_after_neo4j%%:*}"
+       URI_PORT="${_after_neo4j#*:}"
+       URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
        EXIT_CODE=$?
      else
        echo "Error: neo4j-driver is unavailable and cypher-shell is not installed."
@@ -217,8 +219,10 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
        NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
        NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
        NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
-       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       _after_neo4j="${NEO4J_URI#neo4j*://}"
+       URI_HOST="${_after_neo4j%%:*}"
+       URI_PORT="${_after_neo4j#*:}"
+       URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
        SCHEMA_CHECK=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "SHOW CONSTRAINTS YIELD name WHERE name = 'project_id' RETURN name AS name" 2>/dev/null)
@@ -296,11 +300,13 @@ fi
        NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
        NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
        NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
-       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       _after_neo4j="${NEO4J_URI#neo4j*://}"
+       URI_HOST="${_after_neo4j%%:*}"
+       URI_PORT="${_after_neo4j#*:}"
+       URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       DOMAIN_COMMIT_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
+       DOMAIN_COMMIT_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
      fi
    fi
 
@@ -330,8 +336,10 @@ fi
        NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
        NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
        NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
-       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       _after_neo4j="${NEO4J_URI#neo4j*://}"
+       URI_HOST="${_after_neo4j%%:*}"
+       URI_PORT="${_after_neo4j#*:}"
+       URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
        cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash" 2>/dev/null && DOMAIN_UPDATE_EXIT=0 || DOMAIN_UPDATE_EXIT=1
@@ -416,14 +424,16 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
        NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
        NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
        NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       URI_HOST=$(echo "$NEO4J_URI" | sed 's/^neo4j\+:\/\///' | sed 's/:.*//')
-       URI_PORT=$(echo "$NEO4J_URI" | sed -E 's/^neo4j\+:\/\/[^:]+://' | sed 's/\/.*//')
+       _after_neo4j="${NEO4J_URI#neo4j*://}"
+       URI_HOST="${_after_neo4j%%:*}"
+       URI_PORT="${_after_neo4j#*:}"
+       URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
        if [ -n "$SCOPED_FILES_ARG" ]; then
-         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "$CYPHER_QUERY" 2>/dev/null)
+         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "$CYPHER_QUERY" 2>/dev/null)
        else
-         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format json "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
+         GRAPH_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (n) RETURN n ORDER BY n.name" 2>/dev/null)
        fi
        GRAPH_EXIT=$?
      fi
@@ -444,9 +454,11 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 5: Domain Analysis
 
+**Pass the domain-analyzer prompt verbatim — do not paraphrase or summarise. Any field omitted from a summary will be absent from the output and will cause the push script to fail.**
+
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
 2. Pass `HAS_CODEBASE_GRAPH` (from Phase 3 or 4) to the agent — this flag controls whether `implemented_by` edges are emitted
-3. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 3 or 4
+3. Dispatch a subagent with the domain-analyzer prompt **passed verbatim** (not summarised) + the context from Phase 3 or 4
 4. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
 
 ### Phase 6: Validate and Save

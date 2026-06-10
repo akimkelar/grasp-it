@@ -137,6 +137,15 @@ install_claude_plugin() {
     mkdir -p "$claude_cache_base/$plugin_name/$plugin_name"
     rm -rf "$cache_target"
     cp -R "$plugin_src" "$cache_target"
+
+    # pnpm uses symlinks in node_modules/ pointing into .pnpm/ — cp -R copies
+    # the symlinks but not the virtual store, leaving broken links. Re-run
+    # pnpm install to rebuild the virtual store inside the cache copy.
+    if command -v pnpm >/dev/null 2>&1; then
+      printf -- '→ Running pnpm install in cache (fixing symlinks)...\n'
+      (cd "$cache_target" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install) || true
+    fi
+
     printf -- '  ✓ Plugin installed to %s\n' "$cache_target"
 
     # Detect whether an older version is already active vs. first install.

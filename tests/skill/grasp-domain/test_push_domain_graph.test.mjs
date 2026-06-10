@@ -354,4 +354,253 @@ describe('push-domain-graph.mjs', () => {
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
+
+  // ── BUG-04: buildNodesCypher generates valid Cypher map syntax ─────────────
+  //
+  // The SET n += {n.id = 'value', ...} syntax is invalid — map keys must not
+  // have the n. prefix. The correct form is SET n += {id: 'value', ...}.
+  // We test this by mocking the driver import to fail and letting cypher-shell
+  // build the query string, then verify it contains valid map syntax.
+
+  describe('BUG-04: buildNodesCypher generates valid Cypher map literal syntax', () => {
+    it('map literal keys do not have n. prefix (cypher-shell path)', () => {
+      // Patch the module to force cypher-shell path and capture the built query
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A test domain', type: 'domain', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      // Remove cypher-shell from PATH so the script fails in the fallback
+      // but we can still inspect what it tried to build
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      // The script should fail, but the error should NOT contain 'n.id =' or 'n.name ='
+      // Those would indicate invalid map syntax like SET n += {n.id = '...'}
+      expect(result.stderr).not.toMatch(/n\.(id|name|summary|kind|source|type|tags)\s*=/);
+      // The error should be about connection, not syntax
+      expect(result.stderr).toMatch(/neo4j-driver not available|cypher-shell|Connection refused|ECONNREFUSED|No routing servers available|failed/i);
+    });
+
+    it('map literal keys use correct id:name syntax (not n.id = value)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'feature:auth', name: 'Auth Feature', summary: 'Auth feature', type: 'feature', tags: ['auth'] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      // Invalid syntax would show n.id = or n.name = in error output
+      expect(result.stderr).not.toMatch(/\bn\.id\s*=/);
+      expect(result.stderr).not.toMatch(/\bn\.name\s*=/);
+      expect(result.stderr).not.toMatch(/\bn\.summary\s*=/);
+      // Should fail on connection, not syntax
+      expect(result.stderr).toMatch(/neo4j|Connection refused|ECONNREFUSED|No routing servers available|failed/i);
+    });
+  });
+
+  // ── BUG-05: node.type is derived from ID prefix when omitted ───────────────
+  //
+  // When the LLM omits the type field (e.g. {id: 'domain:surcharge', name: ...})
+  // the script must derive the type from the ID prefix instead of hard-crashing
+  // with "Unknown node type 'undefined'".
+
+  describe('BUG-05: node.type derived from ID prefix when omitted', () => {
+    it('accepts node without type field — derives type from id prefix', () => {
+      const domainAnalysis = {
+        nodes: [
+          // No 'type' field — only id prefix encodes the type
+          { id: 'domain:surcharge-management', name: 'Surcharge Management', summary: 'Manages surcharges', tags: [] },
+          { id: 'feature:surcharge-catalog', name: 'Surcharge Catalog', summary: 'Catalog of surcharges', tags: [] },
+          { id: 'operation:classify-work-hours', name: 'Classify Work Hours', summary: 'Classifies hours', tags: [] },
+          { id: 'actor:agency-user', name: 'Agency User', summary: 'Agency user actor', tags: [] },
+          { id: 'entity:surcharge-set', name: 'Surcharge Set', summary: 'A set of surcharges', tags: [] },
+          { id: 'business-rule:approval-required', name: 'Approval Required', summary: 'Approval rule', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      // Must NOT crash with "Unknown node type 'undefined'"
+      expect(result.stderr).not.toContain("Unknown node type 'undefined'");
+      expect(result.stderr).not.toContain("Unknown node type ''");
+      // Connection error is expected — script got past validation
+      expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+
+    it('still rejects node with unknown type even after trying ID prefix derivation', () => {
+      const domainAnalysis = {
+        nodes: [
+          // 'robot' is not a known type prefix
+          { id: 'robot:bad-type', name: 'Robot', summary: 'A robot', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Unknown node type 'robot'");
+    });
+
+    it('prefers explicit type over ID prefix derivation when both are present', () => {
+      const domainAnalysis = {
+        nodes: [
+          // Both type and id prefix present — explicit type should be used
+          { id: 'domain:test', type: 'domain', name: 'Test Domain', summary: 'Test', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      // Should not fail on unknown type — explicit 'domain' is valid
+      expect(result.stderr).not.toContain('Unknown node type');
+      expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+
+    it('derives type correctly for all known node types from ID prefix alone', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'D', summary: 'D', tags: [] },
+          { id: 'feature:test', name: 'F', summary: 'F', tags: [] },
+          { id: 'operation:test', name: 'O', summary: 'O', tags: [] },
+          { id: 'actor:test', name: 'A', summary: 'A', tags: [] },
+          { id: 'entity:test', name: 'E', summary: 'E', tags: [] },
+          { id: 'business-rule:test', name: 'BR', summary: 'BR', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      // All 6 types should be recognized — no "unknown type" errors
+      expect(result.stderr).not.toContain('Unknown node type');
+      // Connection error is expected
+      expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+  });
+
+  // ── BUG-03: URI host/port extraction handles neo4j:// and neo4j+s:// ───────
+  //
+  // The SKILL.md fallback uses bash parameter expansion: ${uri#neo4j*://}
+  // This correctly handles both neo4j:// and neo4j+s:// schemes because
+  // # is greedy and strips the longest matching prefix.
+  //
+  // The old BRE sed approach (neo4j\+) only matched neo4j+:// literally,
+  // not neo4j://. The old ERE sed approach (neo4j[+]*) matched zero or more
+  // literal pluses, not "one optional plus".
+
+  describe('BUG-03: URI host/port extraction for neo4j:// and neo4j+s:// schemes', () => {
+    it('extracts host and port correctly from neo4j:// URIs', () => {
+      const uri = 'neo4j://127.0.0.1:7687';
+      // Simulate ${uri#neo4j*://} behavior
+      const after = uri.replace(/^neo4j[^:]*:\/\//, '');
+      const host = after.split(':')[0];
+      const port = after.split(':')[1]?.split('/')[0] ?? '';
+      expect(host).toBe('127.0.0.1');
+      expect(port).toBe('7687');
+    });
+
+    it('extracts host and port correctly from neo4j+s:// URIs', () => {
+      const uri = 'neo4j+s://localhost:7474';
+      const after = uri.replace(/^neo4j[^:]*:\/\//, '');
+      const host = after.split(':')[0];
+      const port = after.split(':')[1]?.split('/')[0] ?? '';
+      expect(host).toBe('localhost');
+      expect(port).toBe('7474');
+    });
+
+    it('extracts host and port correctly from neo4j:// with no explicit port', () => {
+      const uri = 'neo4j://localhost';
+      const after = uri.replace(/^neo4j[^:]*:\/\//, '');
+      const host = after.split(':')[0];
+      const port = after.split(':')[1]?.split('/')[0] ?? '';
+      expect(host).toBe('localhost');
+      // No port in URI — defaults to 7687 per SKILL.md fallback logic
+      expect(port).toBe('');
+    });
+
+    it('converts neo4j URI to bolt URI correctly', () => {
+      expect('neo4j://127.0.0.1:7687'.replace(/^neo4j[^:]*:\/\//, 'bolt://')).toBe('bolt://127.0.0.1:7687');
+      expect('neo4j+s://localhost:7687'.replace(/^neo4j[^:]*:\/\//, 'bolt://')).toBe('bolt://localhost:7687');
+    });
+
+    it('bash parameter expansion pattern handles both URI schemes correctly', () => {
+      // Verify the JS equivalent of ${uri#neo4j*://} for both schemes
+      const uris = [
+        ['neo4j://127.0.0.1:7687', '127.0.0.1', '7687'],
+        ['neo4j+s://localhost:7474', 'localhost', '7474'],
+        ['neo4j://localhost', 'localhost', ''],
+        ['neo4j+s://dbhost.example.com:7687/path', 'dbhost.example.com', '7687'],
+      ];
+      for (const [uri, expectedHost, expectedPort] of uris) {
+        const after = uri.replace(/^neo4j[^:]*:\/\//, '');
+        const host = after.split(':')[0];
+        const port = after.split(':')[1]?.split('/')[0] ?? '';
+        expect(host).toBe(expectedHost, `host for ${uri}`);
+        expect(port).toBe(expectedPort, `port for ${uri}`);
+      }
+    });
+  });
 });

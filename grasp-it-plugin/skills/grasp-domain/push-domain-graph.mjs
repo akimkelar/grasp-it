@@ -103,8 +103,8 @@ function buildNodesCypher(graphData, neo4jConfig) {
 
       const setParts = Object.entries(props)
         .map(([k, v]) => {
-          if (Array.isArray(v)) return `n.${k} = ${cypherEscape(JSON.stringify(v))}`;
-          return `n.${k} = ${cypherEscape(v)}`;
+          if (Array.isArray(v)) return `${k}: ${cypherEscape(JSON.stringify(v))}`;
+          return `${k}: ${cypherEscape(v)}`;
         })
         .join(", ");
 
@@ -227,8 +227,9 @@ async function pushDomainGraph(projectRoot) {
   // Validate all nodes have a known type and map to a secondary label
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
     for (const node of graphData.nodes) {
-      if (!TYPE_TO_LABEL[node.type]) {
-        console.error(`push-domain-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+      const derivedType = node.type || (node.id ? node.id.split(":")[0] : null);
+      if (!TYPE_TO_LABEL[derivedType]) {
+        console.error(`push-domain-graph.mjs: Unknown node type '${derivedType}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
         process.exit(1);
       }
     }
@@ -265,9 +266,10 @@ async function pushDomainGraph(projectRoot) {
     // Push nodes with dual labels: Knowledge + specific type label
     if (graphData.nodes && Array.isArray(graphData.nodes)) {
       for (const node of graphData.nodes) {
-        const secondaryLabel = TYPE_TO_LABEL[node.type];
+        const derivedType = node.type || (node.id ? node.id.split(":")[0] : null);
+        const secondaryLabel = TYPE_TO_LABEL[derivedType];
         if (!secondaryLabel) {
-          throw new Error(`Node ${node.id} has unknown type: ${node.type}`);
+          throw new Error(`Node ${node.id} has unknown type: ${derivedType}`);
         }
 
         const props = {
