@@ -218,9 +218,11 @@ export async function saveGraphToNeo4j(
     validateNodeKind(node);
     const props = nodeToProperties(node);
     const label = toNeo4jLabel(node.type);
+    // Use Codebase: grouping label for codebase nodes, Knowledge: for knowledge nodes
+    const groupLabel = CODEBASE_TYPES.has(node.type) ? "Codebase" : "Knowledge";
     await session.run(
       `MATCH (p:Project {id: $projectId})
-       CREATE (n:${label} {
+       CREATE (n:${groupLabel}:${label} {
          projectId: $projectId,
          ${Object.keys(props).map((k) => `${k}: $${k}`).join(", ")}
        })
@@ -316,7 +318,7 @@ export async function loadGraphFromNeo4j(
 
   // Load nodes
   const nodesResult = await session.run(
-    `MATCH (n:GraphNode)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (n:Codebase)-[:PART_OF]->(p:Project {id: $projectId})
      RETURN n`,
     { projectId },
   );
@@ -358,7 +360,7 @@ export async function loadGraphFromNeo4j(
 
   // Load edges
   const edgesResult = await session.run(
-    `MATCH (source:GraphNode)-[r:RELATES]->(target:GraphNode)
+    `MATCH (source:Codebase)-[r:RELATES]->(target:Codebase)
      WHERE source.projectId = $projectId AND target.projectId = $projectId
      RETURN r`,
     { projectId },

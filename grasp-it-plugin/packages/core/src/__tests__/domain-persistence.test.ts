@@ -21,7 +21,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       id: "domain:orders",
       name: "Orders",
       summary: "Order management domain",
-      nodeType: "domain",
+      type: "domain",
       source: "code-analysis",
       filePath: "src/orders.ts",
       lineRange: [1, 50],
@@ -45,12 +45,12 @@ describe("loadDomainGraphFromNeo4j", () => {
 
   it("maps all domain element types correctly", async () => {
     const records = [
-      { id: "domain:core", name: "Core", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Domain"] },
-      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
-      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
-      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
-      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
-      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
+      { id: "domain:core", name: "Core", summary: "", type: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Domain"] },
+      { id: "feature:auth", name: "Auth", summary: "", type: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", type: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", type: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", type: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", type: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
     ];
 
     const mockSession = {
@@ -69,7 +69,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       id: "domain:test",
       name: "Test Domain",
       summary: "Test domain element",
-      nodeType: "domain",
+      type: "domain",
       source: "code-analysis",
       filePath: "src/test.ts",
       lineRange: [1, 20],
@@ -95,7 +95,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       id: "custom:type",
       name: "Custom",
       summary: "Custom element",
-      nodeType: "domain",
+      type: "domain",
       source: null,
       filePath: null,
       lineRange: null,

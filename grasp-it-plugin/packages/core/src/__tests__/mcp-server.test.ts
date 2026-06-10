@@ -101,7 +101,7 @@ function createMockSessionWithGraph(graph: KnowledgeGraph) {
         };
       }
 
-      if (query.includes("MATCH (n:GraphNode)-[:PART_OF]->(p:Project")) {
+      if (query.includes("MATCH (n:Codebase)-[:PART_OF]->(p:Project")) {
         return {
           records: graph.nodes.map((node) => ({
             n: {
@@ -118,7 +118,7 @@ function createMockSessionWithGraph(graph: KnowledgeGraph) {
         };
       }
 
-      if (query.includes("MATCH (source:GraphNode)-[r:RELATES]->(target:GraphNode)")) {
+      if (query.includes("MATCH (source:Codebase)-[r:RELATES]->(target:Codebase)")) {
         return {
           records: graph.edges.map((edge) => ({
             r: {

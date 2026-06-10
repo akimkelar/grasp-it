@@ -62,11 +62,14 @@ Knowledge nodes additionally carry a `source` property (`"code-analysis"` | `"in
 that records which skill produced them — enabling queries that distinguish implemented facts from
 specialist-described intent.
 
-**Codebase nodes** use labels: `File`, `Function`, `Class`, `Module`, `Config`,
-`Table`, `Endpoint`, `Document`, `Service`, `Pipeline`, `Schema`, `Resource`.
+**Codebase nodes** use the `Codebase:` grouping label with a secondary type label: `Codebase:File`,
+`Codebase:Function`, `Codebase:Class`, `Codebase:Module`, `Codebase:Config`,
+`Codebase:Table`, `Codebase:Endpoint`, `Codebase:Document`, `Codebase:Service`,
+`Codebase:Pipeline`, `Codebase:Schema`, `Codebase:Resource`.
 
-**Knowledge nodes** use labels: `Domain`, `Feature`, `Actor`, `BusinessRule`, `Operation`,
-`Entity`, `Decision`, `Constraint`.
+**Knowledge nodes** use the `Knowledge:` grouping label with a secondary type label:
+`Knowledge:Domain`, `Knowledge:Feature`, `Knowledge:Actor`, `Knowledge:BusinessRule`,
+`Knowledge:Operation`, `Knowledge:Entity`, `Knowledge:Decision`, `Knowledge:Constraint`.
 
 ### Internal type representation
 
@@ -98,19 +101,23 @@ canonical enum value will be `"business-rule"` and `toNeo4jLabel("business-rule"
 
 Populated by `extract-structure.mjs` (tree-sitter, deterministic) + LLM summaries. These are the code-building-block nodes created by the codebase analyzer.
 
+All codebase nodes use the `Codebase:` grouping label with a secondary type label (e.g., `Codebase:File`).
+
 | Label | Description | Properties |
 |-------|-------------|------------|
-| `File` | Source file | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]`, `languageNotes` |
-| `Function` | Function definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
-| `Class` | Class definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
-| `Module` | Module or namespace | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]` |
-| `Config` | Configuration file or entry | `id`, `name`, `filePath`, `summary`, `tags[]` |
-| `Table` | Database table | `id`, `name`, `summary`, `tags[]` |
-| `Endpoint` | HTTP endpoint | `id`, `name`, `filePath`, `method`, `path`, `summary`, `tags[]` |
+| `Codebase:File` | Source file | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]`, `languageNotes` |
+| `Codebase:Function` | Function definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
+| `Codebase:Class` | Class definition | `id`, `name`, `filePath`, `lineRange`, `summary`, `complexity`, `tags[]` |
+| `Codebase:Module` | Module or namespace | `id`, `name`, `filePath`, `summary`, `complexity`, `tags[]` |
+| `Codebase:Config` | Configuration file or entry | `id`, `name`, `filePath`, `summary`, `tags[]` |
+| `Codebase:Table` | Database table | `id`, `name`, `summary`, `tags[]` |
+| `Codebase:Endpoint` | HTTP endpoint | `id`, `name`, `filePath`, `method`, `path`, `summary`, `tags[]` |
 
 ### Knowledge Nodes
 
 Business concepts, domain models, and LLM-facts extracted from wikis and interviews. These are the domain-model nodes created by the knowledge-layer skills.
+
+All knowledge nodes use the `Knowledge:` grouping label with a secondary type label (e.g., `Knowledge:Domain`).
 
 #### Business Layer — populated by `/grasp-domain` and `/grasp-requirements`
 
@@ -168,16 +175,18 @@ See Task 22 for implementation details.
 
 Produced deterministically by parsers and extractors for non-source-code files. These belong to
 the codebase subgraph (`kind = "codebase"`) and are rebuilt on every `/grasp` run alongside
-`File`, `Function`, and `Class` nodes. They can be linked to `Feature` and `Operation` nodes
+`Codebase:File`, `Codebase:Function`, and `Codebase:Class` nodes. They can be linked to `Feature` and `Operation` nodes
 via `IMPLEMENTED_BY`.
+
+All use the `Codebase:` grouping label with their secondary type label.
 
 | Label | Description | Source | ID pattern |
 |-------|-------------|--------|------------|
-| `Document` | Documentation file (README, docs/) | `extract-structure.mjs` | `document:<relative-path>` |
-| `Service` | Container/service definition (Dockerfile, docker-compose, k8s) | YAML/JSON parsers | `service:<name>` |
-| `Pipeline` | CI/CD pipeline or build target | YAML/JSON parsers (GitHub Actions, GitLab CI) | `pipeline:<name>` |
-| `Schema` | Protobuf/OpenAPI/GraphQL schema definition | Specialized parsers | `schema:<relative-path>` |
-| `Resource` | Infrastructure-as-code resource (Terraform, CloudFormation) | IaC parsers | `resource:<name>` |
+| `Codebase:Document` | Documentation file (README, docs/) | `extract-structure.mjs` | `document:<relative-path>` |
+| `Codebase:Service` | Container/service definition (Dockerfile, docker-compose, k8s) | YAML/JSON parsers | `service:<name>` |
+| `Codebase:Pipeline` | CI/CD pipeline or build target | YAML/JSON parsers (GitHub Actions, GitLab CI) | `pipeline:<name>` |
+| `Codebase:Schema` | Protobuf/OpenAPI/GraphQL schema definition | Specialized parsers | `schema:<relative-path>` |
+| `Codebase:Resource` | Infrastructure-as-code resource (Terraform, CloudFormation) | IaC parsers | `resource:<name>` |
 
 ### Knowledge Provenance Nodes (future — `/grasp-knowledge` only)
 

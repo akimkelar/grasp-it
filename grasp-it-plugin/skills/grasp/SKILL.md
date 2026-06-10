@@ -1147,9 +1147,9 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 2.**
 
 2. **Persist knowledge graph to Neo4j:**
-   After fingerprints are saved, persist the knowledge graph to Neo4j via the `Project` singleton:
+   After fingerprints are saved, push the assembled graph to Neo4j using the bundled script:
    ```bash
-   node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" "MERGE (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = '$(git rev-parse HEAD)', p.lastAnalyzedAt = datetime(), p.version = '1.0.0', p.analyzedFiles = <number of files analyzed>"
+   node <SKILL_DIR>/push-codebase-graph.mjs "$PROJECT_ROOT"
    EXIT_CODE=$?
    if [ $EXIT_CODE -ne 0 ]; then
      echo ""
@@ -1159,10 +1159,12 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    fi
    ```
    
+   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates `RELATES` edges, and updates the `Project` singleton with `gitCommitHash`, `lastAnalyzedAt`, `version`, and `analyzedFiles`.
+   
    - Exit code 0 → Neo4j write succeeded
    - Exit code 1 → Neo4j write failed — the skill exits with an error
    
-   **Note:** The `analyzedFiles` count should be the total number of source files scanned in Phase 1 (not just the files that had structural changes in an incremental run).
+   **Note:** The `analyzedFiles` count is computed by the script as the number of nodes with type `"file"` in the assembled graph.
 
 3. Clean up intermediate files:
    ```bash

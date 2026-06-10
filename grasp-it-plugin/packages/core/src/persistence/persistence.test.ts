@@ -311,10 +311,10 @@ describe("saveDomainGraphToNeo4j", () => {
     // Verify domain node CREATE calls include kind = "knowledge"
     const nodeCalls = calls.slice(1, 3); // After DELETE, before SET
     expect(nodeCalls[0]![0]).toContain("CREATE (d:Knowledge:Domain");
-    expect(nodeCalls[0]![1].kind).toBe("knowledge");
+    expect(nodeCalls[0]![0]).toContain('kind: "knowledge"');
 
     expect(nodeCalls[1]![0]).toContain("CREATE (d:Knowledge:Feature");
-    expect(nodeCalls[1]![1].kind).toBe("knowledge");
+    expect(nodeCalls[1]![0]).toContain('kind: "knowledge"');
   });
 
   it("throws on invalid node label", async () => {
@@ -434,11 +434,11 @@ describe("loadDomainGraphFromNeo4j", () => {
 
   it("maps secondary label to correct node type", async () => {
     const records = [
-      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
-      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
-      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
-      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
-      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
+      { id: "feature:auth", name: "Auth", summary: "", type: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", type: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", type: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", type: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", type: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
     ];
 
     const mockSession = {
@@ -694,7 +694,7 @@ describe("saveGraphToNeo4j", () => {
     });
   });
 
-  it("creates one GraphNode per node in the graph", async () => {
+  it("creates one Codebase:File node per file node in the graph", async () => {
     const calls: Array<[string, Record<string, unknown>]> = [];
     const mockSession = {
       run: async (query: string, params: Record<string, unknown>) => {
@@ -705,8 +705,8 @@ describe("saveGraphToNeo4j", () => {
 
     await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
 
-    // Count CREATE calls for GraphNode (not Layer or TourStep)
-    const nodeCalls = calls.filter(([q]) => q.includes("CREATE (n:GraphNode"));
+    // Count CREATE calls for Codebase:File nodes (not Layer or TourStep)
+    const nodeCalls = calls.filter(([q]) => q.includes("CREATE (n:Codebase:File"));
     expect(nodeCalls).toHaveLength(1);
     expect(nodeCalls[0]![1]).toMatchObject({ id: "node-1", name: "index.ts" });
   });
@@ -722,7 +722,7 @@ describe("saveGraphToNeo4j", () => {
 
     await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
 
-    const edgeCalls = calls.filter(([q]) => q.includes("CREATE (src)-[r:RELATES]"));
+    const edgeCalls = calls.filter(([q]) => q.includes("CREATE (src)-[r:RELATES {"));
     expect(edgeCalls).toHaveLength(1);
     expect(edgeCalls[0]![1]).toMatchObject({
       edgeSource: "node-1",
@@ -929,7 +929,7 @@ describe("loadGraphFromNeo4j", () => {
             ],
           };
         }
-        if (query.includes("MATCH (n:GraphNode")) {
+        if (query.includes("MATCH (n:Codebase)")) {
           return {
             records: [
               {
@@ -999,7 +999,7 @@ describe("loadGraphFromNeo4j", () => {
             ],
           };
         }
-        if (query.includes("MATCH (source:GraphNode)-[r:RELATES]")) {
+        if (query.includes("MATCH (source:Codebase)-[r:RELATES]")) {
           return {
             records: [
               {
