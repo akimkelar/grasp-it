@@ -494,7 +494,7 @@ export async function loadProjectMetaFromNeo4j(
 
 /**
  * Load domain graph from Neo4j.
- * Returns nodes with label DomainElement plus their secondary label (Domain/Feature/etc).
+ * Returns nodes with label Knowledge plus their secondary label (Domain/Feature/etc).
  *
  * @param session Neo4j driver session
  * @param projectId Project identifier (defaults to "project:singleton")
@@ -505,7 +505,7 @@ export async function loadDomainGraphFromNeo4j(
   projectId: string = PROJECT_SINGLETON_ID,
 ): Promise<KnowledgeGraph | null> {
   const result = await session.run(
-    `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
      RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS type,
             d.source AS source, d.sourceFile AS sourceFile, d.filePath AS filePath,
             d.lineRange AS lineRange, d.tags AS tags, d.complexity AS complexity,
@@ -554,7 +554,7 @@ export async function loadDomainGraphFromNeo4j(
 
 /**
  * Save domain graph to Neo4j.
- * Writes DomainElement nodes with secondary labels (Domain/Feature/etc).
+ * Writes Knowledge nodes with secondary labels (Domain/Feature/etc).
  * Updates Project node with domainAnalyzedAt and domainCommit.
  *
  * @param session   Neo4j driver session
@@ -571,7 +571,7 @@ export async function saveDomainGraphToNeo4j(
 ): Promise<void> {
   // Clear existing domain elements for this project
   await session.run(
-    `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
      DELETE d`,
     { projectId },
   );
@@ -581,7 +581,7 @@ export async function saveDomainGraphToNeo4j(
     validateNodeLabel(node);
     validateNodeKind(node);
     const secondaryLabel = toNeo4jLabel(node.type);
-    const labels = `DomainElement:${secondaryLabel}`;
+    const labels = `Knowledge:${secondaryLabel}`;
 
     await session.run(
       `MATCH (p:Project {id: $projectId})

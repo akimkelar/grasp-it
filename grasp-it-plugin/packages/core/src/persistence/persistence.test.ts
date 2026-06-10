@@ -104,7 +104,7 @@ describe("saveFingerprints / loadFingerprints", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("saveDomainGraphToNeo4j", () => {
-  it("deletes existing DomainElement nodes before writing new ones", async () => {
+  it("deletes existing Knowledge nodes before writing new ones", async () => {
     const sampleGraph: KnowledgeGraph = {
       version: "1.0.0",
       project: {
@@ -192,10 +192,10 @@ describe("saveDomainGraphToNeo4j", () => {
     // Verify node CREATE calls (after the DELETE call at index 0)
     const nodeCalls = calls.slice(1, 3); // Two nodes → two CREATE calls
 
-    expect(nodeCalls[0]![0]).toContain("CREATE (d:DomainElement:Domain");
+    expect(nodeCalls[0]![0]).toContain("CREATE (d:Knowledge:Domain");
     expect(nodeCalls[0]![1]).toMatchObject({ id: "domain:orders", name: "Orders" });
 
-    expect(nodeCalls[1]![0]).toContain("CREATE (d:DomainElement:Feature");
+    expect(nodeCalls[1]![0]).toContain("CREATE (d:Knowledge:Feature");
     expect(nodeCalls[1]![1]).toMatchObject({ id: "feature:create-order", name: "Create Order" });
   });
 
@@ -310,10 +310,10 @@ describe("saveDomainGraphToNeo4j", () => {
 
     // Verify domain node CREATE calls include kind = "knowledge"
     const nodeCalls = calls.slice(1, 3); // After DELETE, before SET
-    expect(nodeCalls[0]![0]).toContain("CREATE (d:DomainElement:Domain");
+    expect(nodeCalls[0]![0]).toContain("CREATE (d:Knowledge:Domain");
     expect(nodeCalls[0]![1].kind).toBe("knowledge");
 
-    expect(nodeCalls[1]![0]).toContain("CREATE (d:DomainElement:Feature");
+    expect(nodeCalls[1]![0]).toContain("CREATE (d:Knowledge:Feature");
     expect(nodeCalls[1]![1].kind).toBe("knowledge");
   });
 
@@ -390,7 +390,7 @@ describe("saveDomainGraphToNeo4j", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("loadDomainGraphFromNeo4j", () => {
-  it("returns null when no DomainElement nodes exist", async () => {
+  it("returns null when no Knowledge nodes exist", async () => {
     const mockSession = {
       run: vi.fn(async () => ({ records: [] })),
     };
@@ -399,12 +399,12 @@ describe("loadDomainGraphFromNeo4j", () => {
 
     expect(result).toBeNull();
     expect(mockSession.run).toHaveBeenCalledWith(
-      expect.stringContaining("MATCH (d:DomainElement)-[:PART_OF]->(p:Project"),
+      expect.stringContaining("MATCH (d:Knowledge)-[:PART_OF]->(p:Project"),
       expect.objectContaining({ projectId: "project:singleton" }),
     );
   });
 
-  it("returns KnowledgeGraph with nodes when DomainElement records exist", async () => {
+  it("returns KnowledgeGraph with nodes when Knowledge records exist", async () => {
     const mockRecord = {
       id: "domain:orders",
       name: "Orders",
@@ -415,7 +415,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       lineRange: [1, 50],
       tags: ["core", "domain"],
       complexity: "complex",
-      labels: ["DomainElement", "Domain"],
+      labels: ["Knowledge", "Domain"],
     };
 
     const mockSession = {
@@ -434,11 +434,11 @@ describe("loadDomainGraphFromNeo4j", () => {
 
   it("maps secondary label to correct node type", async () => {
     const records = [
-      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Feature"] },
-      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Operation"] },
-      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Actor"] },
-      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Entity"] },
-      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "BusinessRule"] },
+      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
     ];
 
     const mockSession = {
@@ -463,7 +463,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       lineRange: null,
       tags: [],
       complexity: "simple",
-      labels: ["DomainElement", "CustomType"],
+      labels: ["Knowledge", "CustomType"],
     };
 
     const mockSession = {
@@ -479,7 +479,7 @@ describe("loadDomainGraphFromNeo4j", () => {
   it("returns empty edges, layers, and tour arrays", async () => {
     const mockSession = {
       run: vi.fn(async () => ({
-        records: [{ id: "domain:test", name: "Test", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Domain"] }],
+        records: [{ id: "domain:test", name: "Test", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Domain"] }],
       })),
     };
 

@@ -46,9 +46,9 @@ Staleness check: compare `gitCommitHash` vs `git rev-parse HEAD`.
 ### Domain Graph Storage
 
 Domain graph nodes stored with:
-- Primary label: `DomainElement`
+- Primary label: `Knowledge`
 - Secondary label: `Domain`, `Feature`, `Operation`, `Actor`, `BusinessRule`, `Entity`
-- Relationship to `Project`: `(:DomainElement)-[:PART_OF]->(:Project)`
+- Relationship to `Project`: `(:Knowledge)-[:PART_OF]->(:Project)`
 
 Staleness: compare `Project.gitCommitHash` vs `Project.domainCommit` — if different, domain graph is stale.
 
@@ -102,15 +102,15 @@ async function checkGraphFreshness(projectId: string, projectRoot: string, sessi
 ###2. Domain Graph in Neo4j
 
 Domain graph nodes (domain, feature, operation, actor, business-rule, entity) stored with:
-- Primary label: `DomainElement`
+- Primary label: `Knowledge`
 - Secondary label: `Domain`, `Feature`, `Operation`, `Actor`, `BusinessRule`, `Entity`
-- Relationship to `Project`: `(:DomainElement)-[:PART_OF]->(:Project)`
+- Relationship to `Project`: `(:Knowledge)-[:PART_OF]->(:Project)`
 
 ```typescript
 async function saveDomainGraphToNeo4j(session: Session, domainGraph: DomainGraph, projectId: string) {
   // Clear existing domain elements for this project
   await session.run(`
-    MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+    MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
     DELETE d
   `, { projectId });
 
@@ -118,7 +118,7 @@ async function saveDomainGraphToNeo4j(session: Session, domainGraph: DomainGraph
   for (const node of domainGraph.nodes) {
     await session.run(`
       MATCH (p:Project {id: $projectId})
-      CREATE (d:DomainElement:${node.label} {
+      CREATE (d:Knowledge:${node.label} {
         id: $id,
         name: $name,
         source: $source,
@@ -169,7 +169,7 @@ Replace with Neo4j-only equivalents:
 - `saveGraphToNeo4j(session, graph, projectId)` — persist full graph to Neo4j
 - `loadProjectMetaFromNeo4j(session, projectId)` — query Project singleton
 - `saveProjectMetaToNeo4j(session, projectMeta, projectId)` — persist Project singleton
-- `loadDomainGraphFromNeo4j(session, projectId)` — query DomainElement nodes
+- `loadDomainGraphFromNeo4j(session, projectId)` — query Knowledge nodes
 - `saveDomainGraphToNeo4j(session, domainGraph, projectId)` — persist domain graph
 
 ## Key Files to Modify

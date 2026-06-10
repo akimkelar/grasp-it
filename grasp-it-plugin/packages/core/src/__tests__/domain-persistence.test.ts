@@ -6,7 +6,7 @@ import { loadDomainGraphFromNeo4j } from "../persistence/index.js";
 // ─────────────────────────────────────────────────────────────────
 
 describe("loadDomainGraphFromNeo4j", () => {
-  it("returns null when no DomainElement nodes exist", async () => {
+  it("returns null when no Knowledge nodes exist", async () => {
     const mockSession = {
       run: vi.fn(async () => ({ records: [] })),
     };
@@ -27,7 +27,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       lineRange: [1, 50],
       tags: ["core", "domain"],
       complexity: "complex",
-      labels: ["DomainElement", "Domain"],
+      labels: ["Knowledge", "Domain"],
     };
 
     const mockSession = {
@@ -45,12 +45,12 @@ describe("loadDomainGraphFromNeo4j", () => {
 
   it("maps all domain element types correctly", async () => {
     const records = [
-      { id: "domain:core", name: "Core", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Domain"] },
-      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Feature"] },
-      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Operation"] },
-      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Actor"] },
-      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "Entity"] },
-      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["DomainElement", "BusinessRule"] },
+      { id: "domain:core", name: "Core", summary: "", nodeType: "domain", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Domain"] },
+      { id: "feature:auth", name: "Auth", summary: "", nodeType: "feature", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Feature"] },
+      { id: "operation:login", name: "Login", summary: "", nodeType: "operation", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Operation"] },
+      { id: "actor:user", name: "User", summary: "", nodeType: "actor", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Actor"] },
+      { id: "entity:order", name: "Order", summary: "", nodeType: "entity", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "Entity"] },
+      { id: "business-rule:refund", name: "Refund Policy", summary: "", nodeType: "business-rule", source: null, filePath: null, lineRange: null, tags: [], complexity: "simple", labels: ["Knowledge", "BusinessRule"] },
     ];
 
     const mockSession = {
@@ -75,7 +75,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       lineRange: [1, 20],
       tags: ["test"],
       complexity: "simple",
-      labels: ["DomainElement", "Domain"],
+      labels: ["Knowledge", "Domain"],
     };
 
     const mockSession = {
@@ -101,7 +101,7 @@ describe("loadDomainGraphFromNeo4j", () => {
       lineRange: null,
       tags: [],
       complexity: "simple",
-      labels: ["DomainElement", "CustomLabel"],
+      labels: ["Knowledge", "CustomLabel"],
     };
 
     const mockSession = {

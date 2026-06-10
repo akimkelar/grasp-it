@@ -51,7 +51,7 @@ const makeDomainGraph = (nodes: ReturnType<typeof makeDomainNode>[]) => ({
 // ─────────────────────────────────────────────────────────────────
 
 describe("saveDomainGraphToNeo4j", () => {
-  it("writes domain nodes with dual-label pattern DomainElement:SecondaryLabel", async () => {
+  it("writes domain nodes with dual-label pattern Knowledge:SecondaryLabel", async () => {
     const mockSession = {
       run: vi.fn(async () => ({ records: [] })),
     };
@@ -62,11 +62,11 @@ describe("saveDomainGraphToNeo4j", () => {
 
     // First call clears existing domain elements
     const clearCall = mockSession.run.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(clearCall[0]).toContain("MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})");
+    expect(clearCall[0]).toContain("MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})");
 
     // Second call creates the domain node with dual-label pattern
     const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
-    expect(createCall[0]).toContain("DomainElement:Domain");
+    expect(createCall[0]).toContain("Knowledge:Domain");
   });
 
   it("passes 'type' property (not 'nodeType') in the query parameters", async () => {
@@ -122,7 +122,7 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(mockSession.run).toHaveBeenCalledTimes(8);
 
     // Verify each node type gets the correct dual-label (skip index 0 = clear, last index = project update)
-    const expectedLabels = ["DomainElement:Domain", "DomainElement:Feature", "DomainElement:Operation", "DomainElement:Actor", "DomainElement:Entity", "DomainElement:BusinessRule"];
+    const expectedLabels = ["Knowledge:Domain", "Knowledge:Feature", "Knowledge:Operation", "Knowledge:Actor", "Knowledge:Entity", "Knowledge:BusinessRule"];
 
     for (let i = 0; i < domainTypes.length; i++) {
       const createCall = mockSession.run.mock.calls[i + 1] as unknown as [string, Record<string, unknown>]; // +1 to skip the clear call

@@ -458,7 +458,7 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 6b: Push to Neo4j
 
-**Call the dedicated push script — do NOT write MERGE queries manually.** The script handles the dual-label pattern (`DomainElement` + specific label + `Knowledge`), correct UPPER_SNAKE_CASE relationship types, and `NEO4J_DATABASE` from the project `.env`. It automatically falls back to cypher-shell if the neo4j-driver is unavailable.
+**Call the dedicated push script — do NOT write MERGE queries manually.** The script handles the dual-label pattern (`Knowledge` + specific label), correct UPPER_SNAKE_CASE relationship types, and `NEO4J_DATABASE` from the project `.env`. It automatically falls back to cypher-shell if the neo4j-driver is unavailable.
 
 ```bash
 node "$PLUGIN_ROOT/skills/grasp-domain/push-domain-graph.mjs" "$PROJECT_ROOT"
@@ -488,7 +488,7 @@ The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-
 
 The domain graph is now in Neo4j. To explore it visually:
 - Open Neo4j Browser at http://localhost:7474 (or your Aura console URL)
-- Run: `MATCH (n:DomainElement) RETURN n LIMIT 100`
+- Run: `MATCH (n:Knowledge) RETURN n LIMIT 100`
 - Or for a domain-specific view: `MATCH (n:Domain) RETURN n`
 
 To query the domain graph via Claude Code:

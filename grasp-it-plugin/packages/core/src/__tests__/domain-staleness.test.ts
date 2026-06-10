@@ -252,9 +252,9 @@ describe("domain commit comparison (Project.gitCommitHash vs Project.domainCommi
 // Domain graph nodes in Neo4j
 // ─────────────────────────────────────────────────────────────────
 
-describe("domain graph nodes in Neo4j (DomainElement label)", () => {
+describe("domain graph nodes in Neo4j (Knowledge label)", () => {
   it("represents domain node types with secondary labels", () => {
-    // Domain graph nodes use primary label DomainElement with secondary labels:
+    // Domain graph nodes use primary label Knowledge with secondary labels:
     // Domain, Feature, Operation, Actor, BusinessRule, Entity
     const domainTypes = ["Domain", "Feature", "Operation", "Actor", "BusinessRule", "Entity"];
     expect(domainTypes).toContain("Domain");
@@ -267,16 +267,16 @@ describe("domain graph nodes in Neo4j (DomainElement label)", () => {
 
   it("domain elements have PART_OF relationship to Project", () => {
     // Expected Cypher pattern:
-    // MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId})
+    // MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
     const relationship = "PART_OF";
     expect(relationship).toBe("PART_OF");
   });
 
-  it("loadDomainGraphFromNeo4j returns null when no DomainElement nodes exist", async () => {
+  it("loadDomainGraphFromNeo4j returns null when no Knowledge nodes exist", async () => {
     const session = makeEmptyNeo4jSession();
 
     const result = await session.run(
-      `MATCH (d:DomainElement)-[:PART_OF]->(p:Project {id: $projectId}) RETURN d`,
+      `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId}) RETURN d`,
       { projectId: "project:singleton" },
     );
 

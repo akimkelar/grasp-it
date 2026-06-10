@@ -3,7 +3,7 @@
  * push-domain-graph.mjs
  *
  * Reads domain-analysis.json from .grasp-it/intermediate/ and pushes it to Neo4j
- * using the dual-label pattern (DomainElement + specific label).
+ * using the Knowledge + specific label pattern.
  *
  * Fully self-contained — uses only neo4j-driver (no TypeScript imports).
  *
@@ -108,10 +108,10 @@ function buildNodesCypher(graphData, neo4jConfig) {
         })
         .join(", ");
 
-      // Dual-label pattern: MERGE DomainElement base label, then add secondary label and Knowledge
+      // Dual-label pattern: MERGE Knowledge base label, then add secondary label
       // Using backtick escaping for the secondary label which may contain special chars
       lines.push(
-        `MERGE (n:DomainElement {id: ${cypherEscape(node.id)}}) SET n += {${setParts}} SET n:\`${secondaryLabel}\`:\`Knowledge\`;`
+        `MERGE (n:Knowledge {id: ${cypherEscape(node.id)}}) SET n += {${setParts}} SET n:\`${secondaryLabel}\`;`
       );
     }
   }
@@ -127,7 +127,7 @@ function buildEdgesCypher(graphData) {
     for (const edge of graphData.edges) {
       const relType = edge.type.toUpperCase().replace(/-/g, "_");
       lines.push(
-        `MATCH (a:DomainElement {id: ${cypherEscape(edge.source)}}), (b:DomainElement {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+        `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Knowledge {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
       );
     }
   }
@@ -163,7 +163,7 @@ function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
   runCypherShell(neo4jConfig, updateCypher); // best-effort — don't fail if Project doesn't exist yet
 
   // Orphan check via cypher-shell
-  const orphanQuery = `MATCH (n:DomainElement) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule) RETURN n.id AS id, n.type AS type;`;
+  const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule) RETURN n.id AS id, n.type AS type;`;
   try {
     const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
     const uri = NEO4J_URI || "neo4j://localhost:7687";
@@ -262,7 +262,7 @@ async function pushDomainGraph(projectRoot) {
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" });
 
-    // Push nodes with dual labels: DomainElement + specific type label
+    // Push nodes with dual labels: Knowledge + specific type label
     if (graphData.nodes && Array.isArray(graphData.nodes)) {
       for (const node of graphData.nodes) {
         const secondaryLabel = TYPE_TO_LABEL[node.type];
@@ -282,10 +282,10 @@ async function pushDomainGraph(projectRoot) {
         if (node.complexity) props.complexity = node.complexity;
         if (node.status) props.status = node.status;
 
-        // Dual-label pattern: MERGE DomainElement base label, then add secondary label and Knowledge
+        // Dual-label pattern: MERGE Knowledge base label, then add secondary label
         // Using backtick escaping for the secondary label which may contain special chars
         await session.run(
-          `MERGE (n:DomainElement {id: $id}) SET n += $props SET n:\`${secondaryLabel}\`:\`Knowledge\``,
+          `MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`${secondaryLabel}\``,
           { id: node.id, props }
         );
       }
@@ -296,7 +296,7 @@ async function pushDomainGraph(projectRoot) {
       for (const edge of graphData.edges) {
         const relType = edge.type.toUpperCase().replace(/-/g, "_");
         await session.run(
-          `MATCH (a:DomainElement {id: $src}), (b:DomainElement {id: $tgt})
+          `MATCH (a:Knowledge {id: $src}), (b:Knowledge {id: $tgt})
            MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
           { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
         );
@@ -311,9 +311,9 @@ async function pushDomainGraph(projectRoot) {
 
     await session.close();
 
-    // Post-push validation: check no node has only DomainElement without secondary label
+    // Post-push validation: check no node has only Knowledge without secondary label
     const orphanCheck = await driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" }).run(
-      `MATCH (n:DomainElement)
+      `MATCH (n:Knowledge)
        WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule)
        RETURN n.id AS id, n.type AS type`
     );
