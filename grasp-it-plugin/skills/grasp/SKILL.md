@@ -622,12 +622,8 @@ Set up and verify the `.graspignore` file before scanning.
      "
      ```
    - Report to the user:
-     > Generated `.grasp-it/.graspignore` with suggested exclusions based on your project structure. Please review it and uncomment any patterns you'd like to exclude from analysis. When ready, confirm to continue.
-   - **Wait for user confirmation before proceeding.**
-3. **If it already exists**, report:
-   > Found `.grasp-it/.graspignore`. Review it if needed, then confirm to continue.
-   - **Wait for user confirmation before proceeding.**
-4. After confirmation, proceed to Phase 1.
+     > Generated `.grasp-it/.graspignore` with suggested exclusions based on your project structure. You can edit it later if needed.
+3. Proceed to Phase 1.
 
 ---
 

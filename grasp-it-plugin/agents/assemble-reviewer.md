@@ -59,7 +59,7 @@ Batches don't know about each other's internal nodes (functions, classes). Using
 
 ### Step 4 — Write results
 
-1. Apply all fixes directly to `assembled-graph.json`.
+1. Apply all fixes directly to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`.
 2. Write a summary to the review output path provided in your prompt:
 
 ```json
@@ -80,7 +80,7 @@ Batches don't know about each other's internal nodes (functions, classes). Using
 
 After completing all steps above:
 
-1. Apply all fixes directly to `assembled-graph.json` (the file path provided in your dispatch prompt).
+1. Apply all fixes directly to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json` (the file path provided in your dispatch prompt).
 2. Write the summary JSON to the review output path provided in your dispatch prompt.
 3. Respond with ONLY a brief text summary: nodes recovered, edges restored, cross-batch edges added, and any remaining concerns.
 

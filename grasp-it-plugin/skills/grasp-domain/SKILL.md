@@ -465,9 +465,12 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 ### Phase 6: Validate and Save
 
-1. Read the domain analysis output
-2. Validate using the standard graph validation pipeline (the schema now supports domain/feature/operation types)
-3. If validation fails, log warnings but save what's valid (error tolerance)
+1. Read the domain analysis output from `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
+2. Validate the graph with these concrete checks:
+   - **Dangling edges:** For every edge, confirm its `source` and `target` IDs exist in the `nodes` array (or are known `:Codebase` node IDs from the existing graph for `implemented_by` edges). Remove any edges whose target node is missing.
+   - **Required fields:** Every node must have `id`, `type`, `kind: "knowledge"`, and `source: "code-analysis"`. Nodes missing `summary` should get a default `"No summary available"`.
+   - **No duplicate edges:** If the same `source → target → type` triple appears more than once, keep only the first.
+3. If validation finds issues, log them as warnings but save what's valid (error tolerance — partial graph is better than no graph).
 4. **All nodes written to the graph must include `"kind": "knowledge"` and `"source": "code-analysis"`** — this is required by the schema and distinguishes code-mined knowledge from specialist-described knowledge
 
 ### Phase 6b: Push to Neo4j
