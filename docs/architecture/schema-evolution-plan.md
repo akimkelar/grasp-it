@@ -92,7 +92,7 @@ queries that distinguish what the code does from what the PO envisions.
 `Domain`, `Feature`, `Operation`, `Actor`, `Entity`, `BusinessRule`, `Risk`, `Constraint`
 
 **Knowledge — PO Interview Layer (source: interview only):**
-`Decision`, `Concept`, `Claim`
+`Decision`, `Concept`, `Claim`, `Risk`, `Constraint`
 
 **Bridge:** `IMPLEMENTED_BY` (`Feature / Operation / BusinessRule` → `File / Function / Class /
 Endpoint`) with `{status, confidence}` — native relationship, single DB.

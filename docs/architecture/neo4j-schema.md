@@ -145,6 +145,8 @@ All nodes in this layer carry `source: "interview"`.
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
 | `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]` |
 | `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]` |
+| `Risk` | Potential negative outcome identified during interview | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]` |
+| `Constraint` | Technical invariant or access condition stated by specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]` |
 
 **`Claim.confidence`:** `"tentative"` | `"agreed"`
 
