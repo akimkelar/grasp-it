@@ -9,9 +9,7 @@
     "test": "node -e \"console.log('skill tests live at <repo-root>/tests/skill — run via root \\`pnpm test\\`')\""
   },
   "dependencies": {
-    "@grasp-it/core": "workspace:*",
-    "graphology": "~0.26.0",
-    "graphology-communities-louvain": "^2.0.2"
+    "@grasp-it/core": "workspace:*"
   },
   "optionalDependencies": {
     "neo4j-driver": "^6.0.1"
