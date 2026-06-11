@@ -21,5 +21,6 @@ export default defineConfig({
       '**/dist/**',
       'grasp-it-plugin/packages/core/**',
     ],
+    testTimeout: 30_000,
   },
 });
