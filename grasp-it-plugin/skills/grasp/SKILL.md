@@ -16,6 +16,8 @@ Analyze the current codebase and produce a knowledge graph stored in Neo4j. The 
   - `--no-auto-update` — Disable automatic graph updates (writes `autoUpdate: false` to `.grasp-it/config.json`)
   - `--review` — Run full LLM graph-reviewer instead of inline deterministic validation
   - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `en` (English). Stores preference in `.grasp-it/config.json` for consistency across incremental updates.
+  - `--scope <name>` — Label the analysis scope (stored in project metadata). Does not change the decision-logic branch — an existing graph with `--scope` still follows the incremental-vs-full decision table.
+  - `--files <comma-list>` — Override file discovery to analyze only the listed paths (comma-separated). Does not change the decision-logic branch — a `--files` run with an existing graph still follows the incremental-vs-full decision table.
   - A directory path (e.g. `/path/to/repo` or `../other-project`) — Analyze the given directory instead of the current working directory
 
 ---
@@ -656,6 +658,8 @@ Pass these parameters in the dispatch prompt:
 > Scan this project directory to discover all project files (including non-code files like configs, docs, infrastructure), detect languages and frameworks.
 > Project root: `$PROJECT_ROOT`
 > Write output to: `$PROJECT_ROOT/.grasp-it/intermediate/scan-result.json`
+
+**`--files` scope constraint:** If `--files <comma-list>` was passed to `/grasp`, include ONLY the files from that list in the output `files[]` array. The bundled scanner still walks the full project (to build the complete `importMap` for cross-file edge detection), but the `files` array in `scan-result.json` must contain only the paths from `--files`. Do NOT invent files not in the `--files` list.
 
 After the subagent completes, read `$PROJECT_ROOT/.grasp-it/intermediate/scan-result.json` to get:
 - Project name, description

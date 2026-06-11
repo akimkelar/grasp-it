@@ -120,15 +120,22 @@ function buildNodesCypher(graphData, neo4jConfig) {
 
 /**
  * Build a cypher-shell query string for pushing edges.
+ * IMPLEMENTED_BY edges target :Codebase nodes, not :Knowledge nodes.
  */
 function buildEdgesCypher(graphData) {
   const lines = [];
   if (graphData.edges && Array.isArray(graphData.edges)) {
     for (const edge of graphData.edges) {
       const relType = edge.type.toUpperCase().replace(/-/g, "_");
-      lines.push(
-        `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Knowledge {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
-      );
+      if (relType === "IMPLEMENTED_BY") {
+        lines.push(
+          `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Codebase {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+        );
+      } else {
+        lines.push(
+          `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Knowledge {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+        );
+      }
     }
   }
   return lines.join("\n");
@@ -138,6 +145,15 @@ function buildEdgesCypher(graphData) {
  * Push domain graph using cypher-shell (fallback when driver is unavailable).
  */
 function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
+  // Delete existing Knowledge nodes with source='code-analysis' to get a clean slate
+  // (prevents stale node accumulation across runs)
+  const deleteCypher = `MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n;`;
+  const deleteResult = runCypherShell(neo4jConfig, deleteCypher);
+  // Best-effort — don't fail if nothing to delete
+  if (!deleteResult.ok) {
+    console.error(`push-domain-graph.mjs: Warning — cleanup query failed: ${deleteResult.reason}`);
+  }
+
   // Push nodes
   const nodesCypher = buildNodesCypher(graphData, neo4jConfig);
   if (nodesCypher) {
@@ -187,7 +203,7 @@ function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
     // Orphan check is best-effort
   }
 
-  console.error("push-domain-graph.mjs: Domain graph pushed to Neo4j via cypher-shell successfully.");
+  console.log("push-domain-graph.mjs: Domain graph pushed to Neo4j via cypher-shell successfully.");
   process.exit(0);
 }
 
@@ -263,6 +279,12 @@ async function pushDomainGraph(projectRoot) {
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" });
 
+    // Delete existing Knowledge nodes with source='code-analysis' to get a clean slate
+    // (prevents stale node accumulation across runs)
+    await session.run(
+      `MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n`
+    );
+
     // Push nodes with dual labels: Knowledge + specific type label
     if (graphData.nodes && Array.isArray(graphData.nodes)) {
       for (const node of graphData.nodes) {
@@ -294,14 +316,23 @@ async function pushDomainGraph(projectRoot) {
     }
 
     // Push edges with correct relationship type
+    // IMPLEMENTED_BY edges target :Codebase nodes (File, Function, Class), not :Knowledge nodes
     if (graphData.edges && Array.isArray(graphData.edges)) {
       for (const edge of graphData.edges) {
         const relType = edge.type.toUpperCase().replace(/-/g, "_");
-        await session.run(
-          `MATCH (a:Knowledge {id: $src}), (b:Knowledge {id: $tgt})
-           MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
-          { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
-        );
+        if (relType === "IMPLEMENTED_BY") {
+          await session.run(
+            `MATCH (a:Knowledge {id: $src}), (b:Codebase {id: $tgt})
+             MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
+            { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
+          );
+        } else {
+          await session.run(
+            `MATCH (a:Knowledge {id: $src}), (b:Knowledge {id: $tgt})
+             MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
+            { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
+          );
+        }
       }
     }
 
@@ -327,12 +358,20 @@ async function pushDomainGraph(projectRoot) {
       }
     }
 
-    console.error("push-domain-graph.mjs: Domain graph pushed to Neo4j successfully.");
+    console.log("push-domain-graph.mjs: Domain graph pushed to Neo4j successfully.");
     process.exit(0);
   } catch (err) {
     console.error(`push-domain-graph.mjs: Failed to push domain graph: ${err.message}`);
     // Driver failed — try cypher-shell as last resort
-    if (err.message.includes("neo4j-driver") || !driverAvailable) {
+    // Covers: import failures (err.message contains "neo4j-driver") AND
+    // connection failures that indicate Neo4j is unreachable (Connection refused, etc.)
+    if (err.message.includes("neo4j-driver") ||
+        err.message.includes("Connection refused") ||
+        err.message.includes("ECONNREFUSED") ||
+        err.message.includes("No routing servers available") ||
+        err.message.includes("ServiceUnavailable") ||
+        err.message.includes("Security error") ||
+        !driverAvailable) {
       console.error("push-domain-graph.mjs: Retrying via cypher-shell fallback...");
       pushDomainGraphViaCypherShell(neo4jConfig, graphData);
     }

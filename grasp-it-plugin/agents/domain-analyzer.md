@@ -135,8 +135,12 @@ Produce a JSON object with this exact structure:
     { "source": "operation:<name>", "target": "entity:<name>", "type": "uses_entity", "direction": "forward", "weight": 0.6 },
     // NOTE: Only emit implemented_by edges when HAS_CODEBASE_GRAPH=true
     // When HAS_CODEBASE_GRAPH=false, omit these edges (no codebase nodes to link against)
-    { "source": "feature:<name>", "target": "function:<name>", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 },
-    { "source": "operation:<name>", "target": "function:<name>", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 }
+    // IMPLEMENTED_BY targets MUST be actual :Codebase node IDs from the graph data provided.
+    // Look up the existing File/Function/Class node IDs in the context and use them verbatim.
+    // Do NOT use synthetic IDs like "function:<name>" — those do not match any real node.
+    // Real ID formats: "file:src/path/to/File.groovy", "function:src/path/to/File.groovy:methodName"
+    { "source": "feature:<name>", "target": "file:grails-app/services/SurchargeService.groovy", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 },
+    { "source": "operation:<name>", "target": "function:grails-app/services/SurchargeService.groovy:calculate-surcharge", "type": "implemented_by", "direction": "forward", "weight": 0.8, "status": "target|legacy|shared|planned", "confidence": 0.9 }
   ],
   "layers": [],
   "tour": []

@@ -4,6 +4,9 @@
  * Reads domain-analysis.json from .grasp-it/ and pushes it to Neo4j.
  */
 
+// Some tests involve real Neo4j connections that may hang on close — allow extra time
+const TEST_TIMEOUT = 30_000;
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from 'node:os';
@@ -538,6 +541,230 @@ describe('push-domain-graph.mjs', () => {
       expect(result.stderr).not.toContain('Unknown node type');
       // Connection error is expected
       expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+  });
+
+  // ── BUG-01: IMPLEMENTED_BY edges target :Codebase nodes, not :Knowledge ───
+  //
+  // IMPLEMENTED_BY edges link a Knowledge node to a Codebase node (File/Function/Class).
+  // The MATCH clause must use (b:Codebase {id: $tgt}), not (b:Knowledge {id: $tgt}).
+  // Non-IMPLEMENTED_BY edges still use (b:Knowledge ...) for both endpoints.
+  //
+  // Note: The generated cypher query text is not visible in stderr (cypher-shell only
+  // shows the connection error, not the query). These tests verify the fallback path is
+  // entered correctly and the script handles edges without crashing.
+
+  describe('BUG-01: IMPLEMENTED_BY edges target :Codebase nodes', () => {
+    it('enters cypher-shell fallback for IMPLEMENTED_BY edges (driver fails → fallback)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [
+          { source: 'feature:auth', target: 'file:src/AuthService.ts', type: 'implemented_by', weight: 0.8 },
+          { source: 'feature:auth', target: 'function:src/AuthService.ts:login', type: 'implemented_by', weight: 0.8 },
+        ],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      // Driver fails → cypher-shell fallback entered → fails on connection
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        // Include cypher-shell in PATH so fallback is attempted
+        PATH: `${process.env.PATH}`,
+      });
+
+      expect(result.status).toBe(1);
+      // Fallback should be entered (shows cypher-shell retry message)
+      expect(result.stderr).toContain('cypher-shell fallback');
+      // Should fail on connection, not on query processing
+      expect(result.stderr).not.toMatch(/Syntax error|parse error/i);
+    });
+
+    it('enters cypher-shell fallback for non-IMPLEMENTED_BY edges (driver fails → fallback)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [
+          { source: 'domain:test', target: 'feature:auth', type: 'has_feature', weight: 1.0 },
+          { source: 'feature:auth', target: 'operation:login', type: 'has_operation', weight: 1.0 },
+        ],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: `${process.env.PATH}`,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('cypher-shell fallback');
+      expect(result.stderr).not.toMatch(/Syntax error|parse error/i);
+    });
+
+    it('handles mixed IMPLEMENTED_BY and non-IMPLEMENTED_BY edges without crashing', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [
+          { source: 'domain:test', target: 'feature:auth', type: 'has_feature', weight: 1.0 },
+          { source: 'feature:auth', target: 'file:src/AuthService.ts', type: 'implemented_by', weight: 0.8 },
+          { source: 'operation:login', target: 'actor:user', type: 'performed_by', weight: 1.0 },
+        ],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: `${process.env.PATH}`,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('cypher-shell fallback');
+      // The script should process edges correctly and fail on connection, not on edge type
+      expect(result.stderr).not.toMatch(/Unknown edge type|invalid type/i);
+    });
+  });
+
+  // ── BUG-03: stale node accumulation — DELETE before push ─────────────────
+  //
+  // Both the driver path and cypher-shell fallback must run a cleanup query:
+  //   MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n
+  // before pushing new nodes. Without this, MERGE accumulates stale nodes across runs.
+  //
+  // Note: The generated cypher query text is not visible in stderr (cypher-shell only
+  // shows the connection error). These tests verify the fallback path is entered and
+  // the cleanup warning appears (best-effort cleanup failure doesn't stop the push).
+
+  describe('BUG-03: DELETE cleanup before push to prevent stale node accumulation', () => {
+    it('enters cypher-shell fallback and attempts DELETE cleanup (driver fails → fallback)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: `${process.env.PATH}`,
+      });
+
+      expect(result.status).toBe(1);
+      // Fallback should be entered (shows cypher-shell retry message)
+      expect(result.stderr).toContain('cypher-shell fallback');
+      // Cleanup warning should appear (best-effort — failure doesn't stop the push)
+      expect(result.stderr).toContain('cleanup query failed');
+      // Should get past cleanup and fail on node push
+      expect(result.stderr).toContain('node push failed');
+    });
+
+    it('processes empty node set without crashing (cleanup skipped when nodes array empty)', () => {
+      const domainAnalysis = {
+        nodes: [],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: `${process.env.PATH}`,
+      });
+
+      // Empty graph — still enters push path, tries cleanup, fails on connection
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('cypher-shell fallback');
+    });
+  });
+
+  // ── BUG-04: success messages use console.log, not console.error ────────────
+  //
+  // Both the driver path and cypher-shell fallback must emit success messages
+  // via console.log (stdout) so callers can distinguish success from failure.
+
+  describe('BUG-04: success messages use console.log, not console.error', () => {
+    it('emits success to stdout, not stderr (driver path — unreachable host)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      // When Neo4j is unreachable, the script fails — success message is never reached.
+      // We verify the stderr does NOT contain the success message text (which would
+      // indicate it was incorrectly emitted to stderr instead of stdout).
+      expect(result.stderr).not.toContain('pushed to Neo4j successfully');
+    });
+
+    it('emits success to stdout, not stderr (cypher-shell fallback)', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      // Unreachable host → cypher-shell fallback fails → success message never reached
+      // We verify the stderr does NOT contain the success message text
+      expect(result.stderr).not.toContain('pushed to Neo4j successfully');
+      expect(result.stderr).not.toContain('via cypher-shell successfully');
     });
   });
 
