@@ -36,6 +36,8 @@ const TYPE_TO_LABEL = {
   actor: "Actor",
   entity: "Entity",
   "business-rule": "BusinessRule",
+  risk: "Risk",
+  constraint: "Constraint",
 };
 
 const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
@@ -100,6 +102,11 @@ function buildNodesCypher(graphData, neo4jConfig) {
       };
       if (node.complexity) props.complexity = node.complexity;
       if (node.status) props.status = node.status;
+      if (node.severity) props.severity = node.severity;
+      if (node.probability) props.probability = node.probability;
+      if (node.mitigation) props.mitigation = node.mitigation;
+      if (node.condition) props.condition = node.condition;
+      if (node.invariant) props.invariant = node.invariant;
 
       const setParts = Object.entries(props)
         .map(([k, v]) => {
@@ -179,7 +186,7 @@ function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
   runCypherShell(neo4jConfig, updateCypher); // best-effort — don't fail if Project doesn't exist yet
 
   // Orphan check via cypher-shell
-  const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule) RETURN n.id AS id, n.type AS type;`;
+  const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule OR n:Risk OR n:Constraint) RETURN n.id AS id, n.type AS type;`;
   try {
     const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
     const uri = NEO4J_URI || "neo4j://localhost:7687";
@@ -305,6 +312,11 @@ async function pushDomainGraph(projectRoot) {
         };
         if (node.complexity) props.complexity = node.complexity;
         if (node.status) props.status = node.status;
+        if (node.severity) props.severity = node.severity;
+        if (node.probability) props.probability = node.probability;
+        if (node.mitigation) props.mitigation = node.mitigation;
+        if (node.condition) props.condition = node.condition;
+        if (node.invariant) props.invariant = node.invariant;
 
         // Dual-label pattern: MERGE Knowledge base label, then add secondary label
         // Using backtick escaping for the secondary label which may contain special chars
@@ -347,7 +359,7 @@ async function pushDomainGraph(projectRoot) {
     // Post-push validation: check no node has only Knowledge without secondary label
     const orphanCheck = await driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" }).run(
       `MATCH (n:Knowledge)
-       WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule)
+       WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule OR n:Risk OR n:Constraint)
        RETURN n.id AS id, n.type AS type`
     );
     const orphans = orphanCheck.records.map(r => ({ id: r.get("id"), type: r.get("type") }));

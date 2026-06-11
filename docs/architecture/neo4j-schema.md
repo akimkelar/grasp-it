@@ -133,6 +133,8 @@ The same node type can appear from either source; the `source` property tells th
 | `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `source`, `tags[]` |
 | `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `source`, `tags[]` |
 | `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `source`, `tags[]` |
+| `Risk` | Potential negative outcome: implementation hazard, calculation pitfall, external dependency failure | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]` |
+| `Constraint` | Technical invariant or access condition enforced by the codebase or stated by a specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]` |
 
 #### PO Interview Layer — populated by `/grasp-requirements`
 
@@ -141,22 +143,10 @@ All nodes in this layer carry `source: "interview"`.
 | Label | Description | Properties |
 |-------|-------------|------------|
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
-| `Constraint` | Technical invariant or access condition | `id`, `name`, `condition`, `invariant`, `scope[]`, `tags[]` |
 | `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]` |
 | `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]` |
-| `Risk` | Potential negative outcome — implementation hazard, business exposure, logic pitfall | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `tags[]` |
 
 **`Claim.confidence`:** `"tentative"` | `"agreed"`
-
-**`Risk.severity`:** `"low"` | `"medium"` | `"high"` | `"critical"`
-
-**`Risk.probability`:** `"low"` | `"medium"` | `"high"`
-
-`Risk` captures what the specialist warns about: edge cases in calculation logic (e.g. invoice
-rounding), customer-facing exposure from a wrong implementation choice, data-loss hazards during
-migration, or scenarios where a rule interacts unexpectedly with another.  These are distinct from
-`Constraint` (which states an invariant) and `BusinessRule` (which states a policy) — a risk
-describes what breaks or goes wrong when either is violated or overlooked.
 
 ### Project Singleton Node
 
@@ -327,10 +317,10 @@ graph TD
         E["Entity"]
         BR["BusinessRule\nsource: code-analysis|interview"]
         DC["Decision\nsource: interview"]
-        CN["Constraint\nsource: interview"]
         CO["Concept\nsource: interview"]
         CL["Claim\nconfidence: tentative|agreed\nsource: interview"]
-        RK["Risk\nseverity: low|medium|high|critical\nsource: interview"]
+        RK["Risk\nsource: code-analysis|interview"]
+        CN["Constraint\nsource: code-analysis|interview"]
 
         D -->|HAS_FEATURE| F
         F -->|HAS_OPERATION| O
@@ -355,6 +345,8 @@ graph TD
         CN -->|APPLIES_IN| F
         CN -->|APPLIES_IN| O
         BR -->|APPLIES_IN| CO
+        F -->|CONSTRAINED_BY| CN
+        O -->|APPLIES_IN| CN
     end
 
     subgraph codebase["Codebase subgraph (kind: codebase) — rebuilt per /grasp run"]
@@ -456,6 +448,15 @@ OPTIONAL MATCH (r)-[:MITIGATED_BY]->(m)
 RETURN r.name, r.severity, r.probability, r.summary,
        collect(DISTINCT {type: labels(m)[0], name: m.name}) AS mitigations
 ORDER BY r.severity DESC
+```
+
+### Risk and Constraint nodes from code analysis (not from interviews)
+
+```cypher
+MATCH (n) WHERE n.kind = "knowledge" AND n.source = "code-analysis"
+  AND (n:Risk OR n:Constraint)
+RETURN labels(n)[1] AS type, n.name, n.summary
+ORDER BY type, n.name
 ```
 
 ### Knowledge by source (code-derived vs interview-derived)

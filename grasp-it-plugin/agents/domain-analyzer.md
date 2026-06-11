@@ -36,6 +36,8 @@ Analyze the provided context and produce a domain graph JSON file.
 4. **Actor** — User roles or system agents (e.g., "Agency User", "Payment API", "Nightly Job", "Email Queue") — see Rule 10 for external system actors
 5. **BusinessRule** — Business policies and constraints (e.g., "Manager Approval Required")
 6. **Entity** — Named business objects (e.g., "Interview", "Candidate")
+7. **Risk** — Implementation hazard or business exposure visible in the code
+8. **Constraint** — Interface invariant or access condition enforced by the codebase
 
 ## Output Schema
 
@@ -121,6 +123,29 @@ Produce a JSON object with this exact structure:
       "name": "<Entity Name>",
       "summary": "<what this entity represents>",
       "tags": ["<relevant-tags>"]
+    },
+    {
+      "id": "risk:<kebab-case-name>",
+      "type": "risk",
+      "kind": "knowledge",
+      "source": "code-analysis",
+      "name": "<Risk Name>",
+      "summary": "<what can go wrong and in what context>",
+      "tags": ["<relevant-tags>"],
+      "severity": "low|medium|high|critical",
+      "probability": "low|medium|high",
+      "mitigation": "<known mitigation if visible in the code, or empty string>"
+    },
+    {
+      "id": "constraint:<kebab-case-name>",
+      "type": "constraint",
+      "kind": "knowledge",
+      "source": "code-analysis",
+      "name": "<Constraint Name>",
+      "summary": "<what invariant this enforces>",
+      "tags": ["<relevant-tags>"],
+      "condition": "<the condition that must hold>",
+      "invariant": "<what breaks if violated>"
     }
   ],
   "edges": [
@@ -133,6 +158,11 @@ Produce a JSON object with this exact structure:
     { "source": "business-rule:<name>", "target": "operation:<name>", "type": "governs", "direction": "forward", "weight": 0.8 },
     { "source": "feature:<name>", "target": "entity:<name>", "type": "uses_entity", "direction": "forward", "weight": 0.6 },
     { "source": "operation:<name>", "target": "entity:<name>", "type": "uses_entity", "direction": "forward", "weight": 0.6 },
+    { "source": "feature:<name>", "target": "risk:<name>", "type": "has_risk", "direction": "forward", "weight": 0.8 },
+    { "source": "operation:<name>", "target": "risk:<name>", "type": "has_risk", "direction": "forward", "weight": 0.8 },
+    { "source": "business-rule:<name>", "target": "risk:<name>", "type": "has_risk", "direction": "forward", "weight": 0.8 },
+    { "source": "feature:<name>", "target": "constraint:<name>", "type": "constrained_by", "direction": "forward", "weight": 0.7 },
+    { "source": "operation:<name>", "target": "constraint:<name>", "type": "applies_in", "direction": "forward", "weight": 0.7 },
     // NOTE: Only emit implemented_by edges when HAS_CODEBASE_GRAPH=true
     // When HAS_CODEBASE_GRAPH=false, omit these edges (no codebase nodes to link against)
     // IMPLEMENTED_BY targets MUST be actual :Codebase node IDs from the graph data provided.
@@ -166,6 +196,22 @@ Produce a JSON object with this exact structure:
 9. **Use `uses_entity` (not `USES`)**: The relationship type from Feature/Operation to Entity must be `uses_entity` per the Neo4j schema (maps to `:USES_ENTITY` in the database).
 10. **Capture external system actors**: APIs, queues, schedulers, and other services that the codebase calls out to — or that call in — are valid `actor` nodes. Name them after the external system (e.g., `actor:payment-api`, `actor:email-queue`, `actor:nightly-job`). Include them when they directly participate in a captured `operation` — i.e., when the codebase shows an outbound call or an inbound trigger that drives domain behavior.
 11. **Capture feature toggles and algorithm switches as BusinessRule nodes**: When you find a conditional branch controlled by a configuration property, feature flag, or environment variable, capture it as a `business-rule` with `status: "active"` and a `ruleText` that names the flag/property and describes what each branch does. Example: `"ruleText": "When FEATURE_X=true, uses algorithm A (faster, approximate). When false, uses algorithm B (slower, exact). Controlled per-company."`
+12. **Extract code-visible risks as Risk nodes**: Emit a `risk` node when you observe:
+    - Float or decimal arithmetic in a financial calculation without explicit rounding/precision control
+    - An outbound call to an external API or service with no retry, timeout, or error-recovery path visible in the code
+    - A complex conditional chain (3+ branches) involving time boundaries, date ranges, or fiscal periods where a missed case would silently produce a wrong result
+    - A data inheritance or propagation chain (e.g., A copies to B copies to C) where a mid-chain mutation could silently diverge from the source
+    - A missing validation on an input that feeds a calculation or persistence operation
+    Attach the risk to the most specific relevant Feature or Operation via `has_risk`. Set `severity` and `probability` conservatively (default `medium`/`medium` when uncertain). Set `mitigation` to the known mitigation code if one exists, or leave empty.
+    Do NOT emit risks for speculative "what if" scenarios — only emit when there is a concrete code signal.
+
+13. **Extract interface invariants and access conditions as Constraint nodes**: Emit a `constraint` node when you observe:
+    - An interface or abstract method contract that every implementor must fulfill (e.g., two paired collections that must always coexist)
+    - A validation guard at a service boundary that enforces a business invariant (e.g., "only process if status is X")
+    - An access control check that restricts which actors can reach an operation
+    - A regulatory or legal compliance requirement enforced in code (e.g., equal-pay dual-set pattern for AÜG)
+    Attach constraints to the Feature or Operation they guard via `constrained_by` or `applies_in`. Set `condition` to the boolean expression or English equivalent. Set `invariant` to what breaks if the condition is violated.
+    Do NOT emit constraints for ordinary null-checks or defensive programming patterns — only when the invariant has business significance.
 
 ## Node ID Rules (STRICT — violations will cause data corruption)
 
@@ -179,6 +225,8 @@ operation:classify-work-hours
 business-rule:no-base-requires-value
 entity:surcharge-set
 actor:agency-user
+risk:surcharge-rounding-in-invoice-total
+constraint:surcharge-aware-dual-set-required
 ```
 
 **WRONG IDs (will break the graph):**
@@ -186,6 +234,8 @@ actor:agency-user
 domain-surcharge-catalog         ← DASH separator (wrong)
 op-classify-work-hours           ← ABBREVIATED prefix (wrong)
 rule-no-base-requires-value      ← ABBREVIATED prefix (wrong)
+rk-surcharge-rounding ← ABBREVIATED prefix (wrong)
+cn-dual-set-required             ← ABBREVIATED prefix (wrong)
 ```
 
 **Prefixes must NEVER be abbreviated:**
@@ -193,6 +243,8 @@ rule-no-base-requires-value      ← ABBREVIATED prefix (wrong)
 - `business-rule` (NOT `rule`, `br`)
 - `entity` (NOT `ent`)
 - `actor` (NOT `act`)
+- `risk` (NOT `rk`)
+- `constraint` (NOT `cn`)
 
 ## Critical Field Name Constraints (STRICT)
 
@@ -254,6 +306,11 @@ graph TD
     F -->|USES_ENTITY| E
     BR["BusinessRule"] -->|GOVERNS| F
     BR -->|GOVERNS| O
+    F -->|HAS_RISK| RK["Risk"]
+    O -->|HAS_RISK| RK
+    BR -->|HAS_RISK| RK
+    F -->|CONSTRAINED_BY| CN["Constraint"]
+    O -->|APPLIES_IN| CN
     %% Only when HAS_CODEBASE_GRAPH=true:
     F -.->|IMPLEMENTED_BY| CODE["File/Function"]
     O -.->|IMPLEMENTED_BY| CODE

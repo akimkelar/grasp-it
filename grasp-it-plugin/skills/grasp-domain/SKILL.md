@@ -29,6 +29,8 @@ Node types produced by this skill:
 - `actor` — a user role or system agent
 - `business-rule` — a high-level business policy
 - `entity` — a named business object
+- `risk` — a code-visible implementation hazard or business exposure
+- `constraint` — a technical invariant or access condition enforced by the codebase
 
 ## Instructions
 
@@ -494,7 +496,17 @@ The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-
 
 ### Phase 7: Clean Up
 
-1. Clean up `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json`
+Only clean up intermediate files after confirmed successful push. If the push failed, preserve the files for retry.
+
+```bash
+if [ $PUSH_EXIT -eq 0 ]; then
+  rm -f "$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json" "$PROJECT_ROOT/.grasp-it/intermediate/domain-context.json"
+  echo "[grasp-domain] Intermediate files cleaned up."
+else
+  echo "[grasp-domain] Intermediate files preserved at: $PROJECT_ROOT/.grasp-it/intermediate/"
+  echo "[grasp-domain] Re-run /grasp-domain to retry the push, or inspect the file manually."
+fi
+```
 
 ### Phase 8: Visualization
 
