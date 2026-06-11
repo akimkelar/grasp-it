@@ -27,6 +27,12 @@ The interview never ends because the specialist says "that's everything." It end
 distinguishes specialist-described knowledge from code-mined knowledge (`source: "code-analysis"`)
 and enables queries that separate intent from implementation.
 
+**Neo4j label convention:** All knowledge nodes use a dual-label pattern: the base label `Knowledge`
+plus a secondary type label (e.g., `Knowledge:Feature`). When writing to Neo4j, always use
+`MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`SecondaryLabel\`` — do NOT merge on multiple
+labels simultaneously. For the full label convention, UPPER_SNAKE_CASE relationship types, and
+`toNeo4jLabel` mapping rules, see `docs/architecture/neo4j-schema.md`.
+
 Node types:
 
 - `feature` — a named product capability
@@ -40,20 +46,20 @@ Node types:
 - `claim` — a tentative or unresolved assertion made during the interview (`confidence: tentative | agreed`); use when something is stated but not yet settled — a `decision` is for resolved commitments, a `claim` is for things still subject to correction or confirmation
 - `risk` — a potential negative outcome: implementation hazard, business exposure, logic pitfall, edge-case in calculation logic, data-loss scenario, customer-facing harm
 
-Key relationship types:
+Key relationship types (stored in Neo4j as UPPER_SNAKE_CASE):
 
-- `sub_concept_of` — concept composition (part-of hierarchy)
-- `constrained_by` — a rule applies to a concept, decision, feature, or business rule
-- `decides` — a claim leads to a decision, which resolves a feature or business rule
-- `implements` — a decision fulfills a concept
-- `supports` — evidence chain between claims
-- `applies_in` — scope/context binding
-- `governs` — a business rule applies to a feature or operation
-- `uses_entity` — a feature or operation works with an entity
-- `performed_by` — an operation is performed by an actor
-- `restricted_for` — an operation is forbidden for an actor
-- `has_risk` — a feature, operation, business rule, or concept has an associated risk
-- `mitigated_by` — a risk is addressed by a decision or constraint
+- `SUB_CONCEPT_OF` — concept composition (part-of hierarchy)
+- `CONSTRAINED_BY` — a rule applies to a concept, decision, feature, or business rule
+- `DECIDES` — a claim leads to a decision, which resolves a feature or business rule
+- `IMPLEMENTS` — a decision fulfills a concept
+- `SUPPORTS` — evidence chain between claims
+- `APPLIES_IN` — scope/context binding
+- `GOVERNS` — a business rule applies to a feature or operation
+- `USES_ENTITY` — a feature or operation works with an entity
+- `PERFORMED_BY` — an operation is performed by an actor
+- `RESTRICTED_FOR` — an operation is forbidden for an actor
+- `HAS_RISK` — a feature, operation, business rule, or concept has an associated risk
+- `MITIGATED_BY` — a risk is addressed by a decision or constraint
 
 Node ID prefixes: `feature:`, `operation:`, `actor:`, `business-rule:`, `entity:`, `decision:`, `constraint:`, `concept:`, `claim:`, `risk:`.
 
@@ -153,6 +159,20 @@ Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find re
 - Surface them to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
 - If the existing nodes came from `source: "code-analysis"`, tell the specialist: *"I have some code-mined knowledge about this. I'll use it as a starting point and ask you to confirm, extend, or correct it."*
 
+**Also query for existing actors and domains** — well-known domain actors (e.g., `actor:pdl`, `actor:client`) may already exist in the graph from prior `/grasp-domain` or `/grasp-requirements` runs:
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge) WHERE n:Actor OR n:Domain RETURN n.id, n.name, labels(n)[1] AS type LIMIT 50"
+```
+Before creating any new actor node, check whether one with the same `id` already exists and reuse it instead of creating a duplicate.
+
+**Also check for existing domain nodes** — the feature may belong to an existing domain:
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:Domain) RETURN d.id, d.name LIMIT 20"
+```
+If the feature belongs to an existing domain, create a `HAS_FEATURE` edge from the domain to the new feature node.
+
+**Use `/grasp-search` to investigate existing concepts and knowledge** before creating new nodes — this skill provides deeper exploration of the current graph state and can help identify related nodes that simple `CONTAINS` queries might miss.
+
 ### 1c. State the contract
 
 Tell the specialist:
@@ -241,6 +261,16 @@ An **actor** is a user role, user type, organizational unit, external party, or 
 6. *"Are there any temporary or contextual permissions — roles that gain or lose access based on state?"*
 
 After this aspect, write `actor` nodes and `performed_by` / `restricted_for` edges.
+
+**For each uncertainty identified during the interview**, also create:
+- A `risk:` node — capture implementation hazards, business exposures, or scenarios where rules interact unexpectedly
+- A `constraint:` node — capture technical invariants or access conditions that must be verified or enforced
+
+Link them to the appropriate node using `HAS_RISK` (for risks) or `APPLIES_IN` (for constraints):
+- `feature -[:HAS_RISK]-> risk` and `constraint -[:APPLIES_IN]-> feature`
+- `concept -[:HAS_RISK]-> risk` and `constraint -[:APPLIES_IN]-> concept`
+- `claim -[:HAS_RISK]-> risk` and `constraint -[:APPLIES_IN]-> claim`
+- `decision -[:HAS_RISK]-> risk` and `constraint -[:APPLIES_IN]-> decision`
 
 ---
 
@@ -360,10 +390,15 @@ After each aspect is completed and you have paraphrase-checked the key findings 
 
 1. Update `pr-nodes.json` — append new nodes, update existing ones (by matching `id`)
 2. Update `pr-edges.json` — append new edges (deduplicate by `(source, target, type)`)
-3. Mark the aspect complete in `interview-context.json`
-4. Say briefly what was captured: *"I've recorded [N] concepts, [M] rules, and [K] risks from this section. Moving on to [next aspect]."*
+3. **Push the updated graph to Neo4j** by running `push-interview-graph.mjs`:
+   ```bash
+   node "$PLUGIN_ROOT/skills/grasp-requirements/push-interview-graph.mjs" "$PROJECT_ROOT"
+   ```
+   This ensures the specialist sees the graph grow incrementally and can correct misunderstandings before they propagate.
+4. Mark the aspect complete in `interview-context.json`
+5. Say briefly what was captured: *"I've recorded [N] concepts, [M] rules, and [K] risks from this section. Moving on to [next aspect]."*
 
-Do not batch graph writes to the end — capturing incrementally allows the specialist to see the graph grow and correct misunderstandings before they propagate.
+Do not batch graph writes to the end — capturing incrementally (including the Neo4j push) allows the specialist to see the graph grow and correct misunderstandings before they propagate.
 
 ---
 
@@ -487,10 +522,17 @@ Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed
 ### 5f. Validate and write
 
 1. Validate the merged graph against the schema
-2. Write the merged graph back to Neo4j:
+2. Write the merged graph back to Neo4j using `push-interview-graph.mjs`:
    ```bash
-   # Write nodes and edges to Neo4j via run-query.mjs
+   node "$PLUGIN_ROOT/skills/grasp-requirements/push-interview-graph.mjs" "$PROJECT_ROOT"
    ```
+
+   **Critical — dual-label MERGE pattern:** When writing nodes directly via Cypher, always use:
+   ```cypher
+   MERGE (n:Knowledge {id: $id}) SET n += $props SET n:`<SecondaryLabel>`
+   ```
+   Do NOT use `MERGE (n:Knowledge:Feature {id: ...})` — Neo4j's MERGE matches on ALL specified labels, which can create duplicate nodes when a `Knowledge`-only node already exists from prior `/grasp` runs. The secondary label must be added in a separate `SET n:\`<Label>\`` clause.
+
    If Neo4j write fails, report the error and **STOP**.
 
 ### 5g. Report conflicts to user

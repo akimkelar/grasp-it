@@ -60,7 +60,7 @@ NEO4J_PASSWORD=testneo4j \
 pnpm test
 ```
 
-Expected: 283+ tests pass. The 3 "no Neo4j config" failures are pre-existing and expected when env vars are set.
+Expected: 325+ tests pass. The "no Neo4j config" failures are pre-existing and expected when env vars are set. The compute-batches tests may show Object.Is equality errors on darwin/arm64 — these are pre-existing and unrelated to the build.
 
 ### 5. Commit and push
 
@@ -84,7 +84,7 @@ For the update to be visible to users, ensure the repo is properly set up in the
 # Full build + test + commit
 source ~/.nvm/nvm.sh && nvm use node
 pnpm --filter @grasp-it/core build && pnpm --filter @grasp-it/skill build
-NEO4J_URI=neo4j://127.0.0.1:7687 NEO4J_DATABASE=grasp NEO4J_USERNAME=neo4j NEO4J_PASSWORD=testneo4j pnpm test
+NEO4J_URI=neo4j://127.0.0.1:7687 NEO4J_DATABASE=grasp NEO4J_USERNAME=neo4j NEO4J_PASSWORD=testneo4j pnpm test  # 325+ tests
 git add -A && git commit -m "release: v0.2.0" && git push
 ```
 
