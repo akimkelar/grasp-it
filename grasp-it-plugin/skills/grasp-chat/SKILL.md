@@ -14,7 +14,7 @@ Answer questions about a codebase using the knowledge graph stored in Neo4j.
 
 The knowledge graph in Neo4j has these node types:
 - **Codebase nodes**: File, Function, Class, Module, Concept, Config, Service, Table, Endpoint, Pipeline, Schema, Resource
-- **Knowledge nodes**: Domain, Feature, Operation, Actor, BusinessRule, Entity, Decision, Constraint, Article, Topic, Claim, Source
+- **Knowledge nodes**: Domain, Feature, Operation, Actor, BusinessRule, Entity, Decision, Constraint, Risk, Concept, Article, Topic, Claim, Source
 
 Key relationships:
 - `(:Function)-[:CALLS]->(:Function)`

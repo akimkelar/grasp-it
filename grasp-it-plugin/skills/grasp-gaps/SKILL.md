@@ -164,6 +164,8 @@ The simplified Neo4j schema uses two label groups:
 - `Source` - source of information
 - `Decision` - decision record
 - `Constraint` - constraint or rule
+- `Risk` - implementation hazard or business exposure
+- `Concept` - specialist abstraction from dialogue
 
 **Key relationships**:
 
