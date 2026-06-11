@@ -107,6 +107,9 @@ function buildNodesCypher(graphData, neo4jConfig) {
       if (node.mitigation) props.mitigation = node.mitigation;
       if (node.condition) props.condition = node.condition;
       if (node.invariant) props.invariant = node.invariant;
+      if (node.sourceFiles) props.sourceFiles = node.sourceFiles;
+      props.generatedAt = node.generatedAt || new Date().toISOString();
+      if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
 
       const setParts = Object.entries(props)
         .map(([k, v]) => {
@@ -152,15 +155,6 @@ function buildEdgesCypher(graphData) {
  * Push domain graph using cypher-shell (fallback when driver is unavailable).
  */
 function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
-  // Delete existing Knowledge nodes with source='code-analysis' to get a clean slate
-  // (prevents stale node accumulation across runs)
-  const deleteCypher = `MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n;`;
-  const deleteResult = runCypherShell(neo4jConfig, deleteCypher);
-  // Best-effort — don't fail if nothing to delete
-  if (!deleteResult.ok) {
-    console.error(`push-domain-graph.mjs: Warning — cleanup query failed: ${deleteResult.reason}`);
-  }
-
   // Push nodes
   const nodesCypher = buildNodesCypher(graphData, neo4jConfig);
   if (nodesCypher) {
@@ -286,12 +280,6 @@ async function pushDomainGraph(projectRoot) {
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" });
 
-    // Delete existing Knowledge nodes with source='code-analysis' to get a clean slate
-    // (prevents stale node accumulation across runs)
-    await session.run(
-      `MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n`
-    );
-
     // Push nodes with dual labels: Knowledge + specific type label
     if (graphData.nodes && Array.isArray(graphData.nodes)) {
       for (const node of graphData.nodes) {
@@ -317,6 +305,8 @@ async function pushDomainGraph(projectRoot) {
         if (node.mitigation) props.mitigation = node.mitigation;
         if (node.condition) props.condition = node.condition;
         if (node.invariant) props.invariant = node.invariant;
+        props.generatedAt = node.generatedAt || new Date().toISOString();
+        if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
 
         // Dual-label pattern: MERGE Knowledge base label, then add secondary label
         // Using backtick escaping for the secondary label which may contain special chars

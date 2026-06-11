@@ -23,6 +23,9 @@ const makeDomainNode = (overrides: Partial<{
   lineRange: [number, number] | undefined;
   tags: string[];
   complexity: string;
+  sourceFiles: string[] | undefined;
+  generatedAt: string | undefined;
+  sourceCommit: string | undefined;
 }> = {}) => ({
   id: "domain:test",
   name: "Test Domain",
@@ -32,6 +35,9 @@ const makeDomainNode = (overrides: Partial<{
   lineRange: undefined,
   tags: [] as string[],
   complexity: "simple" as const,
+  sourceFiles: undefined,
+  generatedAt: undefined,
+  sourceCommit: undefined,
   ...overrides,
 });
 
@@ -241,5 +247,30 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(params.lineRange).toEqual([10, 50]);
     expect(params.tags).toEqual(["core", "ddd"]);
     expect(params.complexity).toBe("complex");
+  });
+
+  it("writes sourceFiles, generatedAt, and sourceCommit properties when provided", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const graph = makeDomainGraph([makeDomainNode({
+      id: "feature:auth",
+      name: "Auth Feature",
+      type: "feature",
+      summary: "Authentication feature",
+      sourceFiles: ["src/auth/login.ts", "src/auth/session.ts"],
+      generatedAt: "2026-06-11T00:00:00.000Z",
+      sourceCommit: "abc123def456",
+    })]);
+
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
+
+    const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
+    const params = createCall[1]!;
+
+    expect(params.sourceFiles).toEqual(["src/auth/login.ts", "src/auth/session.ts"]);
+    expect(params.generatedAt).toBe("2026-06-11T00:00:00.000Z");
+    expect(params.sourceCommit).toBe("abc123def456");
   });
 });

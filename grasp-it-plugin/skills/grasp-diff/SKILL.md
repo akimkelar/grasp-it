@@ -129,6 +129,177 @@ Before reading the graph, check whether it is stale relative to the current HEAD
 2. If on a feature branch: `git diff main...HEAD --name-only` (or the base branch)
 3. If the user specifies a PR number: get the diff from that PR
 
+**Detect deleted files:** Run the following to identify files removed from the codebase:
+```bash
+# Get deleted files (files that existed in the base branch but not in HEAD)
+DELETED_FILES=$(git diff --name-only --diff-filter=D main...HEAD 2>/dev/null || git diff --name-only --diff-filter=D HEAD~1..HEAD 2>/dev/null || echo "")
+```
+If `DELETED_FILES` is non-empty, these files must be removed from the knowledge graph. Proceed to Phase 2.5 to handle deleted files BEFORE analyzing changes.
+
+### Phase 2.5: Intelligent deletion of knowledge nodes for removed files
+
+For each deleted file, analyze the knowledge graph to determine which nodes should be deleted, revised, or flagged for review. This keeps the graph accurate even when a full rebuild (`/grasp --full`) is not run.
+
+#### Understanding `sourceFiles` vs `IMPLEMENTED_BY`
+
+Before proceeding, understand the two provenance mechanisms in the knowledge graph:
+
+- **`sourceFiles`**: Tracks *provenance* — which files were analyzed to derive this knowledge. A knowledge node with `sourceFiles: ['file:A.ts', 'file:B.ts']` means "this knowledge was extracted from analyzing both A.ts and B.ts." Deleting a file removes one source of evidence, but the knowledge may still be valid if other sources exist.
+
+- **`IMPLEMENTED_BY`**: Tracks *semantic implementation* — which code implements this feature. A knowledge node with `IMPLEMENTED_BY` edges to files means "these files contain the actual code for this feature." If all implementing files are deleted, the knowledge node may no longer have any live evidence and should be reconsidered.
+
+Both are needed for accurate deletion decisions. A node may have `sourceFiles` pointing to a deleted file but still be valid if it has `IMPLEMENTED_BY` edges to surviving files — or vice versa.
+
+#### Step 1: Find affected knowledge nodes via two approaches
+
+For each deleted file path `<relative-path>`, query both:
+
+**Approach A — via `sourceFiles` array:**
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge) WHERE 'file:<relative-path>' IN n.sourceFiles RETURN n.id AS id, n.type AS type, n.name AS name"
+```
+
+**Approach B — via `IMPLEMENTED_BY` edge:**
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge)-[:IMPLEMENTED_BY]->(f:File {filePath: '<relative-path>'}) RETURN n.id AS id, n.type AS type, n.name AS name"
+```
+
+Combine results from both queries, deduplicating by node ID.
+
+#### Step 2: For each affected node, query edge state
+
+For each knowledge node `<node-id>` found in Step 1, query its connectivity:
+
+**Check IMPLEMENTED_BY edges:**
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge {id: '<node-id>'})-[r:IMPLEMENTED_BY]->(f:File) RETURN f.filePath AS filePath"
+```
+
+**Check `sourceFiles` array:**
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge {id: '<node-id>'}) RETURN n.sourceFiles AS sourceFiles"
+```
+
+**Check total edge degree (all relationship types):**
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge {id: '<node-id>'}) RETURN size((n)--()) AS totalDegree"
+```
+
+#### Step 3: Determine action based on node type and connectivity
+
+Use the queries above to classify each node:
+
+| Node Type | Condition | Action |
+|-----------|-----------|--------|
+| `domain` | Any | REVIEW — high-level, may span multiple files, connections matter |
+| `feature` | All `IMPLEMENTED_BY` targets are deleted files | REVIEW — may span multiple files |
+| `operation` | All `IMPLEMENTED_BY` targets are deleted files | REVIEW — may span multiple files |
+| `business-rule` | All `IMPLEMENTED_BY` targets are deleted files | REVIEW — often derived from multiple sources |
+| `entity` | Only `IMPLEMENTED_BY` edges to deleted file(s), no other edges | DELETE |
+| `entity` | Has edges to other surviving files | REVIEW — knowledge may still be valid |
+| `risk` | `sourceFiles` only contains deleted file AND no surviving `IMPLEMENTED_BY` | DELETE |
+| `constraint` | Only `IMPLEMENTED_BY` edges to deleted file(s), no other edges | DELETE |
+| `constraint` | Has edges to other surviving files | REVIEW — may still be valid |
+
+#### Step 4: Execute the determined action
+
+**DELETE action:**
+```bash
+# Remove from layer nodeIds arrays first
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (l) WHERE l.nodeIds IS NOT NULL AND '<node-id>' IN l.nodeIds SET l.nodeIds = [x IN l.nodeIds WHERE x <> '<node-id>']"
+
+# Then delete the node
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge {id: '<node-id>'}) DETACH DELETE n"
+```
+
+**REVIEW action — flag for human review:**
+Report the node as needing manual review. Include:
+- Node id, type, name
+- Which deleted file triggered this
+- Current `IMPLEMENTED_BY` targets (list deleted vs surviving)
+- Current `sourceFiles` array
+- Total edge degree
+
+**REVISE action — update `sourceFiles`:**
+```bash
+# Remove deleted file from sourceFiles array
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n:Knowledge {id: '<node-id>'}) SET n.sourceFiles = [f IN n.sourceFiles WHERE f <> 'file:<relative-path>']"
+```
+
+#### Step 5: Also delete the file node and its derived nodes
+
+The knowledge-node cleanup above handles `Knowledge` nodes. Now clean up file-derived nodes:
+
+```bash
+# Delete file node directly
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n {id: 'file:<relative-path>'}) DETACH DELETE n"
+
+# Delete all nodes with matching filePath (functions, classes defined in the file)
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (n) WHERE n.filePath = '<relative-path>' DETACH DELETE n"
+
+# Remove deleted file node IDs from layer nodeIds arrays
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+  "MATCH (l) WHERE l.nodeIds IS NOT NULL AND 'file:<relative-path>' IN l.nodeIds SET l.nodeIds = [x IN l.nodeIds WHERE x <> 'file:<relative-path>']"
+```
+
+#### Example scenarios
+
+**Scenario A — Domain node with many connections, file deleted:**
+```cypher
+# Find domain nodes affected by a deleted file
+MATCH (n:Knowledge {type: 'domain'})-[r:IMPLEMENTED_BY]->(f:File {filePath: 'services/AuthService.ts'})
+RETURN n.id, n.name, size((n)--()) AS totalDegree
+
+# Result: totalDegree=15 → REVIEW (high connectivity means it's a central concept)
+```
+
+**Scenario B — Entity node with only one IMPLEMENTED_BY to deleted file:**
+```cypher
+# Check if ALL IMPLEMENTED_BY targets are deleted files
+MATCH (n:Knowledge {id: 'entity:UserProfile'})-[r:IMPLEMENTED_BY]->(f:File)
+RETURN f.filePath, 'services/AuthService.ts' = f.filePath AS isDeleted
+
+# All return true → DELETE
+```
+
+**Scenario C — Risk node with sourceFiles only containing deleted file:**
+```cypher
+# Check sourceFiles only
+MATCH (n:Knowledge {id: 'risk:data-breach'})
+RETURN n.sourceFiles
+
+# Result: ['file:services/AuthService.ts'] → DELETE (no surviving evidence)
+
+# vs a risk with multiple sources:
+MATCH (n:Knowledge {id: 'risk:sql-injection'})
+RETURN n.sourceFiles
+
+# Result: ['file:services/AuthService.ts', 'file:db/queries.ts'] → REVIEW
+# (AuthService deleted but queries.ts still exists)
+```
+
+**Scenario D — Feature node with mixed IMPLEMENTED_BY targets:**
+```cypher
+# Check all IMPLEMENTED_BY targets
+MATCH (n:Knowledge {id: 'feature:login'})-[r:IMPLEMENTED_BY]->(f:File)
+RETURN f.filePath
+
+# Results: ['services/AuthService.ts', 'services/TokenService.ts']
+# AuthService deleted, TokenService still exists → REVIEW (feature still partially implemented)
+```
+
+**Note:** This intelligent cleanup replaces the simple delete commands. Running `/grasp-diff` on a branch with deleted files will accurately remove stale knowledge nodes while preserving valid cross-file knowledge, preventing both orphaned entries and accidental deletion of important domain concepts.
+
 ### Phase 3: Read project metadata only
 
 Use Grep or Read with a line limit to extract just the `"project"` section for context.

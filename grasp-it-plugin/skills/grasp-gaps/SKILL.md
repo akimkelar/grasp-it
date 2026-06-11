@@ -363,7 +363,7 @@ Recommended metadata values:
 - `generatedAt`
 - `status`
 - `sourceCommit` when available
-- `evidencePaths`
+- `sourceFiles`
 - `kind` for node type filtering
 
 Generic pattern:
@@ -379,7 +379,7 @@ SET n.name = 'Human Name',
     n.generatedAt = generatedAt,
     n.sourceCommit = sourceCommit,
     n.status = 'active',
-    n.evidencePaths = [
+    n.sourceFiles = [
       'path/one',
       'path/two'
     ]

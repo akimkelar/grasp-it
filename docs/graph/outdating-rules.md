@@ -39,6 +39,32 @@ Purpose: enables per-file staleness detection for knowledge nodes. A `Feature` o
 
 See Task 21 for implementation.
 
+### Per-node `sourceCommit` on knowledge nodes
+
+Every knowledge node produced by code analysis carries a `sourceCommit` property — the git commit hash at which the node was derived. This enables direct staleness detection without traversing `IMPLEMENTED_BY` edges: a node whose `sourceCommit` is behind current HEAD is stale.
+
+**Staleness detection via `sourceCommit`:**
+
+```cypher
+// Knowledge nodes whose sourceCommit is behind HEAD (stale by commit)
+MATCH (k:Knowledge)
+WHERE k.sourceCommit IS NOT NULL
+  AND k.sourceCommit <> $currentCommit
+RETURN labels(k)[0] AS type, k.id, k.name, k.sourceCommit, k.generatedAt
+ORDER BY k.generatedAt
+```
+
+This query surfaces all knowledge nodes that were derived from an older commit. Combine with `generatedAt` to prioritize re-analysis: nodes with the oldest `generatedAt` that are also behind HEAD should be re-derived first.
+
+**Comparison with `File.analyzedAtCommit` approach:**
+
+| Approach | Checks | Answers |
+|----------|--------|---------|
+| `File.analyzedAtCommit` | A file has been re-analyzed since last graph build | "Has the implementation of this feature's code changed?" |
+| `sourceCommit` on knowledge node | The knowledge node itself was derived at an older commit | "Is this piece of knowledge still valid at current HEAD?" |
+
+Both signals are complementary. `sourceCommit` is the primary mechanism for per-node staleness; `File.analyzedAtCommit` is a secondary signal that confirms whether the underlying code has been re-analyzed.
+
 ### `Project` singleton node
 
 A single `(p:Project {id: "project:singleton", kind: "project"})` node holds project-level metadata. It is excluded from the codebase wipe (`WHERE n.kind = "codebase"`) and therefore persists across all `/grasp` runs. In multi-user scenarios, this is the shared authoritative source of the last-analyzed commit hash.
@@ -78,6 +104,7 @@ Knowledge nodes (`kind: "knowledge"`) persist across `/grasp` runs and can becom
 | `BusinessRule` with no `GOVERNS` relationships | Rule defined but not applied to any feature/operation |
 | `Decision` with `status: "deprecated"` | Decision is obsolete — should be reviewed |
 | `IMPLEMENTED_BY` edge where `File.analyzedAtCommit != currentCommit` | Knowledge derived from a file that has since changed — review required |
+| Knowledge node with `sourceCommit != currentCommit` | Node was derived from code at an older commit — re-derive to update |
 
 ### Implementation Status Staleness
 
@@ -91,6 +118,49 @@ Knowledge nodes (`kind: "knowledge"`) persist across `/grasp` runs and can becom
 | `planned` | Designed but not yet implemented |
 
 A `legacy` status on an `IMPLEMENTED_BY` edge means the knowledge node's understanding of the codebase is out of date — the actual code has moved on.
+
+## Refresh Loop
+
+Recommended refresh policy:
+
+1. identify stale nodes (prioritize by `generatedAt` — oldest first)
+2. resolve the affected subgraph around those nodes
+3. re-run extraction only for the impacted area
+4. replace or update stale nodes
+5. set refreshed nodes back to `active`
+6. update `generatedAt` to current timestamp and `sourceCommit` to HEAD
+7. rebuild `sourceFiles`
+8. recalculate migration parity where relevant
+
+## Knowledge Node Provenance via `sourceFiles`
+
+### Overview
+
+Knowledge nodes carry a `sourceFiles: string[]` property that tracks which files were analyzed to derive the knowledge. This provides **provenance** — the ability to trace a knowledge node back to the specific files that informed its creation.
+
+### Which nodes should have `sourceFiles`
+
+The property is populated on these knowledge node types when `source: "code_analysis"`:
+
+- `Domain`
+- `Feature`
+- `Operation`
+- `BusinessRule`
+- `Entity`
+- `Risk`
+- `Constraint`
+
+Nodes with `source: "user_input"` or `source: "llm_generated"` typically do not have `sourceFiles` since they are derived from PO interviews or LLM inference rather than direct code analysis.
+
+### What it tracks
+
+`sourceFiles` is an array of file paths (relative to the project root) that were used as context when the knowledge was extracted. For example:
+- A `Feature` node representing "user authentication" might have `sourceFiles: ["src/auth/login.ts", "src/auth/session.ts"]`
+- An `Operation` node for "calculateTotal" might have `sourceFiles: ["src/pricing/calculator.ts"]`
+
+### When to populate
+
+During domain analysis, the agent should record which files it read or analyzed when creating each knowledge node. This happens at the time of node creation — the `sourceFiles` array is set based on the file analysis context, not retroactively.
 
 ## Detecting Staleness
 
@@ -133,6 +203,38 @@ RETURN labels(k)[0] AS type, k.id, k.name, f.filePath, f.analyzedAtCommit
 ORDER BY f.analyzedAtCommit
 ```
 
+### Knowledge nodes behind current HEAD (via per-node `sourceCommit`)
+
+```cypher
+MATCH (k:Knowledge)
+WHERE k.sourceCommit IS NOT NULL
+  AND k.sourceCommit <> $currentCommit
+RETURN labels(k)[0] AS type, k.id, k.name, k.sourceCommit, k.generatedAt
+ORDER BY k.generatedAt
+```
+
+This finds knowledge nodes whose `sourceCommit` does not match the current HEAD, indicating the code they were derived from has changed. Older nodes (by `generatedAt`) should be re-derived first.
+
+### Knowledge nodes derived from a deleted file (via `sourceFiles`)
+
+```cypher
+MATCH (k:Knowledge)
+WHERE k.source = "code_analysis"
+  AND k.sourceFiles IS NOT NULL
+  AND ANY(filePath IN k.sourceFiles WHERE NOT fileExists(filePath))
+RETURN labels(k)[0] AS type, k.id, k.name, k.sourceFiles
+```
+
+This query uses the `apoc.file.exists()` function (available in Neo4j APOC) to check whether each file in `sourceFiles` still exists on disk.
+
+### Knowledge nodes with `IMPLEMENTED_BY` to a deleted file
+
+```cypher
+MATCH (k)-[:IMPLEMENTED_BY]->(f:File)
+WHERE NOT fileExists(f.filePath)
+RETURN labels(k)[0] AS type, k.id, k.name, f.filePath
+```
+
 ### Graph vs. local commit sync check
 
 ```cypher
@@ -161,6 +263,9 @@ In single-user setups, both checks often agree. In multi-user setups, they can d
 | Actor/BusinessRule/Entity has no relationships | Review with PO — node may be incorrect or deprecated |
 | Decision is `deprecated` | Archive or delete; review if any constraints depend on it |
 | `IMPLEMENTED_BY` edge to file with stale `analyzedAtCommit` | Re-run `/grasp` to re-analyze the file; re-run `/grasp-domain` to refresh knowledge links |
+| Knowledge node with stale `sourceCommit` | Re-run the originating skill (`/grasp-domain` for code-analysis nodes, `/grasp-requirements` for interview nodes) to re-derive the node at current HEAD; update `generatedAt` and `sourceCommit` |
+| Knowledge node has `sourceFiles` referencing deleted files | Review the node — if the underlying concept no longer exists, archive or delete the node; if files were renamed, update `sourceFiles` and re-run analysis |
+| `IMPLEMENTED_BY` edge to deleted file | Re-run `/grasp-domain` to re-derive knowledge from remaining code; orphan check may reveal nodes that need manual cleanup |
 
 ## Visibility
 
@@ -241,3 +346,22 @@ When merging subdomain graphs, there is no check to verify all subdomain graphs 
 **Task:** 28
 
 `/grasp-diff`, `/grasp-domain`, and `/grasp-search` do not check whether the graph is stale before running. A user can query a stale graph without any warning.
+
+### Gap 7 — `sourceFiles` not kept in sync after file renames or moves
+
+When a file is renamed or moved, knowledge nodes that reference it in `sourceFiles` become stale but are not automatically updated. Unlike `IMPLEMENTED_BY` edges (which are rebuilt during incremental `/grasp` runs), `sourceFiles` is not recalculated unless the node is explicitly re-derived.
+
+**Two complementary signals must be used together for comprehensive deletion detection:**
+
+1. **`sourceFiles` array** — provenance: "which files were analyzed to derive this knowledge"
+2. **`IMPLEMENTED_BY` edges** — semantic: "which code implements this feature"
+
+When a file is deleted:
+- Knowledge nodes with that file in `sourceFiles` may represent knowledge that is now orphaned or needs re-derivation
+- Knowledge nodes with `IMPLEMENTED_BY` edges to that file represent features that lost their implementation
+
+Both approaches are needed because `sourceFiles` and `IMPLEMENTED_BY` can diverge:
+- A `Feature` may have `sourceFiles: ["src/auth/old.ts"]` but `IMPLEMENTED_BY` to a different file that still exists (the feature was re-implemented elsewhere)
+- A `Feature` may have `IMPLEMENTED_BY` to a deleted file but no `sourceFiles` (it was created from a PO interview, not code analysis)
+
+The resolution workflow should check both: first identify nodes via `sourceFiles`, then via `IMPLEMENTED_BY` to deleted files, then merge the results and review each for archive or re-derivation.

@@ -358,6 +358,30 @@ describe("sanitizeGraph", () => {
     expect((result as any).nodes).toEqual([null, "garbage", 42]);
     expect((result as any).edges).toEqual([null]);
   });
+
+  it("converts sourceFiles === null to undefined", () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).sourceFiles = null;
+
+    const result = sanitizeGraph(graph as any);
+    expect((result as any).nodes[0].sourceFiles).toBeUndefined();
+  });
+
+  it("converts generatedAt === null to undefined", () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).generatedAt = null;
+
+    const result = sanitizeGraph(graph as any);
+    expect((result as any).nodes[0].generatedAt).toBeUndefined();
+  });
+
+  it("converts sourceCommit === null to undefined", () => {
+    const graph = structuredClone(validGraph);
+    (graph.nodes[0] as any).sourceCommit = null;
+
+    const result = sanitizeGraph(graph as any);
+    expect((result as any).nodes[0].sourceCommit).toBeUndefined();
+  });
 });
 
 describe("autoFixGraph", () => {

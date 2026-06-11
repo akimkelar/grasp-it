@@ -144,6 +144,9 @@ function nodeToProperties(node: GraphNode): Record<string, unknown> {
     severity: node.severity ?? null,
     probability: node.probability ?? null,
     mitigation: node.mitigation ?? null,
+    generatedAt: node.generatedAt ?? null,
+    sourceCommit: node.sourceCommit ?? null,
+    ...(kind === "knowledge" ? { sourceFiles: node.sourceFiles ?? null } : {}),
   };
 }
 
@@ -355,6 +358,9 @@ export async function loadGraphFromNeo4j(
       severity: n["severity"] as GraphNode["severity"],
       probability: n["probability"] as GraphNode["probability"],
       mitigation: n["mitigation"] as string | undefined,
+      generatedAt: n["generatedAt"] as string | undefined,
+      sourceCommit: n["sourceCommit"] as string | undefined,
+      ...(n["kind"] === "knowledge" ? { sourceFiles: n["sourceFiles"] ? JSON.parse(n["sourceFiles"] as string) : undefined } : {}),
     });
   }
 
@@ -511,7 +517,8 @@ export async function loadDomainGraphFromNeo4j(
      RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS type,
             d.source AS source, d.sourceFile AS sourceFile, d.filePath AS filePath,
             d.lineRange AS lineRange, d.tags AS tags, d.complexity AS complexity,
-            labels(d) AS labels`,
+            d.sourceFiles AS sourceFiles, d.generatedAt AS generatedAt,
+            d.sourceCommit AS sourceCommit, labels(d) AS labels`,
     { projectId },
   );
 
@@ -533,6 +540,9 @@ export async function loadDomainGraphFromNeo4j(
       lineRange: rec["lineRange"] as [number, number] | undefined,
       tags: (rec["tags"] as string[]) ?? [],
       complexity: (rec["complexity"] as GraphNode["complexity"]) ?? "simple",
+      sourceFiles: (rec["sourceFiles"] as string[] | undefined) ?? undefined,
+      generatedAt: rec["generatedAt"] as string | undefined,
+      sourceCommit: rec["sourceCommit"] as string | undefined,
     });
   }
 
@@ -597,7 +607,10 @@ export async function saveDomainGraphToNeo4j(
          lineRange: $lineRange,
          tags: $tags,
          complexity: $complexity,
-         kind: "knowledge"
+         kind: "knowledge",
+         sourceFiles: $sourceFiles,
+         generatedAt: $generatedAt,
+         sourceCommit: $sourceCommit
        })
        CREATE (d)-[:PART_OF]->(p)`,
       {
@@ -611,6 +624,9 @@ export async function saveDomainGraphToNeo4j(
         lineRange: node.lineRange ?? null,
         tags: node.tags ?? [],
         complexity: node.complexity ?? "simple",
+        sourceFiles: node.sourceFiles ?? null,
+        generatedAt: node.generatedAt ?? null,
+        sourceCommit: node.sourceCommit ?? null,
       },
     );
   }

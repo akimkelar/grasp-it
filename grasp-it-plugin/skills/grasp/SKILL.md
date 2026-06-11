@@ -569,6 +569,9 @@ Determine whether to run a full analysis or incremental update.
    | `--review` flag + existing graph + unchanged commit hash | Skip to Phase 6 (review-only — reuse existing assembled graph) |
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
+   | `--files` scope + existing graph | Targeted analysis of the listed files only. Uses the full analysis path (Phases 1–7), but only analyzes the specified files. The `push-codebase-graph.mjs` script uses `MERGE` (not delete-then-insert) so existing nodes outside the `--files` scope are preserved. |
+
+   **Note on `--files` scope:** The `--files` option overrides file discovery to analyze only the listed paths. It does NOT change the decision-logic branch — a `--files` run with an existing graph still follows the table above. However, when `--files` is combined with an existing graph, the analysis is treated as a targeted update of only the listed files; the `push-codebase-graph.mjs` script updates nodes in place via `MERGE` rather than deleting all Codebase nodes first.
 
    **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
 
@@ -990,7 +993,11 @@ Assemble the full KnowledgeGraph JSON object:
 
 2. Write the assembled graph to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`.
 
-3. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
+3. **Node metadata:** Ensure every node in the assembled graph carries:
+   - `generatedAt` — ISO 8601 timestamp of when the node was produced (current datetime at graph assembly time)
+   - `sourceCommit` — git commit hash from Phase 0 (only for nodes derived from code analysis; knowledge nodes may omit)
+
+4. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
 
 ---
 
@@ -1160,7 +1167,12 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    ```
    
    The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates `RELATES` edges, and updates the `Project` singleton with `gitCommitHash`, `lastAnalyzedAt`, `version`, and `analyzedFiles`.
-   
+
+   **Node update strategy:** The script uses `MERGE` on node IDs to update existing nodes in place — it does NOT delete all Codebase nodes before inserting. This means:
+   - Nodes in the assembled graph are created or updated (upsert behavior)
+   - Nodes NOT in the assembled graph are preserved (not deleted)
+   - This supports scoped analyses (e.g., `--files` flag) that should not destroy the pre-existing graph
+
    - Exit code 0 → Neo4j write succeeded
    - Exit code 1 → Neo4j write failed — the skill exits with an error
    

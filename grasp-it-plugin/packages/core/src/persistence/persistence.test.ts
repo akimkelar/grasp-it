@@ -1141,4 +1141,85 @@ describe("loadGraphFromNeo4j", () => {
     expect(result!.layers).toEqual([]);
     expect(result!.tour).toEqual([]);
   });
+
+  it("loads sourceFiles, generatedAt, sourceCommit from Neo4j", async () => {
+    const mockSession = {
+      run: vi.fn(async (query: string) => {
+        if (query.includes("MATCH (p:Project")) {
+          return {
+            records: [
+              {
+                name: "test",
+                languages: ["typescript"],
+                frameworks: [],
+                description: "test",
+                analyzedAt: "2026-01-01T00:00:00.000Z",
+                gitCommitHash: "abc123",
+                version: "1.0.0",
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (n:Codebase)")) {
+          // Return nodes in the exact format loadGraphFromNeo4j expects: each record has an "n" key
+          // with all node properties as Neo4j would return them after CREATE
+          return {
+            records: [
+              {
+                n: {
+                  id: "node-codebase",
+                  name: "index.ts",
+                  type: "file",
+                  summary: "Entry point",
+                  tags: [],
+                  complexity: "simple",
+                  kind: "codebase",
+                  generatedAt: "2026-06-01T00:00:00.000Z",
+                  sourceCommit: "abc123",
+                },
+              },
+              {
+                n: {
+                  id: "node-knowledge",
+                  name: "Test Domain",
+                  type: "domain",
+                  summary: "A domain",
+                  tags: [],
+                  complexity: "moderate",
+                  kind: "knowledge",
+                  sourceFiles: JSON.stringify(["src/index.ts", "src/util.ts"]),
+                  generatedAt: "2026-06-01T00:00:00.000Z",
+                  sourceCommit: "def456",
+                },
+              },
+            ],
+          };
+        }
+        if (query.includes("MATCH (source:Codebase)-[r:RELATES]")) {
+          return { records: [] };
+        }
+        if (query.includes("MATCH (l:Layer)")) {
+          return { records: [] };
+        }
+        if (query.includes("MATCH (t:TourStep)")) {
+          return { records: [] };
+        }
+        return { records: [] };
+      }),
+    };
+
+    const result = await loadGraphFromNeo4j(mockSession as never, "project:singleton");
+
+    expect(result).not.toBeNull();
+    const codebaseNode = result!.nodes.find((n) => n.id === "node-codebase");
+    expect(codebaseNode).toBeDefined();
+    expect((codebaseNode as any).generatedAt).toBe("2026-06-01T00:00:00.000Z");
+    expect((codebaseNode as any).sourceCommit).toBe("abc123");
+
+    const knowledgeNode = result!.nodes.find((n) => n.id === "node-knowledge");
+    expect(knowledgeNode).toBeDefined();
+    expect((knowledgeNode as any).sourceFiles).toEqual(["src/index.ts", "src/util.ts"]);
+    expect((knowledgeNode as any).generatedAt).toBe("2026-06-01T00:00:00.000Z");
+    expect((knowledgeNode as any).sourceCommit).toBe("def456");
+  });
 });

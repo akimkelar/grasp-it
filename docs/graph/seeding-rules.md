@@ -48,6 +48,8 @@ A well-seeded graph from a new codebase meets these criteria:
 | Actors identified | 0 | 2+ (if roles exist in codebase) |
 | BusinessRules surfaced | 0 | 1+ (from guard patterns) |
 | `IMPLEMENTED_BY` edges | all features | all features with confidence >= 0.6 |
+| Knowledge nodes with `generatedAt` | all | all with valid ISO timestamps |
+| Knowledge nodes with `sourceCommit` (code-analysis only) | all | all with valid git hashes |
 
 ## What Makes Seeding Fail
 
@@ -74,6 +76,38 @@ If the LLM produces summaries like "This is a function that processes data", the
 When the mapping between business concept and code is uncertain, confidence is low.
 
 **Mitigation:** More entry point signals (URL paths, handler names) help the LLM make confident mappings. Ensure file names and function names reflect business intent.
+
+## Identity and Metadata Rules
+
+### Stable identity
+
+- seed and update business nodes by stable `key`
+- prefer `MERGE` by `key` for graph updates
+- derive keys from meaning, not from file layout alone
+
+### Common metadata
+
+The following fields should be treated as the default metadata set for knowledge graph nodes:
+
+- `key`
+- `name`
+- `summary`
+- `generatedAt` (ISO 8601 timestamp — when the node was created or last refreshed)
+- `sourceCommit` (git hash — commit at which this node was derived from code; omit for interview-derived nodes)
+- `status`
+- `sourceFiles`
+
+### Source priority
+
+1. code, especially active and legacy production code
+2. Jira, Confluence, ADRs, and curated migration notes
+3. local docs and investigations
+
+When sources conflict, prefer active code unless:
+
+- the code is clearly dead or superseded
+- a target path is newer and explicitly chosen by decision evidence
+- parity is marked as `intentional-difference`
 
 ## Seeding and Language Support
 

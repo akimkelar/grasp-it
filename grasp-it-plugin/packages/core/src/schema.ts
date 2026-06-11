@@ -175,6 +175,9 @@ export function sanitizeGraph(data: Record<string, unknown>): Record<string, unk
       if (n.filePath === null) delete n.filePath;
       if (n.lineRange === null) delete n.lineRange;
       if (n.languageNotes === null) delete n.languageNotes;
+      if (n.sourceFiles === null) delete n.sourceFiles;
+      if (n.generatedAt === null) delete n.generatedAt;
+      if (n.sourceCommit === null) delete n.sourceCommit;
       // Lowercase enum-like strings
       if (typeof n.type === "string") n.type = n.type.toLowerCase();
       if (typeof n.complexity === "string") n.complexity = n.complexity.toLowerCase();
@@ -413,6 +416,9 @@ export const GraphNodeSchema = z.object({
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   probability: z.enum(["low", "medium", "high"]).optional(),
   mitigation: z.string().optional(),
+  sourceFiles: z.array(z.string()).optional(),
+  generatedAt: z.string().optional(),
+  sourceCommit: z.string().optional(),
 }).passthrough();
 
 export const GraphEdgeSchema = z.object({

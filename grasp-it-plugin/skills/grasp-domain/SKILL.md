@@ -21,6 +21,11 @@ Extracts business domain knowledge — domains, features, operations, actors, bu
 distinguishes code-mined knowledge from specialist-described knowledge (`source: "interview"`)
 and enables queries that separate implemented facts from planned intent.
 
+**All knowledge nodes must include a `sourceFiles: string[]` property.** This array tracks which
+files were analyzed to derive each piece of knowledge. It enables finding affected knowledge nodes
+when a file is deleted from the codebase, even if the node has no direct `IMPLEMENTED_BY` edge to
+that file. Populate it based on the file analysis context during node creation.
+
 Node types produced by this skill:
 
 - `domain` — a business domain or bounded context
@@ -460,15 +465,19 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
 2. Pass `HAS_CODEBASE_GRAPH` (from Phase 3 or 4) to the agent — this flag controls whether `implemented_by` edges are emitted
-3. Dispatch a subagent with the domain-analyzer prompt **passed verbatim** (not summarised) + the context from Phase 3 or 4
-4. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
+3. **Instruct the domain-analyzer agent to populate `sourceFiles` for every knowledge node.** The `sourceFiles` array must contain all file paths that were used to infer that knowledge. For example, a `Feature` node derived from analyzing `src/api/orders.ts` and `src/services/order-service.ts` should have `sourceFiles: ["src/api/orders.ts", "src/services/order-service.ts"]`. This enables affected knowledge nodes to be found when a source file is deleted, even without an `IMPLEMENTED_BY` edge.
+4. **Instruct the domain-analyzer agent to set `generatedAt` (current ISO timestamp) and `sourceCommit` (git hash from Phase 0) for every knowledge node.** The `generatedAt` field records when the node was produced; `sourceCommit` records which commit was analyzed. Both aid in staleness detection and provenance tracking.
+5. Dispatch a subagent with the domain-analyzer prompt **passed verbatim** (not summarised) + the context from Phase 3 or 4
+6. The agent writes its output to `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
 
 ### Phase 6: Validate and Save
 
 1. Read the domain analysis output from `$PROJECT_ROOT/.grasp-it/intermediate/domain-analysis.json`
-2. Validate the graph with these concrete checks:
+2. **Augment nodes with timestamps before validation.** For every node that lacks `generatedAt`, set it to `new Date().toISOString()`. For every node that lacks `sourceCommit`, set it to the `LAST_COMMIT` hash captured in Phase 1.
+3. Validate the graph with these concrete checks:
    - **Dangling edges:** For every edge, confirm its `source` and `target` IDs exist in the `nodes` array (or are known `:Codebase` node IDs from the existing graph for `implemented_by` edges). Remove any edges whose target node is missing.
    - **Required fields:** Every node must have `id`, `type`, `kind: "knowledge"`, and `source: "code-analysis"`. Nodes missing `summary` should get a default `"No summary available"`.
+   - **`sourceFiles` validation:** If a knowledge node has `kind: "knowledge"` and `source: "code-analysis"`, it SHOULD have a `sourceFiles: string[]` property. If `sourceFiles` is missing, log a warning but do not fail the validation.
    - **No duplicate edges:** If the same `source → target → type` triple appears more than once, keep only the first.
 3. If validation finds issues, log them as warnings but save what's valid (error tolerance — partial graph is better than no graph).
 4. **All nodes written to the graph must include `"kind": "knowledge"` and `"source": "code-analysis"`** — this is required by the schema and distinguishes code-mined knowledge from specialist-described knowledge
@@ -495,7 +504,7 @@ if [ $PUSH_EXIT -ne 0 ]; then
 fi
 ```
 
-The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-it/intermediate/` and writes all nodes and edges to Neo4j in a single operation. It will report any nodes that ended up with no secondary label (orphan check) and exit with code 1 if the write fails.
+The script at `push-domain-graph.mjs` reads `domain-analysis.json` from `.grasp-it/intermediate/` and writes all nodes and edges to Neo4j in a single operation. The `sourceFiles` property on each knowledge node is persisted to Neo4j along with the node. It will report any nodes that ended up with no secondary label (orphan check) and exit with code 1 if the write fails.
 
 ### Phase 7: Clean Up
 

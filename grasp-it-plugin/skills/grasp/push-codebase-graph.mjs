@@ -104,11 +104,13 @@ function buildNodesCypher(graphData, neo4jConfig) {
         summary: node.summary || "",
         kind: "codebase",
         tags: node.tags || [],
+        generatedAt: node.generatedAt || new Date().toISOString(),
       };
       if (node.filePath) props.filePath = node.filePath;
       if (node.lineRange) props.lineRange = node.lineRange;
       if (node.complexity) props.complexity = node.complexity;
       if (node.languageNotes) props.languageNotes = node.languageNotes;
+      if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
 
       const setParts = Object.entries(props)
         .map(([k, v]) => {
@@ -156,15 +158,9 @@ function buildEdgesCypher(graphData) {
  * Push codebase graph using cypher-shell (fallback when driver is unavailable).
  */
 function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
-  // Clear existing codebase nodes first
-  const clearQuery = `MATCH (n:Codebase) DETACH DELETE n;`;
-  const clearResult = runCypherShell(neo4jConfig, clearQuery);
-  if (!clearResult.ok) {
-    console.error(`push-codebase-graph.mjs: cypher-shell clear failed: ${clearResult.reason}`);
-    process.exit(1);
-  }
-
-  // Push nodes
+  // Push nodes — use MERGE (not delete-then-insert) so existing nodes outside
+  // the assembled graph scope are preserved. This supports scoped analyses
+  // (e.g., --files flag) that should not destroy the pre-existing graph.
   const nodesCypher = buildNodesCypher(graphData, neo4jConfig);
   if (nodesCypher) {
     const result = runCypherShell(neo4jConfig, nodesCypher);
@@ -249,10 +245,10 @@ async function pushCodebaseGraph(projectRoot) {
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" });
 
-    // Clear existing codebase nodes first
-    await session.run(`MATCH (n:Codebase) DETACH DELETE n`);
-
     // Push nodes with dual labels: Codebase + specific type label
+    // Use MERGE (not delete-then-insert) so existing nodes outside the
+    // assembled graph scope are preserved. This supports scoped analyses
+    // (e.g., --files flag) that should not destroy the pre-existing graph.
     if (graphData.nodes && Array.isArray(graphData.nodes)) {
       for (const node of graphData.nodes) {
         const secondaryLabel = TYPE_TO_LABEL[node.type];
@@ -268,11 +264,13 @@ async function pushCodebaseGraph(projectRoot) {
           summary: node.summary || "",
           kind: "codebase",
           tags: node.tags || [],
+          generatedAt: node.generatedAt || new Date().toISOString(),
         };
         if (node.filePath) props.filePath = node.filePath;
         if (node.lineRange) props.lineRange = node.lineRange;
         if (node.complexity) props.complexity = node.complexity;
         if (node.languageNotes) props.languageNotes = node.languageNotes;
+        if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
 
         // Dual-label pattern: MERGE Codebase base label, then add secondary label
         await session.run(

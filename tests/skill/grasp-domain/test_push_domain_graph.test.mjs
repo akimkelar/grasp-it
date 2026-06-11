@@ -696,18 +696,18 @@ describe('push-domain-graph.mjs', () => {
     });
   });
 
-  // ── BUG-03: stale node accumulation — DELETE before push ─────────────────
+  // ── BUG-03: MERGE (not delete-then-insert) preserves existing nodes ───────
   //
-  // Both the driver path and cypher-shell fallback must run a cleanup query:
-  //   MATCH (n:Knowledge {source: 'code-analysis'}) DETACH DELETE n
-  // before pushing new nodes. Without this, MERGE accumulates stale nodes across runs.
+  // Both the driver path and cypher-shell fallback use MERGE on node IDs to update
+  // existing nodes in place. This supports scoped analyses (e.g., --files flag) that
+  // should not destroy the pre-existing graph.
   //
   // Note: The generated cypher query text is not visible in stderr (cypher-shell only
   // shows the connection error). These tests verify the fallback path is entered and
-  // the cleanup warning appears (best-effort cleanup failure doesn't stop the push).
+  // the node push fails (not a cleanup error).
 
-  describe('BUG-03: DELETE cleanup before push to prevent stale node accumulation', () => {
-    it('enters cypher-shell fallback and attempts DELETE cleanup (driver fails → fallback)', () => {
+  describe('BUG-03: MERGE (not delete-then-insert) preserves existing nodes', () => {
+    it('enters cypher-shell fallback and pushes nodes via MERGE (driver fails → fallback)', () => {
       const domainAnalysis = {
         nodes: [
           { id: 'domain:test', name: 'Test Domain', summary: 'A domain', type: 'domain', tags: [] },
@@ -730,13 +730,13 @@ describe('push-domain-graph.mjs', () => {
       expect(result.status).toBe(1);
       // Fallback should be entered (shows cypher-shell retry message)
       expect(result.stderr).toContain('cypher-shell fallback');
-      // Cleanup warning should appear (best-effort — failure doesn't stop the push)
-      expect(result.stderr).toContain('cleanup query failed');
-      // Should get past cleanup and fail on node push
+      // Node push fails on connection, but no cleanup warning (no DELETE cleanup)
+      expect(result.stderr).not.toContain('cleanup query failed');
+      // Should get past node processing and fail on connection
       expect(result.stderr).toContain('node push failed');
     });
 
-    it('processes empty node set without crashing (DELETE cleanup runs, then exits 0 when nodes array empty)', () => {
+    it('processes empty node set without crashing (MERGE, no DELETE, exits 0 when nodes array empty)', () => {
       const domainAnalysis = {
         nodes: [],
         edges: [],
@@ -754,7 +754,7 @@ describe('push-domain-graph.mjs', () => {
         PATH: `${process.env.PATH}`,
       });
 
-      // Empty graph — DELETE cleanup runs (best-effort), no nodes/edges to push, exits 0
+      // Empty graph — no DELETE cleanup, no nodes/edges to push, exits 0
       expect(result.status).toBe(0);
       expect(result.stderr).not.toContain('Unknown node type');
     });

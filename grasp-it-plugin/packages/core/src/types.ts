@@ -76,6 +76,10 @@ export interface GraphNode {
   severity?: "low" | "medium" | "high" | "critical";
   probability?: "low" | "medium" | "high";
   mitigation?: string;
+  // Freshness metadata
+  sourceFiles?: string[];
+  generatedAt?: string;
+  sourceCommit?: string;
 }
 
 // GraphEdge with rich relationship modeling
