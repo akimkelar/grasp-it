@@ -337,7 +337,7 @@ describe('push-domain-graph.mjs', () => {
   // ── Test 8: edge case — empty nodes array ───────────────────────────────────
 
   describe('empty graph data', () => {
-    it('exits 1 when nodes array is empty (nothing to push)', () => {
+    it('exits 0 when nodes array is empty (nothing to push — DELETE cleanup still runs)', () => {
       const domainAnalysis = { nodes: [], edges: [] };
       writeFileSync(
         join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
@@ -351,9 +351,9 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_DATABASE: 'neo4j',
       });
 
-      // Empty nodes means nothing to push — but the script should still enter the push path
-      // and try to push (and fail on connection), not fail on "unknown node type"
-      expect(result.status).toBe(1);
+      // Empty nodes means nothing to push — DELETE cleanup runs (best-effort),
+      // orphan check runs, then exit0. No "unknown node type" error.
+      expect(result.status).toBe(0);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
@@ -522,6 +522,8 @@ describe('push-domain-graph.mjs', () => {
           { id: 'actor:test', name: 'A', summary: 'A', tags: [] },
           { id: 'entity:test', name: 'E', summary: 'E', tags: [] },
           { id: 'business-rule:test', name: 'BR', summary: 'BR', tags: [] },
+          { id: 'risk:test', name: 'R', summary: 'R', tags: [] },
+          { id: 'constraint:test', name: 'C', summary: 'C', tags: [] },
         ],
         edges: [],
       };
@@ -537,9 +539,57 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_DATABASE: 'neo4j',
       });
 
-      // All 6 types should be recognized — no "unknown type" errors
+      // All 8 types should be recognized — no "unknown type" errors
       expect(result.stderr).not.toContain('Unknown node type');
       // Connection error is expected
+      expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+
+    it('handles risk node with severity, probability, and mitigation fields', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'risk:surcharge-rounding', name: 'Surcharge Rounding Risk', summary: 'Float rounding in invoice total', type: 'risk', tags: ['financial'], severity: 'high', probability: 'medium', mitigation: 'Use integer cents internally' },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).not.toContain('Unknown node type');
+      expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
+    });
+
+    it('handles constraint node with condition and invariant fields', () => {
+      const domainAnalysis = {
+        nodes: [
+          { id: 'constraint:dual-set-required', name: 'Dual Set Required', summary: 'Both surcharge sets must coexist', type: 'constraint', tags: ['interface'], condition: 'standardSurcharges && equalPaySurcharges', invariant: 'Pricing calculation breaks if only one set is present' },
+        ],
+        edges: [],
+      };
+      writeFileSync(
+        join(root, '.grasp-it', 'intermediate', 'domain-analysis.json'),
+        JSON.stringify(domainAnalysis),
+      );
+
+      const result = runPushDomainGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).not.toContain('Unknown node type');
       expect(result.stderr).toMatch(/Failed to push domain graph|Connection refused|ECONNREFUSED|No routing servers available/i);
     });
   });
@@ -686,7 +736,7 @@ describe('push-domain-graph.mjs', () => {
       expect(result.stderr).toContain('node push failed');
     });
 
-    it('processes empty node set without crashing (cleanup skipped when nodes array empty)', () => {
+    it('processes empty node set without crashing (DELETE cleanup runs, then exits 0 when nodes array empty)', () => {
       const domainAnalysis = {
         nodes: [],
         edges: [],
@@ -704,9 +754,9 @@ describe('push-domain-graph.mjs', () => {
         PATH: `${process.env.PATH}`,
       });
 
-      // Empty graph — still enters push path, tries cleanup, fails on connection
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('cypher-shell fallback');
+      // Empty graph — DELETE cleanup runs (best-effort), no nodes/edges to push, exits 0
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain('Unknown node type');
     });
   });
 

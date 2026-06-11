@@ -89,10 +89,10 @@ queries that distinguish what the code does from what the PO envisions.
 `Table`, `Endpoint`
 
 **Knowledge — Business Layer (LLM-produced, source: code-analysis or interview):**
-`Domain`, `Feature`, `Operation`, `Actor`, `Entity`, `BusinessRule`
+`Domain`, `Feature`, `Operation`, `Actor`, `Entity`, `BusinessRule`, `Risk`, `Constraint`
 
 **Knowledge — PO Interview Layer (source: interview only):**
-`Decision`, `Constraint`, `Concept`, `Claim`, `Risk`
+`Decision`, `Concept`, `Claim`
 
 **Bridge:** `IMPLEMENTED_BY` (`Feature / Operation / BusinessRule` → `File / Function / Class /
 Endpoint`) with `{status, confidence}` — native relationship, single DB.

@@ -14,7 +14,7 @@ Seeding generates an initial useful graph from a codebase. The goal is not just 
 - Import graph (file → file edges)
 - Config and table facts
 
-### From `/grasp-domain` (domain analysis)
+### From `/grasp-domain` (code analysis)
 
 - `Domain` nodes from entry point groupings and directory structure
 - `Feature` nodes from URL paths, controller names, directory layout signals
@@ -22,6 +22,8 @@ Seeding generates an initial useful graph from a codebase. The goal is not just 
 - Draft `BusinessRule` nodes from guard and permission patterns in code
 - `Actor` hints from role-related naming (limited — true actor definition requires PO)
 - `Entity` nodes from business object naming patterns
+- `Risk` nodes from code-visible hazards (float arithmetic, external API calls, complex time-boundary conditionals, missing validation on critical paths)
+- `Constraint` nodes from interface contracts, validation guards, and access control invariants
 
 ### From `/grasp-requirements` (PO interview)
 

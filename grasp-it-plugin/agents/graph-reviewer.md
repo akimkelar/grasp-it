@@ -45,12 +45,12 @@ Verify every **node** has ALL required fields with correct types:
 
 *Codebase nodes (7):* `file`, `function`, `class`, `module`, `config`, `table`, `endpoint`
 
-*Knowledge nodes (8):* `domain`, `feature`, `actor`, `business-rule`, `operation`, `entity`, `decision`, `constraint`
+*Knowledge nodes (10):* `domain`, `feature`, `actor`, `business-rule`, `operation`, `entity`, `decision`, `constraint`, `risk`, `concept`
 
 *Structural nodes (6):* `concept`, `document`, `service`, `pipeline`, `schema`, `resource`
 
 **Valid node ID prefixes:**
-`file:`, `function:`, `class:`, `module:`, `config:`, `table:`, `endpoint:`, `domain:`, `feature:`, `actor:`, `business-rule:`, `operation:`, `entity:`, `decision:`, `constraint:`, `concept:`, `document:`, `service:`, `pipeline:`, `schema:`, `resource:`
+`file:`, `function:`, `class:`, `module:`, `config:`, `table:`, `endpoint:`, `domain:`, `feature:`, `actor:`, `business-rule:`, `operation:`, `entity:`, `decision:`, `constraint:`, `risk:`, `concept:`, `document:`, `service:`, `pipeline:`, `schema:`, `resource:`
 
 Verify every **edge** has ALL required fields with correct types:
 

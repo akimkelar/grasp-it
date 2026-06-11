@@ -45,7 +45,7 @@ Both graph types share the same top-level shape:
 | `table` | `table:<relative-path>:<table-name>` | Database table |
 | `endpoint` | `endpoint:<relative-path>:<name>` | API endpoint |
 
-**Knowledge nodes (8):**
+**Knowledge nodes (10):**
 | Type | ID Convention | Description |
 |---|---|---|
 | `domain` | `domain:<kebab-case-name>` | Business domain |
@@ -56,6 +56,8 @@ Both graph types share the same top-level shape:
 | `entity` | `entity:<kebab-case-name>` | Domain entity (data object) |
 | `decision` | `decision:<kebab-case-name>` | Architecture decision |
 | `constraint` | `constraint:<kebab-case-name>` | Architecture constraint |
+| `risk` | `risk:<kebab-case-name>` | Code-visible implementation hazard |
+| `concept` | `concept:<kebab-case-name>` | Specialist abstraction from dialogue |
 
 **Structural nodes (6):**
 | Type | ID Convention | Description |
