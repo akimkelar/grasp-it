@@ -124,9 +124,10 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect(result.status).toBe(2);
-    }, 15000);
+    }, 5000);
   });
 
   describe('CONNECTION_TYPE=cypher-shell with unreachable database', () => {
@@ -150,7 +151,7 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
         PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
       });
       expect(result.status).toBe(1);
-    }, 15000);
+    }, 5000);
   });
 
   describe('CONNECTION_TYPE=driver fallback when cypher-shell not available', () => {
@@ -172,6 +173,7 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
         PATH: '/usr/local/bin:/usr/bin:/bin',
+        NEO4J_TEST_MOCK: '1',
       });
       expect(result.status).toBe(2);
     });

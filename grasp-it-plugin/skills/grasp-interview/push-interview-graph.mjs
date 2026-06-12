@@ -277,6 +277,10 @@ async function pushInterviewGraph(projectRoot) {
   let driver;
   let driverAvailable = false;
   try {
+    // Test mode: use a mock driver that fails predictably
+    if (process.env.NEO4J_TEST_MOCK === '1') {
+      throw new Error('Connection refused (TestMock)');
+    }
     const { default: neo4j } = await import("neo4j-driver");
     driver = neo4j.driver(
       neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",

@@ -7,6 +7,10 @@
     "prepare": "pnpm --filter @grasp-it/core build",
     "build": "pnpm -r build",
     "test": "vitest run",
+    "test:parallel": "vitest run --jobs 4",
+    "test:skill": "vitest run --config vitest.config.ts",
+    "test:core": "pnpm --filter @grasp-it/core test",
+    "test:all": "pnpm test:skill & pnpm test:core & wait",
     "dev:dashboard": "pnpm --filter @grasp-it/dashboard dev",
     "lint": "eslint ."
   },

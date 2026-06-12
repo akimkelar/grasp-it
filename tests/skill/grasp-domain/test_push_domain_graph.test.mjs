@@ -111,6 +111,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -144,6 +145,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -172,6 +174,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -241,6 +244,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -274,6 +278,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -300,6 +305,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -326,6 +332,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -349,6 +356,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       // Empty nodes means nothing to push — DELETE cleanup runs (best-effort),
@@ -455,6 +463,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       // Must NOT crash with "Unknown node type 'undefined'"
@@ -482,6 +491,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -506,6 +516,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       // Should not fail on unknown type — explicit 'domain' is valid
@@ -537,6 +548,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       // All 8 types should be recognized — no "unknown type" errors
@@ -562,6 +574,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -586,6 +599,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -783,6 +797,7 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       // When Neo4j is unreachable, the script fails — success message is never reached.

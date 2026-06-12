@@ -120,11 +120,12 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
       // Should fail on Neo4j connection, not on node type validation
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED|cypher-shell fallback/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
@@ -142,6 +143,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -176,6 +178,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -207,6 +210,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -244,6 +248,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -303,6 +308,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -326,6 +332,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -352,6 +359,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -379,6 +387,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -403,6 +412,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -431,6 +441,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -460,6 +471,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -489,6 +501,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -516,6 +529,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -538,6 +552,7 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);

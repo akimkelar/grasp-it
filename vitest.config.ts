@@ -22,5 +22,11 @@ export default defineConfig({
       'grasp-it-plugin/packages/core/**',
     ],
     testTimeout: 30_000,
+    pool: 'forks',
+    poolOptions: {
+      forks: {
+        maxWorkers: 4,
+      },
+    },
   },
 });

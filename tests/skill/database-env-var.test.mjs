@@ -78,6 +78,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'test',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       // Should fail with exit 2 (driver signals fallback to cypher-shell)
       // or exit 1 (connection error) - both mean driver path was entered with config
@@ -90,6 +91,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect([1, 2]).toContain(result.status);
     });
@@ -100,6 +102,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
       );
       const result = runScript(SCRIPT, [root, 'MATCH (n) RETURN n'], {
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect([1, 2]).toContain(result.status);
     });
@@ -124,6 +127,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'test',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       // Driver path entered - config was read (exit 0, 1, or 2 are all valid)
       // Exit 0 = graceful skip, Exit 1 = connection error, Exit 2 = driver fallback
@@ -139,6 +143,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect([0, 1, 2]).toContain(result.status);
       if (result.status === 0) {
@@ -152,6 +157,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
       );
       const result = runScript(SCRIPT, [root], {
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect([0, 1, 2]).toContain(result.status);
       if (result.status === 0) {
@@ -183,6 +189,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'test',
+        NEO4J_TEST_MOCK: '1',
       });
       // Should fail, but on connection not on config
       expect(result.status).toBe(1);
@@ -198,6 +205,7 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         NEO4J_URI: 'neo4j://localhost:19999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
+        NEO4J_TEST_MOCK: '1',
       });
       expect(result.status).toBe(1);
       expect(result.stderr).not.toContain('No Neo4j configuration found');
@@ -211,7 +219,9 @@ describe('NEO4J_DATABASE env var is read correctly', () => {
         nodes: [{ id: 'node1', name: 'Test', summary: 'Test', type: 'domain' }],
         edges: [],
       }));
-      const result = runScript(PUSH_DOMAIN_GRAPH_SCRIPT.path, [root], {});
+      const result = runScript(PUSH_DOMAIN_GRAPH_SCRIPT.path, [root], {
+        NEO4J_TEST_MOCK: '1',
+      });
       expect(result.status).toBe(1);
       expect(result.stderr).not.toContain('No Neo4j configuration found');
     });
@@ -241,6 +251,7 @@ describe('driver session uses NEO4J_DATABASE from env', () => {
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'test',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       // Exit 2 = driver failed, signaling cypher-shell fallback
       // Exit 1 = connection error
@@ -253,6 +264,7 @@ describe('driver session uses NEO4J_DATABASE from env', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect([1, 2]).toContain(result.status);
     });
@@ -277,6 +289,7 @@ describe('driver session uses NEO4J_DATABASE from env', () => {
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'test',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       // Any exit code means driver path was entered (config was read)
       expect(result.status).toBeGreaterThanOrEqual(0);
@@ -291,6 +304,7 @@ describe('driver session uses NEO4J_DATABASE from env', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_CONNECTION_TYPE: 'driver',
+        NEO4J_TEST_MOCK: '1',
       });
       expect(result.status).toBeGreaterThanOrEqual(0);
       if (result.status === 0) {
@@ -343,6 +357,7 @@ describe('global ~/.grasp-it/neo4j.env uses correct database', () => {
       const result = runScript(SCRIPT, [root, 'MATCH (n) RETURN n'], {
         NEO4J_CONNECTION_TYPE: 'driver',
         HOME: tmpdir(),
+        NEO4J_TEST_MOCK: '1',
       });
       // Driver should attempt connection (exit 1 or 2), not skip on config
       expect([1, 2]).toContain(result.status);
@@ -355,6 +370,7 @@ describe('global ~/.grasp-it/neo4j.env uses correct database', () => {
       const result = runScript(SCRIPT, [root, 'MATCH (n) RETURN n'], {
         NEO4J_CONNECTION_TYPE: 'driver',
         HOME: tmpdir(),
+        NEO4J_TEST_MOCK: '1',
       });
       expect([1, 2]).toContain(result.status);
     });
@@ -401,6 +417,7 @@ describe('NEO4J_DATABASE priority: env var > .env > global', () => {
         NEO4J_CONNECTION_TYPE: 'driver',
         NEO4J_DATABASE: 'from-env-var',
         HOME: tmpdir(),
+        NEO4J_TEST_MOCK: '1',
       });
       // Driver path entered means config was read correctly
       expect([1, 2]).toContain(result.status);
@@ -417,6 +434,7 @@ describe('NEO4J_DATABASE priority: env var > .env > global', () => {
       const result = runScript(SCRIPT, [root, 'MATCH (n) RETURN n'], {
         NEO4J_CONNECTION_TYPE: 'driver',
         HOME: tmpdir(),
+        NEO4J_TEST_MOCK: '1',
       });
       expect([1, 2]).toContain(result.status);
     });
