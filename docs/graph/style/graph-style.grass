@@ -1,0 +1,240 @@
+node {
+  color: #3A9E6A;
+  border-color: #A8E0A8;
+  size: 30px;
+}
+
+node.File {
+  color: #70B860;
+  border-color: #B8E098;
+  size: 22px;
+}
+
+node.Function {
+  color: #5A9E5A;
+  border-color: #98D898;
+  size: 28px;
+}
+
+node.Class {
+  color: #3A8A4A;
+  border-color: #88C088;
+  size: 34px;
+}
+
+node.Module {
+  color: #2A7A3A;
+  border-color: #78B078;
+  size: 24px;
+}
+
+node.Config {
+  color: #1A6A2A;
+  border-color: #68A068;
+  size: 20px;
+}
+
+node.Table {
+  color: #0A5A1A;
+  border-color: #589058;
+  size: 18px;
+}
+
+node.Endpoint {
+  color: #004A0A;
+  border-color: #488048;
+  size: 16px;
+}
+
+node.Domain {
+  color: #5E1EC4;
+  border-color: #C490F0;
+  size: 60px;
+}
+
+node.Feature {
+  color: #4833C4;
+  border-color: #A890E8;
+  size: 52px;
+}
+
+node.BusinessRule {
+  color: #3D3DC4;
+  border-color: #9898E8;
+  size: 44px;
+}
+
+node.Actor {
+  color: #2090B8;
+  border-color: #70C0D8;
+  size: 38px;
+}
+
+node.Operation {
+  color: #1858B8;
+  border-color: #6898D8;
+  size: 36px;
+}
+
+node.Entity {
+  color: #1848B0;
+  border-color: #6088D0;
+  size: 32px;
+}
+
+node.Risk {
+  color: #C4426E;
+  border-color: #E898B4;
+  size: 32px;
+}
+
+node.Constraint {
+  color: #D04E3A;
+  border-color: #F09880;
+  size: 32px;
+}
+
+node.Decision {
+  color: #C44878;
+  border-color: #E890B0;
+  size: 40px;
+}
+
+node.Concept {
+  color: #C04070;
+  border-color: #E080A0;
+  size: 28px;
+}
+
+node.Claim {
+  color: #BC3868;
+  border-color: #D87090;
+  size: 26px;
+}
+
+node.Project {
+  color: #888888;
+  border-color: #AAAAAA;
+  size: 40px;
+}
+
+relationship.HAS_FEATURE {
+  width: 2px;
+}
+
+relationship.HAS_OPERATION {
+  width: 2px;
+}
+
+relationship.SEQUENCE {
+  width: 1px;
+}
+
+relationship.PERFORMED_BY {
+  width: 1px;
+}
+
+relationship.RESTRICTED_FOR {
+  width: 1px;
+}
+
+relationship.GOVERNS {
+  width: 1px;
+}
+
+relationship.USES_ENTITY {
+  width: 1px;
+}
+
+relationship.CONSTRAINED_BY {
+  width: 1px;
+  color: #C87098;
+}
+
+relationship.DECIDES {
+  width: 1px;
+}
+
+relationship.SUB_CONCEPT_OF {
+  width: 1px;
+}
+
+relationship.IMPLEMENTS {
+  width: 1px;
+}
+
+relationship.SUPPORTS {
+  width: 1px;
+}
+
+relationship.APPLIES_IN {
+  width: 1px;
+}
+
+relationship.HAS_RISK {
+  width: 1px;
+}
+
+relationship.MITIGATED_BY {
+  width: 1px;
+}
+
+relationship.CONTAINS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.IMPORTS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.EXPORTS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.INHERITS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.IMPLEMENTS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.CALLS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.READS_FROM {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.WRITES_TO {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.CONFIGURES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.TESTED_BY {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.DEPENDS_ON {
+  width: 2px;
+  color: #555555;
+}
+
+relationship.IMPLEMENTED_BY {
+  width: 2px;
+  color: #9A6AC8;
+}

@@ -153,20 +153,62 @@ Properties: `status: "legacy"|"target"|"shared"|"planned"`, `confidence: float`
 
 ```mermaid
 graph TD
-    PRJ["Project\n(kind: project)\nsingleton — survives all rebuilds\ngitCommitHash, lastAnalyzedAt"]
+    classDef file fill:#70B860,stroke:#B8E098,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#5A9E5A,stroke:#98D898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#3A8A4A,stroke:#88C088,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#2A7A3A,stroke:#78B078,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef domain fill:#5E1EC4,stroke:#C490F0,stroke-width:3px,color:#E8EEFF,font-size:14px
+    classDef feature fill:#4833C4,stroke:#A890E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef businessrule fill:#3D3DC4,stroke:#9898E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef decision fill:#C44878,stroke:#E890B0,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef actor fill:#2090B8,stroke:#70C0D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef operation fill:#1858B8,stroke:#6898D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef entity fill:#1848B0,stroke:#6088D0,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef risk fill:#C4426E,stroke:#E898B4,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef constraint fill:#D04E3A,stroke:#F09880,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef concept fill:#C04070,stroke:#E080A0,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef claim fill:#BC3868,stroke:#D87090,stroke-width:2px,color:#FFE8F2,font-size:14px
 
-    subgraph knowledge["Knowledge subgraph (kind: knowledge)"]
-        D["Domain\nsource: code-analysis|interview"]
-        F["Feature\nsource: code-analysis|interview"]
-        O["Operation\nsource: code-analysis|interview"]
-        A["Actor\nsource: code-analysis|interview"]
-        E["Entity\nsource: code-analysis|interview"]
-        BR["BusinessRule\nsource: code-analysis|interview"]
-        DC["Decision\nsource: interview"]
-        CO["Concept\nsource: interview"]
-        CL["Claim\nsource: interview"]
-        RK["Risk\nsource: code-analysis|interview"]
-        CN["Constraint\nsource: code-analysis|interview"]
+    PRJ(("Project"))
+
+    subgraph codebase["Codebase (kind: codebase)"]
+        FILE["File"]
+        FN["Function"]
+        CLS["Class"]
+        MOD["Module"]
+        CFG["Config"]
+        TB["Table"]
+        EP["Endpoint"]
+
+        FILE -->|CONTAINS| FN
+        FILE -->|CONTAINS| CLS
+        FILE -->|CONTAINS| MOD
+        MOD -->|IMPORTS| MOD
+        CLS -->|INHERITS| CLS
+        CLS -->|IMPLEMENTS| CLS
+        FN -->|CALLS| FN
+        FN -->|READS_FROM| TB
+        FN -->|WRITES_TO| TB
+        EP -->|CALLS| FN
+        FN -->|TESTED_BY| FN
+        CLS -->|CONFIGURES| CFG
+    end
+
+    subgraph knowledge["Knowledge (kind: knowledge)"]
+        D["Domain"]
+        F["Feature"]
+        BR["BusinessRule"]
+        DC["Decision"]
+        A["Actor"]
+        O["Operation"]
+        E["Entity"]
+        RK["Risk"]
+        CN["Constraint"]
+        CO["Concept"]
+        CL["Claim"]
 
         D -->|HAS_FEATURE| F
         F -->|HAS_OPERATION| O
@@ -185,30 +227,195 @@ graph TD
         CL -->|SUPPORTS| DC
         F -->|HAS_RISK| RK
         O -->|HAS_RISK| RK
+        BR -->|HAS_RISK| RK
         RK -->|MITIGATED_BY| DC
+        RK -->|MITIGATED_BY| CN
+        CN -->|APPLIES_IN| F
+        CN -->|APPLIES_IN| O
         F -->|CONSTRAINED_BY| CN
         O -->|APPLIES_IN| CN
-    end
-
-    subgraph codebase["Codebase subgraph (kind: codebase) — rebuilt per /grasp run"]
-        FILE["File\nanalyzedAtCommit"]
-        FN["Function"]
-        CL["Class"]
-        EP["Endpoint"]
-        TB["Table"]
-
-        FILE -->|CONTAINS| FN
-        FILE -->|CONTAINS| CL
-        FN -->|CALLS| FN
-        FN -->|READS_FROM| TB
-        FN -->|WRITES_TO| TB
-        EP -->|CALLS| FN
+        BR -->|APPLIES_IN| CO
     end
 
     F -->|IMPLEMENTED_BY| FILE
     F -->|IMPLEMENTED_BY| EP
     O -->|IMPLEMENTED_BY| FN
     BR -->|IMPLEMENTED_BY| FN
+
+    class FILE file
+    class FN fn
+    class CLS cls
+    class MOD mod
+    class CFG cfg
+    class TB tb
+    class EP ep
+    class D domain
+    class F feature
+    class BR businessrule
+    class DC decision
+    class A actor
+    class O operation
+    class E entity
+    class RK risk
+    class CN constraint
+    class CO concept
+    class CL claim
+```
+
+### Layer Diagrams
+
+#### Codebase Layer
+
+```mermaid
+graph TD
+    classDef file fill:#70B860,stroke:#B8E098,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#5A9E5A,stroke:#98D898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#3A8A4A,stroke:#88C088,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#2A7A3A,stroke:#78B078,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+
+    FILE["File"]
+    FN["Function"]
+    CLS["Class"]
+    MOD["Module"]
+    CFG["Config"]
+    TB["Table"]
+    EP["Endpoint"]
+
+    FILE -->|CONTAINS| FN
+    FILE -->|CONTAINS| CLS
+    FILE -->|CONTAINS| MOD
+    MOD -->|IMPORTS| MOD
+    CLS -->|INHERITS| CLS
+    CLS -->|IMPLEMENTS| CLS
+    FN -->|CALLS| FN
+    FN -->|READS_FROM| TB
+    FN -->|WRITES_TO| TB
+    EP -->|CALLS| FN
+    FN -->|TESTED_BY| FN
+    CLS -->|CONFIGURES| CFG
+
+    class FILE file
+    class FN fn
+    class CLS cls
+    class MOD mod
+    class CFG cfg
+    class TB tb
+    class EP ep
+```
+
+#### Knowledge Code-Analysis Layer
+
+```mermaid
+graph TD
+    classDef domainCA fill:#5E1EC4,stroke:#C490F0,stroke-width:3px,color:#E8EEFF,font-size:14px
+    classDef featureCA fill:#4833C4,stroke:#A890E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef businessruleCA fill:#3D3DC4,stroke:#9898E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef operationCA fill:#1858B8,stroke:#6898D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef entityCA fill:#1848B0,stroke:#6088D0,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef actorCA fill:#2090B8,stroke:#70C0D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef riskCA fill:#C4426E,stroke:#E898B4,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef constraintCA fill:#D04E3A,stroke:#F09880,stroke-width:2px,color:#FFE8F2,font-size:14px
+
+    D["Domain"]
+    F["Feature"]
+    BR["BusinessRule"]
+    O["Operation"]
+    E["Entity"]
+    A["Actor"]
+    RK["Risk"]
+    CN["Constraint"]
+
+    D -->|HAS_FEATURE| F
+    F -->|HAS_OPERATION| O
+    O -->|SEQUENCE| O
+    O -->|PERFORMED_BY| A
+    O -->|RESTRICTED_FOR| A
+    O -->|USES_ENTITY| E
+    F -->|USES_ENTITY| E
+    BR -->|GOVERNS| F
+    BR -->|GOVERNS| O
+    F -->|HAS_RISK| RK
+    O -->|HAS_RISK| RK
+    BR -->|HAS_RISK| RK
+    RK -->|MITIGATED_BY| CN
+    CN -->|APPLIES_IN| F
+    CN -->|APPLIES_IN| O
+    F -->|CONSTRAINED_BY| CN
+    O -->|APPLIES_IN| CN
+
+    class D domainCA
+    class F featureCA
+    class BR businessruleCA
+    class O operationCA
+    class E entityCA
+    class A actorCA
+    class RK riskCA
+    class CN constraintCA
+```
+
+#### Knowledge Interview Layer
+
+```mermaid
+graph TD
+    classDef domainKI fill:#5E1EC4,stroke:#C490F0,stroke-width:3px,color:#E8EEFF,font-size:14px
+    classDef featureKI fill:#4833C4,stroke:#A890E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef businessruleKI fill:#3D3DC4,stroke:#9898E8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef decisionKI fill:#C44878,stroke:#E890B0,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef operationKI fill:#1858B8,stroke:#6898D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef entityKI fill:#1848B0,stroke:#6088D0,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef actorKI fill:#2090B8,stroke:#70C0D8,stroke-width:2px,color:#E8EEFF,font-size:14px
+    classDef riskKI fill:#C4426E,stroke:#E898B4,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef constraintKI fill:#D04E3A,stroke:#F09880,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef conceptKI fill:#C04070,stroke:#E080A0,stroke-width:2px,color:#FFE8F2,font-size:14px
+    classDef claimKI fill:#BC3868,stroke:#D87090,stroke-width:2px,color:#FFE8F2,font-size:14px
+
+    D["Domain"]
+    F["Feature"]
+    BR["BusinessRule"]
+    DC["Decision"]
+    O["Operation"]
+    E["Entity"]
+    A["Actor"]
+    RK["Risk"]
+    CN["Constraint"]
+    CO["Concept"]
+    CL["Claim"]
+
+    D -->|HAS_FEATURE| F
+    F -->|HAS_OPERATION| O
+    O -->|SEQUENCE| O
+    O -->|PERFORMED_BY| A
+    O -->|RESTRICTED_FOR| A
+    O -->|USES_ENTITY| E
+    F -->|USES_ENTITY| E
+    BR -->|GOVERNS| F
+    BR -->|GOVERNS| O
+    DC -->|CONSTRAINED_BY| CN
+    DC -->|DECIDES| F
+    DC -->|DECIDES| BR
+    DC -->|IMPLEMENTS| CO
+    CO -->|SUB_CONCEPT_OF| CO
+    CL -->|SUPPORTS| DC
+    F -->|HAS_RISK| RK
+    O -->|HAS_RISK| RK
+    RK -->|MITIGATED_BY| DC
+    F -->|CONSTRAINED_BY| CN
+    O -->|APPLIES_IN| CN
+
+    class D domainKI
+    class F featureKI
+    class BR businessruleKI
+    class DC decisionKI
+    class O operationKI
+    class E entityKI
+    class A actorKI
+    class RK riskKI
+    class CN constraintKI
+    class CO conceptKI
+    class CL claimKI
 ```
 
 ## Rebuild Pattern
