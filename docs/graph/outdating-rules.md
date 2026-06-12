@@ -259,11 +259,11 @@ In single-user setups, both checks often agree. In multi-user setups, they can d
 |-----------|------------|
 | `implemented` feature has no `IMPLEMENTED_BY` edges | Re-run `/grasp-domain` to re-link to code |
 | Feature has only `legacy` edges | Re-run `/grasp-domain` — code was refactored, new edges expected |
-| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-requirements` to update status, or manually update |
+| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-interview` to update status, or manually update |
 | Actor/BusinessRule/Entity has no relationships | Review with PO — node may be incorrect or deprecated |
 | Decision is `deprecated` | Archive or delete; review if any constraints depend on it |
 | `IMPLEMENTED_BY` edge to file with stale `analyzedAtCommit` | Re-run `/grasp` to re-analyze the file; re-run `/grasp-domain` to refresh knowledge links |
-| Knowledge node with stale `sourceCommit` | Re-run the originating skill (`/grasp-domain` for code-analysis nodes, `/grasp-requirements` for interview nodes) to re-derive the node at current HEAD; update `generatedAt` and `sourceCommit` |
+| Knowledge node with stale `sourceCommit` | Re-run the originating skill (`/grasp-domain` for code-analysis nodes, `/grasp-interview` for interview nodes) to re-derive the node at current HEAD; update `generatedAt` and `sourceCommit` |
 | Knowledge node has `sourceFiles` referencing deleted files | Review the node — if the underlying concept no longer exists, archive or delete the node; if files were renamed, update `sourceFiles` and re-run analysis |
 | `IMPLEMENTED_BY` edge to deleted file | Re-run `/grasp-domain` to re-derive knowledge from remaining code; orphan check may reveal nodes that need manual cleanup |
 

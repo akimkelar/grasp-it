@@ -4,7 +4,7 @@
  * Verifies that when NEO4J_DATABASE is set to "test", the scripts use "test" and not the default "grasp".
  *
  * Scripts covered:
- *   - run-query.mjs (grasp, grasp-diff, grasp-explain, grasp-requirements, grasp-chat)
+ *   - run-query.mjs (grasp, grasp-diff, grasp-explain, grasp-interview, grasp-chat)
  *   - load-project-meta.mjs (grasp, grasp-domain)
  *   - push-domain-graph.mjs (grasp-domain)
  */

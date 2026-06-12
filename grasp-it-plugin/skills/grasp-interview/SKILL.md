@@ -1,10 +1,10 @@
 ---
-name: grasp-requirements
+name: grasp-interview
 description: Interview a Product Specialist to extract product requirements into the knowledge graph. Use when you need to gather requirements, design decisions, business rules, constraints, and risks directly from a product specialist through deep, relentless questioning.
 argument-hint: [topic area or feature name]
 ---
 
-# /grasp-requirements
+# /grasp-interview
 
 Interview a Product Specialist relentlessly about a feature or domain until both of you hold exactly the same understanding. The goal is not to collect what the specialist volunteers — it is to excavate what they know, challenge what they assume, expose what they haven't considered, and produce a knowledge graph that is **complete, consistent, and unambiguous**.
 
@@ -17,7 +17,7 @@ The interview never ends because the specialist says "that's everything." It end
 - When starting a new feature or significant change
 - When migrating or re-implementing behavior that was never formally documented
 - When the graph has `source: "code-analysis"` nodes about a feature but lacks the business intent behind them
-- Use `/grasp-chat` when querying existing knowledge; use `/grasp-requirements` when building new knowledge
+- Use `/grasp-chat` when querying existing knowledge; use `/grasp-interview` when building new knowledge
 
 ---
 
@@ -27,26 +27,36 @@ The interview never ends because the specialist says "that's everything." It end
 distinguishes specialist-described knowledge from code-mined knowledge (`source: "code-analysis"`)
 and enables queries that separate intent from implementation.
 
+Interview nodes carry `generatedAt` (ISO 8601 timestamp) but do NOT carry `sourceCommit` or `sourceFiles` — those are only present on code-analysis nodes.
+
 **Neo4j label convention:** All knowledge nodes use a dual-label pattern: the base label `Knowledge`
 plus a secondary type label (e.g., `Knowledge:Feature`). When writing to Neo4j, always use
 `MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`SecondaryLabel\`` — do NOT merge on multiple
 labels simultaneously. For the full label convention, UPPER_SNAKE_CASE relationship types, and
 `toNeo4jLabel` mapping rules, see `docs/architecture/neo4j-schema.md`.
 
-Node types:
+### Node Types and Reuse Guidelines
 
-- `feature` — a named product capability
-- `operation` — a meaningful action within a feature
-- `actor` — a user role, user type, organizational unit, external party, or system agent that performs or is restricted from actions
-- `business-rule` — a high-level business policy
-- `entity` — a named business object (e.g. Invoice, Interview, Offer)
-- `decision` — a commitment or resolved question (`status: draft | accepted | deprecated`)
-- `constraint` — a technical invariant or access condition the implementation must respect
-- `concept` — a key abstraction or topic area named by the specialist during the interview
-- `claim` — a tentative or unresolved assertion made during the interview (`confidence: tentative | agreed`); use when something is stated but not yet settled — a `decision` is for resolved commitments, a `claim` is for things still subject to correction or confirmation
-- `risk` — a potential negative outcome: implementation hazard, business exposure, logic pitfall, edge-case in calculation logic, data-loss scenario, customer-facing harm
+During an interview, check the graph before creating new nodes. The same node types can appear from either source (`code-analysis` or `interview`); only the `source` property differs.
 
-Key relationship types (stored in Neo4j as UPPER_SNAKE_CASE):
+| Node type | Description | Behavior in interview |
+|-----------|-------------|----------------------|
+| `feature` | A named product capability | **Reuse existing or create new.** If the interview is about a new feature, create it. If about an existing feature, find and extend it. |
+| `operation` | A meaningful action within a feature | **Check existing.** If the interviewed user mentions an operation already in the graph, reuse it. Otherwise create a new one. |
+| `actor` | A user role, user type, organizational unit, external party, or system agent | **Check existing.** Reuse known actors from the graph. Create new actors only if genuinely new roles are discovered. |
+| `business-rule` | A high-level business policy | **Can be created.** One of the most important nodes for business logic. |
+| `entity` | A named business object (e.g. Invoice, Interview, Offer) | **Check existing.** Ambiguous, duplicate, or synonym entities should be avoided. Check the graph for similar entities and ask the user if it's the same or different. |
+| `decision` | A commitment or resolved question (`status: draft \| accepted \| deprecated`) | **Interview-specific.** Created only during interviews. Resolved questions and commitments. |
+| `constraint` | A technical invariant or access condition the implementation must respect | **Can be created.** Technical invariants or access conditions stated during interview. |
+| `concept` | A key abstraction or topic area named by the specialist | **Interview-specific.** Key abstractions named by the specialist. |
+| `claim` | A tentative or unresolved assertion (`confidence: tentative \| agreed`) | **Interview-specific.** Use when something is stated but not yet settled — a `decision` is for resolved commitments, a `claim` is for things still subject to correction or confirmation. |
+| `risk` | A potential negative outcome: implementation hazard, business exposure, logic pitfall | **Can be created.** Both code-visible and specialist-identified risks are stored the same way. |
+
+**Interview-specific nodes** (only from `/grasp-interview`): `Decision`, `Concept`, `Claim`.
+
+**Critical nodes for graph connectivity**: `Domain` and `Feature` must always be connected — they form the backbone of the graph structure. In 95%+ of interviews the domain already exists; find it in the graph and attach the feature to it.
+
+### Key Relationship Types (UPPER_SNAKE_CASE in Neo4j)
 
 - `SUB_CONCEPT_OF` — concept composition (part-of hierarchy)
 - `CONSTRAINED_BY` — a rule applies to a concept, decision, feature, or business rule
@@ -85,9 +95,9 @@ if [ -n "$COMMON_DIR" ] && [ -n "$GIT_DIR" ]; then
   fi
 fi
 
-SKILL_REAL=$(realpath ~/.agents/skills/grasp-requirements 2>/dev/null || readlink -f ~/.agents/skills/grasp-requirements 2>/dev/null || echo "")
+SKILL_REAL=$(realpath ~/.agents/skills/grasp-interview 2>/dev/null || readlink -f ~/.agents/skills/grasp-interview 2>/dev/null || echo "")
 SELF_RELATIVE=$([ -n "$SKILL_REAL" ] && cd "$SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
-COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-requirements 2>/dev/null || readlink -f ~/.copilot/skills/grasp-requirements 2>/dev/null || echo "")
+COPILOT_SKILL_REAL=$(realpath ~/.copilot/skills/grasp-interview 2>/dev/null || readlink -f ~/.copilot/skills/grasp-interview 2>/dev/null || echo "")
 COPILOT_SELF_RELATIVE=$([ -n "$COPILOT_SKILL_REAL" ] && cd "$COPILOT_SKILL_REAL/../.." 2>/dev/null && pwd || echo "")
 
 # Probe Claude plugin cache first — it always has the freshly-updated version.
@@ -115,12 +125,12 @@ if [ -n "$LATEST_CACHE" ] && [ -f "$LATEST_CACHE/package.json" ]; then
   CACHE_VERSION=$(jq -r '.version' "$LATEST_CACHE/package.json" 2>/dev/null || echo "0")
   if [ "$(printf '%s\n' "$CACHE_VERSION" "$PLUGIN_VERSION" | sort -V | tail -1)" = "$CACHE_VERSION" ] \
      && [ "$CACHE_VERSION" != "$PLUGIN_VERSION" ]; then
-    echo "[grasp-requirements] NOTE: Upgrading from $PLUGIN_VERSION to cache version $CACHE_VERSION"
+    echo "[grasp-interview] NOTE: Upgrading from $PLUGIN_VERSION to cache version $CACHE_VERSION"
     PLUGIN_ROOT="$LATEST_CACHE"
   fi
 fi
 
-echo "[grasp-requirements] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "unknown"))"
+echo "[grasp-interview] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLUGIN_ROOT/package.json" 2>/dev/null || echo "unknown"))"
 
 GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 ```
@@ -137,7 +147,7 @@ echo '{"edges":[]}' > "$PROJECT_ROOT/.grasp-it/intermediate/pr-edges.json"
 
 ## Phase 1: Topic Orientation
 
-### 1a. Determine the topic
+### 1a. Determine the topic and author
 
 The topic comes from:
 1. `$ARGUMENTS` — if provided directly with the skill call
@@ -145,6 +155,8 @@ The topic comes from:
 3. Ask — if neither is available: *"What feature or domain area should we explore together?"*
 
 If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not proceed to interview. First establish a precise name and a one-sentence description: *"Before we go deep, I want to make sure we're talking about the same thing. Can you give it a name and describe it in one sentence — what does it do and who benefits from it?"*
+
+**Capture the author's identity** — use the system username (from `$USER` or `whoami`). This is stored on every interview node as `author` and enables tracing knowledge back to its source. If the specialist is different from the system user, note it in the interview context.
 
 ### 1b. Check existing graph knowledge
 
@@ -159,7 +171,7 @@ Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find re
 - Surface them to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
 - If the existing nodes came from `source: "code-analysis"`, tell the specialist: *"I have some code-mined knowledge about this. I'll use it as a starting point and ask you to confirm, extend, or correct it."*
 
-**Also query for existing actors and domains** — well-known domain actors (e.g., `actor:pdl`, `actor:client`) may already exist in the graph from prior `/grasp-domain` or `/grasp-requirements` runs:
+**Also query for existing actors and domains** — well-known domain actors (e.g., `actor:pdl`, `actor:client`) may already exist in the graph from prior `/grasp-domain` or `/grasp-interview` runs:
 ```bash
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge) WHERE n:Actor OR n:Domain RETURN n.id, n.name, labels(n)[1] AS type LIMIT 50"
 ```
@@ -184,6 +196,7 @@ Create `$PROJECT_ROOT/.grasp-it/intermediate/interview-context.json`:
 ```json
 {
   "topic": "<topic name>",
+  "author": "<specialist name or role>",
   "featureId": "feature:<kebab-name>",
   "startedAt": "<ISO timestamp>",
   "status": "in-progress",
@@ -210,13 +223,13 @@ Questions must be asked **one at a time**. Before asking, state your current hyp
 
 ### Question Modes
 
-Use all three modes throughout the interview — vary them to maintain pace:
+Use all five modes throughout the interview — vary them to maintain pace and ensure accuracy:
 
-**Open question** — requires a free-text description. Use when you need the specialist's own framing.
-> "Describe how X works in your own words. Don't worry about being precise yet."
+**Open question** — requires a free-text description. Use when you need the specialist's own framing, or when you have no prior hypothesis.
+> "Open question: Describe how X works in your own words. Don't worry about being precise yet."
 
-**Hypothesis question** — state your assumption, ask for correction. Use for most questions.
-> "My understanding is that X does Y. Is that right, or does it also/instead/never do Z?"
+**Hypothesis question** — state your assumption, ask for correction. Use to ensure you and the specialist have the same view on the topic. Combine with open questions when you have doubts about unambiguity of the answer, terms, or scenario.
+> "Hypothesis question: My understanding is that X does Y. Is that right, or does it also/instead/never do Z?"
 
 **Concrete scenario** — name a specific situation and ask what happens. Use to probe edge cases and expose assumptions.
 > "If actor A performs operation B while actor C is doing D — what should happen? And what actually happens today?"
@@ -392,7 +405,7 @@ After each aspect is completed and you have paraphrase-checked the key findings 
 2. Update `pr-edges.json` — append new edges (deduplicate by `(source, target, type)`)
 3. **Push the updated graph to Neo4j** by running `push-interview-graph.mjs`:
    ```bash
-   node "$PLUGIN_ROOT/skills/grasp-requirements/push-interview-graph.mjs" "$PROJECT_ROOT"
+   node "$PLUGIN_ROOT/skills/grasp-interview/push-interview-graph.mjs" "$PROJECT_ROOT"
    ```
    This ensures the specialist sees the graph grow incrementally and can correct misunderstandings before they propagate.
 4. Mark the aspect complete in `interview-context.json`
@@ -524,7 +537,7 @@ Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed
 1. Validate the merged graph against the schema
 2. Write the merged graph back to Neo4j using `push-interview-graph.mjs`:
    ```bash
-   node "$PLUGIN_ROOT/skills/grasp-requirements/push-interview-graph.mjs" "$PROJECT_ROOT"
+   node "$PLUGIN_ROOT/skills/grasp-interview/push-interview-graph.mjs" "$PROJECT_ROOT"
    ```
 
    **Critical — dual-label MERGE pattern:** When writing nodes directly via Cypher, always use:
@@ -577,6 +590,7 @@ Offer to launch the dashboard:
   "type": "feature",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<one-paragraph description>",
   "status": "planned",
@@ -589,6 +603,7 @@ Offer to launch the dashboard:
   "type": "operation",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<what this action does>",
   "status": "planned",
@@ -600,6 +615,7 @@ Offer to launch the dashboard:
   "type": "actor",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<who this is>",
   "permissions": ["<what they can do>"],
@@ -612,6 +628,7 @@ Offer to launch the dashboard:
   "type": "business-rule",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<what the rule says>",
   "ruleText": "<plain-language policy statement>",
@@ -625,6 +642,7 @@ Offer to launch the dashboard:
   "type": "entity",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<what this object is and its lifecycle>",
   "tags": []
@@ -635,6 +653,7 @@ Offer to launch the dashboard:
   "type": "decision",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<what was decided>",
   "rationale": "<why this, not alternatives>",
@@ -648,6 +667,7 @@ Offer to launch the dashboard:
   "type": "constraint",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "condition": "<when this applies>",
   "invariant": "<what must always hold true>",
@@ -660,6 +680,7 @@ Offer to launch the dashboard:
   "type": "concept",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<precise definition — not vague>",
   "tags": []
@@ -672,6 +693,7 @@ Offer to launch the dashboard:
   "type": "claim",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<the assertion>",
   "confidence": "agreed",
@@ -684,6 +706,7 @@ Offer to launch the dashboard:
   "type": "risk",
   "kind": "knowledge",
   "source": "interview",
+  "author": "<specialist name or role>",
   "name": "<name>",
   "summary": "<what could go wrong and why it matters>",
   "severity": "high",

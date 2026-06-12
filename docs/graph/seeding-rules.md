@@ -25,7 +25,7 @@ Seeding generates an initial useful graph from a codebase. The goal is not just 
 - `Risk` nodes from code-visible hazards (float arithmetic, external API calls, complex time-boundary conditionals, missing validation on critical paths)
 - `Constraint` nodes from interface contracts, validation guards, and access control invariants
 
-### From `/grasp-requirements` (PO interview)
+### From `/grasp-interview` (PO interview)
 
 - `Feature` descriptions with `status: "planned"`
 - `Actor` definitions with `permissions` and `restrictions`
@@ -130,7 +130,7 @@ Seeding is the initial graph creation. After seeding, the graph is updated incre
 
 - `/grasp` rebuilds the codebase subgraph (deterministic, script-only)
 - `/grasp-domain` updates domain/feature/operation knowledge (LLM, from script signals)
-- `/grasp-requirements` adds or updates PO interview knowledge (LLM, from PO input)
+- `/grasp-interview` adds or updates PO interview knowledge (LLM, from PO input)
 
 The graph is never fully deleted and rebuilt from scratch — only the codebase subgraph is wiped per `/grasp` run. Knowledge subgraph persists and is updated incrementally.
 

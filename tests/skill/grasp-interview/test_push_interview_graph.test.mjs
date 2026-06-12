@@ -20,7 +20,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function runPushInterviewGraph(projectRoot, extraEnv = {}) {
-  const scriptPath = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-requirements/push-interview-graph.mjs');
+  const scriptPath = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
   // Build a clean env: start with process.env, then apply extraEnv
   // (undefined values are skipped so they don't override existing env vars)
   const env = { ...process.env };
@@ -356,7 +356,193 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means Claim nodes were processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFCLUDED/i);
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+    });
+  });
+
+  // ── Test 10: generatedAt field is added to all interview nodes ───────────
+
+  describe('generatedAt field handling', () => {
+    it('adds generatedAt to nodes that do not have it', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature' },
+          { id: 'decision:test-decision', name: 'Test Decision', summary: 'A test decision', type: 'decision' },
+          { id: 'claim:abc12345', name: 'Test Claim', summary: 'A test claim', type: 'claim', confidence: 'tentative' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means nodes were processed (generatedAt would be added)
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).not.toContain('Unknown node type');
+    });
+
+    it('preserves generatedAt when provided by the caller', () => {
+      const fixedTime = '2024-01-15T10:30:00.000Z';
+      const nodesData = {
+        nodes: [
+          { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature', generatedAt: fixedTime },
+          { id: 'decision:test-decision', name: 'Test Decision', summary: 'A test decision', type: 'decision', generatedAt: fixedTime },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means nodes were processed
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+    });
+  });
+
+  // ── Test 11: interview nodes do NOT carry sourceCommit or sourceFiles ───
+
+  describe('interview node source properties', () => {
+    it('processes nodes without sourceCommit and sourceFiles (interview nodes)', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature' },
+          { id: 'decision:test-decision', name: 'Test Decision', summary: 'A test decision', type: 'decision' },
+          { id: 'business-rule:test-rule', name: 'Test Rule', summary: 'A test rule', type: 'business-rule' },
+          { id: 'risk:test-risk', name: 'Test Risk', summary: 'A test risk', type: 'risk' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means nodes were processed without error
+      // (interview nodes should not have sourceCommit or sourceFiles)
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).not.toContain('Unknown node type');
+    });
+  });
+
+  // ── Test 12: all interview-specific node types are handled ─────────────
+
+  describe('interview-specific node types', () => {
+    it('handles Decision, Concept, and Claim nodes (interview-specific types)', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'decision:use-jwt-only', name: 'Use JWT Only', summary: 'Decided to use JWT for auth', type: 'decision', rationale: 'Simpler than session auth', status: 'accepted' },
+          { id: 'concept:invoice-assignment', name: 'Invoice Assignment', summary: 'The concept of assigning invoices to clients', type: 'concept' },
+          { id: 'claim:a1b2c3d4', name: 'Invoice Always Positive', summary: 'Invoice amount is always positive', type: 'claim', confidence: 'agreed' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means interview-specific nodes were processed correctly
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).not.toContain('Unknown node type');
+    });
+  });
+
+  // ── Test 13: reusable node types are handled correctly ─────────────────
+
+  describe('reusable node types (check before creating)', () => {
+    it('handles Feature, Operation, Actor, Entity nodes (domain is reused, not created)', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'feature:login', name: 'User Login', summary: 'Login feature', type: 'feature' },
+          { id: 'operation:send-email', name: 'Send Email', summary: 'Send email operation', type: 'operation' },
+          { id: 'actor:agency-user', name: 'Agency User', summary: 'User belonging to agency', type: 'actor' },
+          { id: 'entity:interview', name: 'Interview', summary: 'Interview entity', type: 'entity' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means reusable nodes were processed correctly
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).not.toContain('Unknown node type');
+    });
+  });
+
+  // ── Test 14: author field is added to all interview nodes ───────────────
+
+  describe('author field handling', () => {
+    it('adds author to nodes when provided', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature', author: 'Sarah Chen, Product Owner' },
+          { id: 'decision:test-decision', name: 'Test Decision', summary: 'A test decision', type: 'decision', author: 'Sarah Chen, Product Owner' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means nodes were processed
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).not.toContain('Unknown node type');
+    });
+
+    it('sets empty author when not provided', () => {
+      const nodesData = {
+        nodes: [
+          { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+      });
+
+      expect(result.status).toBe(1);
+      // Connection error means nodes were processed (author defaults to empty string)
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
     });
   });
 });

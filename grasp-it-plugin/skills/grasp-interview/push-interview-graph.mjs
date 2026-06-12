@@ -16,6 +16,9 @@
  * Exit codes:
  *   0 — success
  *   1 — failure (file not found, Neo4j error, etc.)
+ *
+ * All interview nodes carry generatedAt (ISO timestamp). They do NOT carry
+ * sourceCommit or sourceFiles — those are only present on code-analysis nodes.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -106,6 +109,8 @@ function buildNodesCypher(graphData, neo4jConfig) {
         source: "interview",
         type: node.type,
         tags: node.tags || [],
+        generatedAt: node.generatedAt || new Date().toISOString(),
+        author: node.author || "",
       };
       if (node.status) props.status = node.status;
       if (node.complexity) props.complexity = node.complexity;
@@ -307,6 +312,8 @@ async function pushInterviewGraph(projectRoot) {
           source: "interview",
           type: node.type,
           tags: node.tags || [],
+          generatedAt: node.generatedAt || new Date().toISOString(),
+          author: node.author || "",
         };
         if (node.status) props.status = node.status;
         if (node.complexity) props.complexity = node.complexity;

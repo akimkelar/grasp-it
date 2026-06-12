@@ -20,7 +20,7 @@ The core idea is a **two-graph system**:
 
 - **Knowledge graph** — domain and product knowledge: business features, actors, operations,
   business rules, decisions, and constraints. Populated by `/grasp-domain` (from code) and
-  `/grasp-requirements` (from the Product Specialist).
+  `/grasp-interview` (from the Product Specialist).
 
 The knowledge graph stores two kinds of knowledge:
 - **Implemented** — what the codebase currently does
@@ -31,11 +31,11 @@ The knowledge graph stores two kinds of knowledge:
 ```
 1. /grasp           → analyze the codebase, build the structural graph
 2. /grasp-domain    → mine domain and feature knowledge from the code
-3. /grasp-requirements        → interview the Product Owner, extract planned feature knowledge
+3. /grasp-interview        → interview the Product Owner, extract planned feature knowledge
 4. Use the graph    → create tasks, implementation plans, test cases, and drive implementation
 ```
 
-The `/grasp-requirements` interview is relentless and structured: questions go one at a time,
+The `/grasp-interview` interview is relentless and structured: questions go one at a time,
 each aspect of the feature is explored in depth (actors, operations, entities, business rules,
 decisions, risks, integrations), and a gap-analysis loop runs after the initial interview to
 surface contradictions, undefined terms, and unmitigated risks before anything is written as
@@ -79,7 +79,7 @@ Derives business domains, features, and flows from the codebase graph.
 ### 4. Interview the Product Owner
 
 ```bash
-/grasp-requirements "new feature area"
+/grasp-interview "new feature area"
 ```
 
 Conducts a structured interview to extract planned knowledge — what the Product Specialist wants, what rules apply,
@@ -120,7 +120,7 @@ curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh 
 ```
 /grasp-domain     # understand business domains and features
 /grasp-search How does authentication work?   # query the graph
-/grasp-requirements "payments"    # capture product requirements
+/grasp-interview "payments"    # capture product requirements
 ```
 
 **First-time setup:** When `/grasp` runs for the first time, it will ask you a few questions to configure your Neo4j connection (URI, database, username, password). Your credentials are stored locally in a `.env` file and never shared.
@@ -153,7 +153,7 @@ The installer will detect if Claude Code is installed and copy the plugin to the
 |-------|---------|--------|
 | `/grasp` | Full codebase analysis | Neo4j codebase graph |
 | `/grasp-domain` | Extract business domains and features from code | Knowledge graph (implemented) |
-| `/grasp-requirements` | Interview Product Specialist, extract planned knowledge | Knowledge graph (planned) |
+| `/grasp-interview` | Interview Product Specialist, extract planned knowledge | Knowledge graph (planned) |
 | `/grasp-search` | Query the graph before coding | Architecture understanding |
 | `/grasp-diff` | Analyze change impact | Affected components |
 | `/grasp-explain` | Deep-dive into a specific file or function | Plain-English explanation |

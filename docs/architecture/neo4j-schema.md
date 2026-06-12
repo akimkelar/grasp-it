@@ -11,7 +11,7 @@ Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j da
 - **Knowledge subgraph** — product and domain knowledge: business domains, features, operations,
   actors, business rules, decisions, and constraints. Populated by:
   - `/grasp-domain` — mines domain and feature knowledge from the codebase
-  - `/grasp-requirements` — interviews the Product Owner to distil planned feature knowledge
+  - `/grasp-interview` — interviews the Product Owner to distil planned feature knowledge
 
 The knowledge subgraph stores knowledge of two kinds:
 - **Implemented** — what the codebase currently does, extracted by analysis
@@ -19,8 +19,10 @@ The knowledge subgraph stores knowledge of two kinds:
 
 Knowledge nodes carry a `source` property that records where the knowledge came from:
 - `"code-analysis"` — mined from the codebase by `/grasp-domain`
-- `"interview"` — extracted from a specialist/PO conversation by `/grasp-requirements`
+- `"interview"` — extracted from a specialist/PO conversation by `/grasp-interview`
 - `"wiki"` — ingested from documentation by `/grasp-knowledge` (future)
+
+The same node type can appear from either source. The `source` property tells them apart — use it to distinguish implemented facts from specialist-described intent.
 
 Both subgraphs are used together to create tasks, build implementation plans, design test cases,
 and drive implementation. The `IMPLEMENTED_BY` relationship bridges them — tracing a planned
@@ -119,36 +121,52 @@ Business concepts, domain models, and LLM-facts extracted from wikis and intervi
 
 All knowledge nodes use the `Knowledge:` grouping label with a secondary type label (e.g., `Knowledge:Domain`).
 
-#### Business Layer — populated by `/grasp-domain` and `/grasp-requirements`
+#### All Knowledge Nodes
 
-Nodes produced by `/grasp-domain` carry `source: "code-analysis"`.
-Nodes produced by `/grasp-requirements` carry `source: "interview"`.
-The same node type can appear from either source; the `source` property tells them apart.
+All knowledge nodes carry `generatedAt` (ISO 8601 timestamp). Code-analysis nodes additionally carry `sourceCommit` and `sourceFiles[]`; interview nodes do not.
 
 | Label | Description | Properties |
 |-------|-------------|------------|
-| `Domain` | Product domain or area | `id`, `name`, `summary`, `source`, `tags[]` |
-| `Feature` | Named product feature | `id`, `name`, `summary`, `status`, `source`, `tags[]` |
-| `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `source`, `tags[]` |
-| `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `source`, `tags[]` |
-| `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `source`, `tags[]` |
-| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `source`, `tags[]` |
-| `Risk` | Potential negative outcome: implementation hazard, calculation pitfall, external dependency failure | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]` |
-| `Constraint` | Technical invariant or access condition enforced by the codebase or stated by a specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]` |
+| `Domain` | Product domain or area | `id`, `name`, `summary`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Feature` | Named product feature | `id`, `name`, `summary`, `status`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Risk` | Potential negative outcome: implementation hazard, calculation pitfall, external dependency failure | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Constraint` | Technical invariant or access condition enforced by the codebase or stated by a specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]`, `generatedAt`, `author?` |
+| `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]`, `generatedAt`, `author?` |
+| `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]`, `generatedAt`, `author?` |
 
-#### PO Interview Layer — populated by `/grasp-requirements`
+`sourceCommit?` and `sourceFiles[]?` are present only on `source: "code-analysis"` nodes.
+`author?` is present only on `source: "interview"` nodes — the name or role of the specialist who provided the knowledge.
 
-All nodes in this layer carry `source: "interview"`.
-
-| Label | Description | Properties |
-|-------|-------------|------------|
-| `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]` |
-| `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]` |
-| `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]` |
-| `Risk` | Potential negative outcome identified during interview | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]` |
-| `Constraint` | Technical invariant or access condition stated by specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]` |
+`sourceCommit?` and `sourceFiles[]?` are present only on `source: "code-analysis"` nodes.
 
 **`Claim.confidence`:** `"tentative"` | `"agreed"`
+
+#### Node Reuse Guidelines for Interviews
+
+During an interview, the skill must check the graph before creating new nodes. The same node types can appear from either source — only the `source` property differs.
+
+| Node type | Behavior in interview |
+|-----------|----------------------|
+| `Domain` | **Reuse existing.** In 95%+ of interviews the domain already exists. Find it in the graph and attach the feature to it directly (new feature) or indirectly (via an existing feature). Create a new domain only in extreme cases. |
+| `Feature` | **Reuse existing or create new.** If the interview is about a new feature, create it. If about an existing feature, find and extend it. |
+| `Operation` | **Check existing.** If the interviewed user mentions an operation concept already in the graph, reuse it. Otherwise create a new one. |
+| `Actor` | **Check existing.** Reuse known actors from the graph. Create new actors only if genuinely new roles are discovered. |
+| `BusinessRule` | **Can be created.** One of the most important nodes for business logic. |
+| `Entity` | **Check existing.** Ambiguous, duplicate, or synonym entities should be avoided. Check the graph for similar entities and ask the user if it's the same or different. |
+| `Risk` | **Can be created.** Both code-visible and specialist-identified risks are stored the same way. |
+| `Constraint` | **Can be created.** Technical invariants or access conditions stated during interview. |
+| `Decision` | **Interview-specific.** Created only during interviews. Resolved questions and commitments. |
+| `Concept` | **Interview-specific.** Key abstractions named by the specialist. |
+| `Claim` | **Interview-specific.** Assertions from the interview. |
+
+**Interview-specific nodes** (only from `/grasp-interview`): `Decision`, `Concept`, `Claim`.
+
+**Critical nodes for graph connectivity**: `Domain` and `Feature` must always be connected — they form the backbone of the graph structure.
 
 ### Project Singleton Node
 
@@ -192,7 +210,7 @@ external knowledge-base sources. They are **not** extracted from codebases or PO
 | `Source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
 
 > **Note:** `Claim` was previously reserved for `/grasp-knowledge`. It is now a first-class PO
-> Interview Layer node — see above. Claims produced by `/grasp-requirements` carry `source: "interview"`;
+> Interview Layer node — see above. Claims produced by `/grasp-interview` carry `source: "interview"`;
 > claims produced by `/grasp-knowledge` carry `source: "wiki"`.
 
 ### Deferred Node Types
@@ -233,8 +251,15 @@ Every node carries:
 - `complexity: "simple" | "moderate" | "complex"` — optional
 - `lineRange: [number, number]` — optional; code nodes only
 
+**Knowledge nodes** (`kind: "knowledge"`) additionally carry:
+- `generatedAt: string` — ISO 8601 timestamp of when the node was created or last refreshed; present on all knowledge nodes
+- `sourceCommit: string` — git commit hash at which this node was derived from code; present only on code-analysis nodes (`source: "code-analysis"`)
+- `sourceFiles: string[]` — array of file paths analyzed to derive this node; present only on code-analysis nodes (`source: "code-analysis"`)
+
+Interview nodes (`source: "interview"`) carry `generatedAt` but not `sourceCommit` or `sourceFiles`.
+
 The `source` property is the primary way to distinguish implemented knowledge (mined from code by
-`/grasp-domain`) from specialist-described intent (captured by `/grasp-requirements`). The same
+`/grasp-domain`) from specialist-described intent (captured by `/grasp-interview`). The same
 `Feature` or `BusinessRule` can appear from both sources — use `source` to tell them apart, and
 `status` to understand how far implementation has progressed.
 

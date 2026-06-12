@@ -5,7 +5,7 @@
 The primary purpose of Grasp-It has shifted. The most important workflow is now:
 
 1. **`/grasp-domain`** — mine business domain and feature knowledge from the codebase
-2. **`/grasp-requirements`** — interview the Product Owner to extract planned feature knowledge (business rules,
+2. **`/grasp-interview`** — interview the Product Owner to extract planned feature knowledge (business rules,
    decisions, constraints, actors, operations)
 
 The resulting graphs are then used to create tasks, build implementation plans, design test cases,
@@ -62,7 +62,7 @@ but must **not** be created by codebase analysis or PO interview agents:
 ### PO Interview nodes (promoted from deferred)
 
 `Concept`, `Claim`, and `Risk` have been promoted from deferred status to first-class PO Interview
-Layer nodes. They are created only by `/grasp-requirements` during a specialist interview and carry
+Layer nodes. They are created only by `/grasp-interview` during a specialist interview and carry
 `source: "interview"`.
 
 - **`Concept`** — a key abstraction or topic area named by the specialist. Replaces the vague
@@ -77,7 +77,7 @@ Layer nodes. They are created only by `/grasp-requirements` during a specialist 
 
 A `source` property has been added to all knowledge nodes:
 - `source: "code-analysis"` — nodes produced by `/grasp-domain` from codebase mining
-- `source: "interview"` — nodes produced by `/grasp-requirements` from specialist interviews
+- `source: "interview"` — nodes produced by `/grasp-interview` from specialist interviews
 - `source: "wiki"` — nodes produced by `/grasp-knowledge` from wiki/Confluence ingestion (future)
 
 This separates implemented facts from specialist-described intent at the property level, enabling
@@ -204,7 +204,7 @@ Properties:
 - `restrictions: string[]` — what they cannot do
 - `tags: string[]`
 
-**Extraction source:** `/grasp-requirements` PO interview only. Scripts produce no actor signals.
+**Extraction source:** `/grasp-interview` PO interview only. Scripts produce no actor signals.
 Code may hint at roles (guard names, permission constants), but business-level actor
 definition requires the PO. Trying to infer actors from code alone would produce
 technical roles (e.g. "AdminUser", "AuthGuard") rather than business roles.
@@ -228,7 +228,7 @@ Properties:
 - `scope: string[]`
 - `tags: string[]`
 
-**Extraction source:** Primarily `/grasp-requirements` PO interview. Partially inferrable by the
+**Extraction source:** Primarily `/grasp-interview` PO interview. Partially inferrable by the
 domain-analyzer LLM from guard/middleware names and permission-checking code patterns
 (e.g. `@Roles('MANAGER')`, `if (!user.isAdmin) throw Forbidden`), but semantic intent
 requires PO confirmation. Domain-analyzer can produce draft `BusinessRule` nodes; PO
@@ -253,7 +253,7 @@ Properties:
 - `tags: string[]`
 
 **Extraction source:** Both the domain-analyzer LLM (from entry points + exported function
-names in the script output) and `/grasp-requirements` PO interview. The scripts surface raw operation
+names in the script output) and `/grasp-interview` PO interview. The scripts surface raw operation
 signals deterministically — HTTP endpoints, exported handler names, event handler names —
 which the LLM maps to named operations. PO interview adds operations not yet implemented and
 clarifies sequencing / constraints. This is the node type with the highest script-to-LLM
@@ -336,7 +336,7 @@ at the business level. Keeping them separate means the graph can answer both
 
 ## Rationale for Actor
 
-The entire premise of the PO interview in `/grasp-requirements` is to extract "who can do what, who is
+The entire premise of the PO interview in `/grasp-interview` is to extract "who can do what, who is
 restricted from what, what processes run in which context to achieve which goal." Without `Actor`
 as a first-class node, the answer to "who" is scattered across constraint text and summaries,
 and is not queryable.
@@ -367,14 +367,14 @@ the product concept of a "feature" — a named, versioned, deliverable slice of 
 | Node | Script provides | LLM required | Skill that creates it |
 |------|----------------|--------------|----------------------|
 | `Feature` | URL paths, dir names, controller names | Yes — semantic grouping | `/grasp-domain` (domain-analyzer) |
-| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-requirements` only |
-| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-requirements` accepted |
-| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-requirements` |
+| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-interview` only |
+| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-interview` accepted |
+| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-interview` |
 | `Domain` | Entry point groupings (existing) | Yes (existing) | `/grasp-domain` (existing) |
-| `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-requirements` (existing) |
-| `Concept` | Nothing | Yes — specialist names the abstraction | `/grasp-requirements` only |
-| `Claim` | Nothing | Yes — assertions from interview | `/grasp-requirements` only |
-| `Risk` | Nothing | Yes — hazards, pitfalls, edge cases from specialist | `/grasp-requirements` only |
+| `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-interview` (existing) |
+| `Concept` | Nothing | Yes — specialist names the abstraction | `/grasp-interview` only |
+| `Claim` | Nothing | Yes — assertions from interview | `/grasp-interview` only |
+| `Risk` | Nothing | Yes — hazards, pitfalls, edge cases from specialist | `/grasp-interview` only |
 | `File`, `Function`, `Class` | Full structural facts | Yes — summaries only | `/grasp` (existing) |
 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | Non-code file parsers (zero LLM cost) | No — structure only | `/grasp` (existing) |
 | `Article`, `Topic`, `Claim`, `Source` | Nothing from codebase | Yes — wiki/knowledge-base extraction | `/grasp-knowledge` (future) |
@@ -628,7 +628,7 @@ tree-sitter-groovy   (ships tree-sitter-groovy.wasm — confirmed)
 | Single database, `kind` property separation | Architecture decision | ✅ Final |
 | Add `source` property to all knowledge nodes | Schema property | ✅ Final |
 | Add `Concept` node (PO Interview Layer) | New knowledge node | ✅ Final |
-| Add `Claim` node (PO Interview Layer, also available to `/grasp-requirements`) | Node reclassification | ✅ Final |
+| Add `Claim` node (PO Interview Layer, also available to `/grasp-interview`) | Node reclassification | ✅ Final |
 | Add `Risk` node (PO Interview Layer) | New knowledge node | ✅ Final |
 | Add `SUB_CONCEPT_OF` | New relationship | ✅ Final |
 | Add `IMPLEMENTS` (Decision → Concept) | New relationship | ✅ Final |

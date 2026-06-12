@@ -374,7 +374,7 @@ Determine whether to run a full analysis or incremental update.
 
      if (role === 'non-developer') {
        console.log('\n[grasp-it] You are set up for graph-query mode.');
-       console.log('[grasp-it] Use grasp-search, grasp-chat, grasp-knowledge, or grasp-requirements to explore the graph.');
+       console.log('[grasp-it] Use grasp-search, grasp-chat, grasp-knowledge, or grasp-interview to explore the graph.');
        console.log('[grasp-it] ROLE=non-developer');
      } else {
        console.log('\n[grasp-it] You are set up as a developer. Run /grasp to build or update the knowledge graph.');
@@ -428,7 +428,7 @@ Determine whether to run a full analysis or incremental update.
      echo "  /grasp-search  — search nodes and relationships"
      echo "  /grasp-chat    — ask questions about the codebase"
      echo "  /grasp-knowledge — explore knowledge articles"
-     echo "  /grasp-requirements — analyze requirements against the graph"
+     echo "  /grasp-interview — analyze requirements against the graph"
      echo ""
      echo "[grasp-it] Your Neo4j credentials are saved and ready for graph queries."
      exit 0

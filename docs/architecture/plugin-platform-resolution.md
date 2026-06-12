@@ -102,7 +102,7 @@ All skill files use the same resolution pattern:
 - `skills/grasp-domain/SKILL.md`
 - `skills/grasp-diff/SKILL.md`
 - `skills/grasp-explain/SKILL.md`
-- `skills/grasp-requirements/SKILL.md`
+- `skills/grasp-interview/SKILL.md`
 - `skills/grasp-chat/SKILL.md`
 
 All were updated to put the Claude cache first and add version comparison.

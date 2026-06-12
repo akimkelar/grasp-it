@@ -7,7 +7,7 @@ The current implementation uses `knowledge-graph.json`, `meta.json`, and `domain
 1. **Staleness checks read JSON files first** — should query Neo4j `Project` singleton
 2. **Domain graph is local-only** — not persisted to Neo4j, making it unqueryable
 3. **Incremental updates require JSON files** — `mergeGraphUpdate()` reads `knowledge-graph.json`
-4. **Skills depend on JSON files** — `/grasp-domain`, `/grasp-diff`, `/grasp-search`, `/grasp-requirements` all read JSON files directly
+4. **Skills depend on JSON files** — `/grasp-domain`, `/grasp-diff`, `/grasp-search`, `/grasp-interview` all read JSON files directly
 5. **No single source of truth** — data lives in two places, easily diverges
 
 ## Design Principles
@@ -144,7 +144,7 @@ async function saveDomainGraphToNeo4j(session: Session, domainGraph: DomainGraph
 | `/grasp-domain` | Reads `knowledge-graph.json` for derivation | Query Neo4j for knowledge graph nodes |
 | `/grasp-diff` | Reads `gitCommitHash` from JSON | Query `Project.gitCommitHash` from Neo4j |
 | `/grasp-search` | Reads `gitCommitHash` from JSON | Query `Project.gitCommitHash` from Neo4j |
-| `/grasp-requirements` | Reads existing graph from JSON | Query Neo4j for existing nodes |
+| `/grasp-interview` | Reads existing graph from JSON | Query Neo4j for existing nodes |
 | `/grasp-chat` | Reads graph from JSON | Query Neo4j |
 | `/grasp-explain` | Checks JSON existence | Query Neo4j for `Project` |
 
@@ -180,7 +180,7 @@ Replace with Neo4j-only equivalents:
 4. `skills/grasp/SKILL.md` — Remove JSON reads, Neo4j-only
 5. `skills/grasp-diff/SKILL.md` — Neo4j reads
 6. `skills/grasp-search/SKILL.md` — Neo4j reads
-7. `skills/grasp-requirements/SKILL.md` — Neo4j reads
+7. `skills/grasp-interview/SKILL.md` — Neo4j reads
 8. `skills/grasp-chat/SKILL.md` — Neo4j reads
 9. `skills/grasp-explain/SKILL.md` — Neo4j reads
 10. `hooks/auto-update-prompt.md` — Neo4j reads/writes only
