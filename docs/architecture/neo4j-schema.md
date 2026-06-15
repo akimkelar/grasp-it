@@ -290,12 +290,29 @@ MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:CALLS` | `Function` | `Function` | Function calls another | `weight: float`, `description: string` |
+| `:CALLS` | `Function` / `Endpoint` | `Function` | Function or endpoint calls another function | `weight: float`, `description: string` |
 | `:READS_FROM` | `Function` | `Table` / `Endpoint` | Reads from data source | `weight: float` |
 | `:WRITES_TO` | `Function` | `Table` / `Endpoint` | Writes to data source | `weight: float` |
 | `:CONFIGURES` | `*` | `Config` | Configures something | `weight: float` |
 | `:TESTED_BY` | `*` | `*` | Tested by test node | `weight: float` |
 | `:DEPENDS_ON` | `*` | `*` | Depends on another node | `weight: float` |
+
+### Non-code File Relationships (codebase)
+
+Relationships used by non-source-code file types (`Document`, `Service`, `Pipeline`, `Schema`, `Resource`):
+
+| Type | From | To | Description | Properties |
+|------|------|----|-------------|------------|
+| `:DOCUMENTS` | `Document` / `File` | `File` | Doc file describes code | `weight: float` |
+| `:DEPLOYS` | `File` | `File` | Infra file deploys code | `weight: float` |
+| `:MIGRATES` | `File` | `Table` | SQL migration modifies table | `weight: float` |
+| `:TRIGGERS` | `Pipeline` | `Pipeline` | CI config triggers another pipeline | `weight: float` |
+| `:DEFINES_SCHEMA` | `Schema` | `*` | Schema file defines structure | `weight: float` |
+| `:SERVES` | `Service` | `Endpoint` | K8s/container service exposes endpoint | `weight: float` |
+| `:PROVISIONS` | `Resource` | `*` | Terraform/IaC creates infrastructure | `weight: float` |
+| `:ROUTES` | `File` | `Endpoint` | Routing config directs traffic | `weight: float` |
+
+> **Note on Class methods:** Class methods are NOT stored as separate `Function` nodes. They are stored as a `methods: string[]` property on the `Class` node. There is no `Class→Function` relationship in the graph. To find functions defined in the same file as a class, match on `filePath`.
 
 ### Product and Business Relationships (knowledge)
 
