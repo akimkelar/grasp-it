@@ -90,7 +90,9 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
   const password = NEO4J_PASSWORD || "password";
 
   // Extract host/port from URI for cypher-shell -a argument
-  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+  const cypherUri = uri
+    .replace(/^neo4j\+s:\/\//, "bolt+s://")
+    .replace(/^neo4j:\/\//, "bolt://");
 
   const query = `MATCH (p:Project {id: '${PROJECT_SINGLETON_ID}'}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`;
 
@@ -101,7 +103,7 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
         "-a", cypherUri,
         "-u", username,
         "-p", password,
-        "-d", neo4jConfig.NEO4J_DATABASE || "neo4j",
+        "-d", neo4jConfig.NEO4J_DATABASE || "grasp",
         "--format", "json",
       ],
       { input: query, encoding: "utf-8" },

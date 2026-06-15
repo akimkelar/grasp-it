@@ -73,7 +73,9 @@ function cypherEscape(value) {
 function runCypherShell(neo4jConfig, query) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
   const uri = NEO4J_URI || "neo4j://localhost:7687";
-  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+  const cypherUri = uri
+    .replace(/^neo4j\+s:\/\//, "bolt+s://")
+    .replace(/^neo4j:\/\//, "bolt://");
   const database = neo4jConfig.NEO4J_DATABASE || "grasp";
 
   try {
@@ -90,6 +92,9 @@ function runCypherShell(neo4jConfig, query) {
     );
     return { ok: true };
   } catch (err) {
+    if (err.code === "ENOENT" || (err.message && err.message.includes("ENOENT"))) {
+      return { ok: false, reason: "cypher-shell not found. Install it: brew install cypher-shell (macOS), apt install cypher-shell (Linux), or see https://neo4j.com/deployment-center/" };
+    }
     return { ok: false, reason: err.message };
   }
 }
@@ -121,8 +126,8 @@ function buildNodesCypher(graphData, neo4jConfig) {
 
       const setParts = Object.entries(props)
         .map(([k, v]) => {
-          if (Array.isArray(v)) return `n.${k} = ${cypherEscape(JSON.stringify(v))}`;
-          return `n.${k} = ${cypherEscape(v)}`;
+          if (Array.isArray(v)) return `${k}: [${v.map(item => cypherEscape(String(item))).join(', ')}]`;
+          return `${k}: ${cypherEscape(v)}`;
         })
         .join(", ");
 
@@ -193,6 +198,50 @@ function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
   process.exit(0);
 }
 
+// ── Retry helper ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns true for errors that are transient connection/DNS failures worth retrying.
+ */
+function isRetryable(err) {
+  if (err.code === "ServiceUnavailable") return true;
+  const msg = err.message || "";
+  return (
+    msg.includes("ENOTFOUND") ||
+    msg.includes("EAI_AGAIN") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("getaddrinfo")
+  );
+}
+
+/**
+ * Retry an async function up to `retries` times on retryable errors.
+ * Logs each failed attempt to stderr.
+ *
+ * @param {() => Promise<any>} fn - Async function to call
+ * @param {{ retries?: number, delayMs?: number, label?: string }} options
+ */
+async function withRetry(fn, { retries = 3, delayMs = 2000, label = "push-codebase-graph.mjs" } = {}) {
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (isRetryable(err) && attempt < retries) {
+        const reason = err.message || String(err);
+        process.stderr.write(
+          `${label}: Connection attempt ${attempt}/${retries} failed (${reason}). Retrying in ${delayMs / 1000}s...\n`
+        );
+        await new Promise((res) => setTimeout(res, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 // ── Main push logic ─────────────────────────────────────────────────────────────
 
 async function pushCodebaseGraph(projectRoot) {
@@ -237,17 +286,31 @@ async function pushCodebaseGraph(projectRoot) {
   // Try driver first; fall back to cypher-shell if driver is unavailable
   let driver;
   let driverAvailable = false;
+  // Counter for NEO4J_TEST_MOCK_FAIL_TIMES: how many connection attempts should fail before succeeding
+  let mockFailsRemaining = process.env.NEO4J_TEST_MOCK_FAIL_TIMES
+    ? parseInt(process.env.NEO4J_TEST_MOCK_FAIL_TIMES, 10)
+    : null;
   try {
     // Test mode: use a mock driver that fails predictably
     if (process.env.NEO4J_TEST_MOCK === '1') {
       throw new Error('Connection refused (TestMock)');
     }
-    const { default: neo4j } = await import("neo4j-driver");
-    driver = neo4j.driver(
-      neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",
-      neo4j.auth.basic(neo4jConfig.NEO4J_USERNAME || "neo4j", neo4jConfig.NEO4J_PASSWORD || "password"),
-    );
-    driverAvailable = true;
+    // Test mode: controlled failure count or auth fail — use a stub driver to avoid real network activity
+    if (mockFailsRemaining !== null || process.env.NEO4J_TEST_MOCK_AUTH_FAIL === '1') {
+      driver = {
+        verifyConnectivity: async () => {},
+        session: () => ({ run: async () => ({ records: [] }), close: async () => {} }),
+        close: async () => {},
+      };
+      driverAvailable = true;
+    } else {
+      const { default: neo4j } = await import("neo4j-driver");
+      driver = neo4j.driver(
+        neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",
+        neo4j.auth.basic(neo4jConfig.NEO4J_USERNAME || "neo4j", neo4jConfig.NEO4J_PASSWORD || "password"),
+      );
+      driverAvailable = true;
+    }
   } catch (err) {
     console.error(`push-codebase-graph.mjs: neo4j-driver not available (${err.message}) — will use cypher-shell fallback.`);
   }
@@ -257,93 +320,140 @@ async function pushCodebaseGraph(projectRoot) {
     return; // never reached
   }
 
+  // Extract hostname from URI for DNS error messages
+  const neo4jUri = neo4jConfig.NEO4J_URI || "neo4j://localhost:7687";
+  let neo4jHostname = "localhost";
   try {
+    neo4jHostname = new URL(neo4jUri.replace(/^neo4j(\+ssc?)?:\/\//, "bolt://")).hostname;
+  } catch { /* ignore */ }
+
+  // Allow tests to override retry delay so tests run fast
+  const retryDelayMs = process.env.NEO4J_RETRY_DELAY_MS
+    ? parseInt(process.env.NEO4J_RETRY_DELAY_MS, 10)
+    : 2000;
+
+  /**
+   * One connection attempt: verify connectivity, open session, run all queries, close session.
+   */
+  async function runDriverAttempt() {
+    // Test mode with controlled failure count (simulate transient DNS failures)
+    if (mockFailsRemaining !== null && mockFailsRemaining > 0) {
+      mockFailsRemaining--;
+      const mockErr = new Error("ENOTFOUND mock.host.invalid (TestMock)");
+      mockErr.code = "ServiceUnavailable";
+      throw mockErr;
+    }
+    // NEO4J_TEST_MOCK_FAIL_TIMES=N: after N failures, succeed immediately (no real DB calls)
+    if (mockFailsRemaining !== null && mockFailsRemaining === 0) {
+      return; // simulate successful push
+    }
+    if (process.env.NEO4J_TEST_MOCK_AUTH_FAIL === '1') {
+      const authErr = new Error("The client is unauthorized due to authentication failure.");
+      authErr.code = "Neo.ClientError.Security.Unauthorized";
+      throw authErr;
+    }
+
+    // Pre-flight connectivity check — surfaces DNS/connection failures early
+    await driver.verifyConnectivity();
+
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" });
+    try {
+      // Push nodes with dual labels: Codebase + specific type label
+      // Use MERGE (not delete-then-insert) so existing nodes outside the
+      // assembled graph scope are preserved. This supports scoped analyses
+      // (e.g., --files flag) that should not destroy the pre-existing graph.
+      if (graphData.nodes && Array.isArray(graphData.nodes)) {
+        for (const node of graphData.nodes) {
+          const secondaryLabel = TYPE_TO_LABEL[node.type];
+          if (!secondaryLabel) {
+            console.error(`push-codebase-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Skipping.`);
+            continue;
+          }
 
-    // Push nodes with dual labels: Codebase + specific type label
-    // Use MERGE (not delete-then-insert) so existing nodes outside the
-    // assembled graph scope are preserved. This supports scoped analyses
-    // (e.g., --files flag) that should not destroy the pre-existing graph.
-    if (graphData.nodes && Array.isArray(graphData.nodes)) {
-      for (const node of graphData.nodes) {
-        const secondaryLabel = TYPE_TO_LABEL[node.type];
-        if (!secondaryLabel) {
-          console.error(`push-codebase-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Skipping.`);
-          continue;
+          const props = {
+            id: node.id,
+            name: node.name || "",
+            type: node.type,
+            summary: node.summary || "",
+            kind: "codebase",
+            tags: node.tags || [],
+            generatedAt: node.generatedAt || new Date().toISOString(),
+          };
+          if (node.filePath) props.filePath = node.filePath;
+          if (node.lineRange) props.lineRange = node.lineRange;
+          if (node.complexity) props.complexity = node.complexity;
+          if (node.languageNotes) props.languageNotes = node.languageNotes;
+          if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
+
+          // Dual-label pattern: MERGE Codebase base label, then add secondary label
+          await session.run(
+            `MERGE (n:Codebase {id: $id}) SET n += $props SET n:\`${secondaryLabel}\``,
+            { id: node.id, props }
+          );
         }
-
-        const props = {
-          id: node.id,
-          name: node.name || "",
-          type: node.type,
-          summary: node.summary || "",
-          kind: "codebase",
-          tags: node.tags || [],
-          generatedAt: node.generatedAt || new Date().toISOString(),
-        };
-        if (node.filePath) props.filePath = node.filePath;
-        if (node.lineRange) props.lineRange = node.lineRange;
-        if (node.complexity) props.complexity = node.complexity;
-        if (node.languageNotes) props.languageNotes = node.languageNotes;
-        if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
-
-        // Dual-label pattern: MERGE Codebase base label, then add secondary label
-        await session.run(
-          `MERGE (n:Codebase {id: $id}) SET n += $props SET n:\`${secondaryLabel}\``,
-          { id: node.id, props }
-        );
       }
+
+      // Push edges with named relationship types (UPPER_SNAKE_CASE of edge.type)
+      if (graphData.edges && Array.isArray(graphData.edges)) {
+        for (const edge of graphData.edges) {
+          const relType = toRelType(edge.type);
+          const edgeProps = {
+            direction: edge.direction,
+            weight: edge.weight || 1.0,
+          };
+          if (edge.description) edgeProps.description = edge.description;
+
+          await session.run(
+            `MATCH (a:Codebase {id: $src}), (b:Codebase {id: $tgt})
+             MERGE (a)-[r:\`${relType}\`]->(b)
+             SET r += $props`,
+            { src: edge.source, tgt: edge.target, props: edgeProps }
+          );
+        }
+      }
+
+      // Update Project singleton with metadata
+      await session.run(
+        `MERGE (p:Project {id: 'project:singleton'})
+         SET p.gitCommitHash = $gitCommitHash,
+             p.lastAnalyzedAt = datetime(),
+             p.version = $version,
+             p.analyzedFiles = $analyzedFiles,
+             p.kind = "project"`,
+        {
+          gitCommitHash: projectMeta.gitCommitHash,
+          version: projectMeta.version || "1.0.0",
+          analyzedFiles: fileCount,
+        }
+      );
+    } finally {
+      await session.close();
     }
+  }
 
-    // Push edges with named relationship types (UPPER_SNAKE_CASE of edge.type)
-    if (graphData.edges && Array.isArray(graphData.edges)) {
-      for (const edge of graphData.edges) {
-        const relType = toRelType(edge.type);
-        const edgeProps = {
-          direction: edge.direction,
-          weight: edge.weight || 1.0,
-        };
-        if (edge.description) edgeProps.description = edge.description;
-
-        await session.run(
-          `MATCH (a:Codebase {id: $src}), (b:Codebase {id: $tgt})
-           MERGE (a)-[r:\`${relType}\`]->(b)
-           SET r += $props`,
-          { src: edge.source, tgt: edge.target, props: edgeProps }
-        );
-      }
-    }
-
-    // Update Project singleton with metadata
-    await session.run(
-      `MERGE (p:Project {id: 'project:singleton'})
-       SET p.gitCommitHash = $gitCommitHash,
-           p.lastAnalyzedAt = datetime(),
-           p.version = $version,
-           p.analyzedFiles = $analyzedFiles,
-           p.kind = "project"`,
-      {
-        gitCommitHash: projectMeta.gitCommitHash,
-        version: projectMeta.version || "1.0.0",
-        analyzedFiles: fileCount,
-      }
-    );
-
-    await session.close();
+  try {
+    await withRetry(runDriverAttempt, { retries: 3, delayMs: retryDelayMs, label: "push-codebase-graph.mjs" });
     console.error("push-codebase-graph.mjs: Codebase graph pushed to Neo4j successfully.");
     process.exit(0);
   } catch (err) {
     console.error(`push-codebase-graph.mjs: Failed to push codebase graph: ${err.message}`);
+    // Emit a specific DNS diagnostic before falling back
+    const errMsg = err.message || "";
+    if (errMsg.includes("ENOTFOUND") || errMsg.includes("EAI_AGAIN") || errMsg.includes("getaddrinfo")) {
+      process.stderr.write(
+        `push-codebase-graph.mjs: DNS resolution failed for ${neo4jHostname}.\n` +
+        `If running in a container or sandbox (e.g. Codex), ensure the container's DNS\n` +
+        `can resolve this hostname. Set NEO4J_CONNECTION_TYPE=cypher-shell as a workaround\n` +
+        `if cypher-shell is installed.\n`
+      );
+    }
     // Driver failed — try cypher-shell as last resort
-    if (err.message.includes("neo4j-driver") ||
-        err.message.includes("Connection refused") ||
-        err.message.includes("ECONNREFUSED") ||
-        err.message.includes("No routing servers available") ||
-        err.message.includes("ServiceUnavailable") ||
-        err.message.includes("Security error") ||
-        err.message.includes("ENOTFOUND") ||
-        err.message.includes("EAI_AGAIN") ||
-        err.code === "ServiceUnavailable" ||
+    if (isRetryable(err) ||
+        errMsg.includes("neo4j-driver") ||
+        errMsg.includes("Connection refused") ||
+        errMsg.includes("No routing servers available") ||
+        errMsg.includes("ServiceUnavailable") ||
+        errMsg.includes("Security error") ||
         !driverAvailable) {
       console.error("push-codebase-graph.mjs: Retrying via cypher-shell fallback...");
       pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta);

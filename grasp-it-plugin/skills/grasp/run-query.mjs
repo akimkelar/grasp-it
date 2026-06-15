@@ -104,7 +104,9 @@ function runQueryViaCypherShell(neo4jConfig, query) {
   const password = NEO4J_PASSWORD || "password";
 
   // Extract host/port from URI for cypher-shell -a argument
-  const cypherUri = uri.replace(/^neo4j\+?:\/\//, "bolt://");
+  const cypherUri = uri
+    .replace(/^neo4j\+s:\/\//, "bolt+s://")
+    .replace(/^neo4j:\/\//, "bolt://");
 
   try {
     const output = execFileSync(
