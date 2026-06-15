@@ -5,44 +5,44 @@ node {
 }
 
 node.File {
-  color: #6AAF3A;
-  border-color: #A8E888;
+  color: #5A9E4A;
+  border-color: #98D888;
   size: 22px;
 }
 
 node.Function {
-  color: #9AC32A;
-  border-color: #C8F888;
+  color: #8A9E2A;
+  border-color: #C8E880;
   size: 16px;
 }
 
 node.Class {
-  color: #5AAF4A;
-  border-color: #98E898;
+  color: #4A9E5A;
+  border-color: #88D898;
   size: 20px;
 }
 
 node.Module {
-  color: #3A9F7A;
-  border-color: #88D8C8;
+  color: #3A8E6A;
+  border-color: #88C8A8;
   size: 26px;
 }
 
 node.Config {
-  color: #8A9E1A;
-  border-color: #C8E880;
+  color: #9A9E1A;
+  border-color: #D8E880;
   size: 14px;
 }
 
 node.Table {
-  color: #7A9E2A;
-  border-color: #B8E880;
+  color: #8A9E0A;
+  border-color: #C8E870;
   size: 12px;
 }
 
 node.Endpoint {
-  color: #6A8E3A;
-  border-color: #A8D880;
+  color: #7A9E0A;
+  border-color: #B8E870;
   size: 10px;
 }
 

@@ -94,13 +94,13 @@ Hue decreases with size: larger aggregate nodes (Module) are blue-green/teal; sm
 
 | ID | Node | Fill | Stroke | Diameter | Description |
 |----|------|------|--------|----------|-------------|
-| CL-0 | `Module` | `#3A9F7A` | `#88D8C8` | 26px | Mossy teal — largest codebase aggregate |
-| CL-1 | `File` | `#6AAF3A` | `#A8E888` | 22px | Bright green — source file |
-| CL-2 | `Class` | `#5AAF4A` | `#98E898` | 20px | Vivid green — class definition |
-| CL-3 | `Function` | `#9AC32A` | `#C8F888` | 16px | Yellow-green — function definition |
-| CL-4 | `Config` | `#8A9E1A` | `#C8E880` | 14px | Yellow-green — configuration |
-| CL-5 | `Table` | `#7A9E2A` | `#B8E880` | 12px | Grassy yellow-green — database table |
-| CL-6 | `Endpoint` | `#6A8E3A` | `#A8D880` | 10px | Deep grassy green — HTTP endpoint (smallest) |
+| CL-0 | `Module` | `#3A8E6A` | `#88C8A8` | 26px | Mossy teal — largest codebase aggregate |
+| CL-1 | `File` | `#5A9E4A` | `#98D888` | 22px | Green — source file |
+| CL-2 | `Class` | `#4A9E5A` | `#88D898` | 20px | Vivid green — class definition |
+| CL-3 | `Function` | `#8A9E2A` | `#C8E880` | 16px | Yellow-green — function definition |
+| CL-4 | `Config` | `#9A9E1A` | `#D8E880` | 14px | Yellow-green — configuration |
+| CL-5 | `Table` | `#8A9E0A` | `#C8E870` | 12px | Grassy yellow-green — database table |
+| CL-6 | `Endpoint` | `#7A9E0A` | `#B8E870` | 10px | Deep yellow-green — HTTP endpoint (smallest) |
 
 #### Knowledge Code-Analysis Layer — violet to aqua (hue 260° → 190°), lighter violet border
 

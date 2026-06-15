@@ -171,13 +171,13 @@ Properties: `status: "legacy"|"target"|"shared"|"planned"`, `confidence: float`
 
 ```mermaid
 graph TD
-    classDef file fill:#6AAF3A,stroke:#A8E888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#8A9E1A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#7A9E2A,stroke:#B8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#6A8E3A,stroke:#A8D880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef file fill:#5A9E4A,stroke:#98D888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#8A9E2A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#4A9E5A,stroke:#88D898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#3A8E6A,stroke:#88C8A8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#9A9E1A,stroke:#D8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#8A9E0A,stroke:#C8E870,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#7A9E0A,stroke:#B8E870,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
@@ -309,13 +309,13 @@ graph TD
 
 ```mermaid
 graph TD
-    classDef file fill:#6AAF3A,stroke:#A8E888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#8A9E1A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#7A9E2A,stroke:#B8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#6A8E3A,stroke:#A8D880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef file fill:#5A9E4A,stroke:#98D888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#8A9E2A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#4A9E5A,stroke:#88D898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#3A8E6A,stroke:#88C8A8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#9A9E1A,stroke:#D8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#8A9E0A,stroke:#C8E870,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#7A9E0A,stroke:#B8E870,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
