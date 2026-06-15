@@ -29,20 +29,20 @@ node.Module {
 }
 
 node.Config {
-  color: #4A8FAA;
-  border-color: #88C8E8;
+  color: #A0BF1A;
+  border-color: #D8F080;
   size: 14px;
 }
 
 node.Table {
-  color: #6A6FBA;
-  border-color: #A8A8F8;
+  color: #B8A01A;
+  border-color: #F0E080;
   size: 12px;
 }
 
 node.Endpoint {
-  color: #9A5ECA;
-  border-color: #C898F8;
+  color: #D08010;
+  border-color: #F0C860;
   size: 10px;
 }
 

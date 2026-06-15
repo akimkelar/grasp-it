@@ -98,9 +98,9 @@ Hue decreases with size: larger aggregate nodes (Module) are blue-green/teal; sm
 | CL-1 | `File` | `#6AAF3A` | `#A8E888` | 22px | Bright green — source file |
 | CL-2 | `Class` | `#5AAF4A` | `#98E898` | 20px | Vivid green — class definition |
 | CL-3 | `Function` | `#9AC32A` | `#C8F888` | 16px | Yellow-green — function definition |
-| CL-4 | `Config` | `#4A8FAA` | `#88C8E8` | 14px | Sky blue-green — configuration |
-| CL-5 | `Table` | `#6A6FBA` | `#A8A8F8` | 12px | Lavender blue — database table |
-| CL-6 | `Endpoint` | `#9A5ECA` | `#C898F8` | 10px | Vivid purple — HTTP endpoint (smallest) |
+| CL-4 | `Config` | `#A0BF1A` | `#D8F080` | 14px | Yellow-green — configuration |
+| CL-5 | `Table` | `#B8A01A` | `#F0E080` | 12px | Darker yellow — database table |
+| CL-6 | `Endpoint` | `#D08010` | `#F0C860` | 10px | Amber — HTTP endpoint (smallest) |
 
 #### Knowledge Code-Analysis Layer — violet to aqua (hue 260° → 190°), lighter violet border
 
