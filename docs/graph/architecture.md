@@ -175,9 +175,9 @@ graph TD
     classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#A0BF1A,stroke:#D8F080,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#B8A01A,stroke:#F0E080,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#D08010,stroke:#F0C860,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#8A9E1A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#7A9E2A,stroke:#B8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#6A8E3A,stroke:#A8D880,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
@@ -313,9 +313,9 @@ graph TD
     classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#A0BF1A,stroke:#D8F080,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#B8A01A,stroke:#F0E080,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#D08010,stroke:#F0C860,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#8A9E1A,stroke:#C8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#7A9E2A,stroke:#B8E880,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#6A8E3A,stroke:#A8D880,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
