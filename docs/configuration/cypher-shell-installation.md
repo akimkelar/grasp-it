@@ -66,3 +66,42 @@ sudo ln -sfn $(brew --prefix)/opt/openjdk@21/libexec/openjdk.jdk /Library/Java/J
 ### "Connection refused"
 
 Make sure Neo4j is running (Neo4j Desktop, Aura, or a local `brew install neo4j` instance).
+
+### cypher-shell fails with Java version error (`jenv`, `sdkman`, or explicit `JAVA_HOME`)
+
+If your shell pins a specific Java version (via `jenv`, `sdkman`, IntelliJ's terminal environment,
+or an explicit `JAVA_HOME` export), cypher-shell may pick up Java 17 or another version instead of
+Java 21 and fail with `UnsupportedClassVersionError` or `Java 21 is required`.
+
+**Verify which Java cypher-shell sees:**
+
+```bash
+java -version          # what your shell currently resolves
+/usr/libexec/java_home -v 21   # confirms Java 21 is installed (macOS)
+```
+
+**Fix — set `JAVA_HOME` for the session before running grasp-it skills:**
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+```
+
+Add this to your shell profile (`~/.zshrc`, `~/.bashrc`) to make it permanent, or add it to
+`~/.grasp-it/neo4j.env` as a one-time override:
+
+```bash
+# ~/.grasp-it/neo4j.env
+JAVA_HOME=/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home
+```
+
+On Linux with `sdkman`:
+
+```bash
+sdk use java 21.0.x-tem   # switch to Java 21 in the current shell
+```
+
+Or set `JAVA_HOME` directly:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64   # adjust path for your distro
+```
