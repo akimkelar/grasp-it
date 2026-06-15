@@ -160,16 +160,31 @@ If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not pro
 
 ### 1b. Check existing graph knowledge
 
-Query Neo4j for nodes related to the topic:
+Query Neo4j across all three subgraph regions to get a complete picture of existing knowledge about the topic before building new nodes:
+
+**Codebase elements** (what code exists related to the topic):
 ```bash
-node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) WHERE n.name CONTAINS '$TOPIC' OR any(t IN coalesce(n.tags, []) WHERE toLower(t) CONTAINS toLower('$TOPIC')) RETURN n LIMIT 20"
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "WITH ['$TOPIC'] AS terms MATCH (seed) WHERE seed.kind = 'codebase' AND any(t IN terms WHERE toLower(seed.name) CONTAINS t OR toLower(seed.summary) CONTAINS t OR toLower(seed.filePath) CONTAINS t) RETURN labels(seed)[0] AS type, seed.name AS name, seed.filePath AS filePath, seed.complexity AS complexity LIMIT 10"
 ```
+
+**Code-analysis knowledge** (what the codebase currently does):
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "WITH ['$TOPIC'] AS terms MATCH (seed) WHERE seed.kind = 'knowledge' AND seed.source = 'code-analysis' AND any(t IN terms WHERE toLower(seed.name) CONTAINS t OR toLower(seed.summary) CONTAINS t) RETURN labels(seed)[0] AS type, seed.name AS name, seed.summary AS summary, seed.status AS status LIMIT 10"
+```
+
+**Interview knowledge** (what prior interviews captured):
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "WITH ['$TOPIC'] AS terms MATCH (seed) WHERE seed.kind = 'knowledge' AND seed.source = 'interview' AND any(t IN terms WHERE toLower(seed.name) CONTAINS t OR toLower(seed.summary) CONTAINS t OR toLower(coalesce(seed.rationale, '')) CONTAINS t) RETURN labels(seed)[0] AS type, seed.name AS name, seed.summary AS summary, seed.status AS status, seed.confidence AS confidence LIMIT 10"
+```
+
 If Neo4j query fails, report the error and **STOP**.
 
-Look for nodes whose `id`, `name`, or `tags` relate to the topic. If you find relevant existing nodes:
+This gives you three distinct views:
+- **Codebase**: related files, functions, classes — shows what implementation exists
+- **Code-analysis**: features, operations, rules extracted from code — shows what the codebase does
+- **Interview**: planned features, decisions, constraints from prior interviews — shows what is already captured
 
-- Surface them to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
-- If the existing nodes came from `source: "code-analysis"`, tell the specialist: *"I have some code-mined knowledge about this. I'll use it as a starting point and ask you to confirm, extend, or correct it."*
+Surface findings to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
 
 **Also query for existing actors and domains** — well-known domain actors (e.g., `actor:pdl`, `actor:client`) may already exist in the graph from prior `/grasp-domain` or `/grasp-interview` runs:
 ```bash
@@ -183,7 +198,7 @@ node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:Domain) RETURN d
 ```
 If the feature belongs to an existing domain, create a `HAS_FEATURE` edge from the domain to the new feature node.
 
-**Use `/grasp-search` to investigate existing concepts and knowledge** before creating new nodes — this skill provides deeper exploration of the current graph state and can help identify related nodes that simple `CONTAINS` queries might miss.
+**For deeper exploration**, use `/grasp-search` with Approaches A, B, and C — these provide subgraph-scoped search with relevance scoring and neighbor expansion, which is more powerful than the basic queries above.
 
 ### 1c. State the contract
 

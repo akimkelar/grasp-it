@@ -212,6 +212,9 @@ New task received:
   -> Approach 1 (broad text search, direct terms, core fields)
       -> poor results? -> retry with synonyms or shorter terms + more fields
       -> too many scattered results? -> Approach 3 (label-scoped) -> repeat
+      -> scope is known to be code elements? -> Approach A (codebase lookup)
+      -> scope is known to be from code analysis? -> Approach B (code-analysis lookup)
+      -> scope is known to be from interviews? -> Approach C (interview lookup)
   -> Approach 2 (branch query on top entities)
       -> reveals hidden constraints not reachable by text
   -> [optional] Approach 4 (dependency disclosure) if deeper investigation needed
@@ -407,6 +410,118 @@ RETURN labels(seed)[0] AS type,
 ORDER BY relevance DESC, type, name
 LIMIT 50;
 ```
+
+---
+
+## Approaches A-C - Subgraph-scoped lookup
+
+For queries that need to target a specific logical region of the graph, use these approaches instead of (or after) the general approaches above. Each scopes to one of the three subgraph regions defined by `kind` and `source` properties.
+
+---
+
+## Approach A - Codebase lookup
+
+**Use when**: searching for code elements (files, functions, classes, modules, endpoints). Filters to `kind: "codebase"` only. Useful when you know the topic maps to implementation artifacts rather than business concepts.
+
+```cypher
+WITH ['<term>'] AS terms
+MATCH (seed)
+WHERE seed.kind = "codebase"
+  AND any(t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.filePath) CONTAINS t)
+WITH seed,
+  size([t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.filePath) CONTAINS t]) AS score
+OPTIONAL MATCH (seed)-[r]-(n)
+WHERE n <> seed AND n.kind = "codebase"
+RETURN labels(seed)[0] AS type,
+       seed.name AS name,
+       seed.filePath AS filePath,
+       seed.complexity AS complexity,
+       score AS relevance,
+       seed.summary AS summary,
+       collect(DISTINCT [type(r), labels(n)[0], n.name]) AS neighbors
+ORDER BY relevance DESC, type, name
+LIMIT 50;
+```
+
+**Returns**: code element type (`Codebase:File`, `Codebase:Function`, etc.), name, file path, complexity, relevance score, summary, and direct code-to-code neighbors (e.g., `CONTAINS`, `CALLS`, `IMPORTS`).
+
+---
+
+## Approach B - Code-analysis knowledge lookup
+
+**Use when**: finding what the codebase currently does — features, operations, entities, rules that were extracted from code by `/grasp-domain`. Filters to `kind: "knowledge"` and `source: "code-analysis"`.
+
+```cypher
+WITH ['<term>'] AS terms
+MATCH (seed)
+WHERE seed.kind = "knowledge"
+  AND seed.source = "code-analysis"
+  AND any(t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.id) CONTAINS t)
+WITH seed,
+  size([t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.id) CONTAINS t]) AS score
+OPTIONAL MATCH (seed)-[r]-(n)
+WHERE n <> seed
+RETURN labels(seed)[0] AS type,
+       seed.name AS name,
+       seed.summary AS summary,
+       seed.status AS status,
+       score AS relevance,
+       seed.sourceFiles AS sourceFiles,
+       collect(DISTINCT [type(r), labels(n)[0], n.kind, n.name]) AS neighbors
+ORDER BY relevance DESC, type, name
+LIMIT 50;
+```
+
+**Returns**: knowledge node type, name, summary, status (for Feature/Operation), source files analyzed to derive this node, and all neighbors (including `IMPLEMENTED_BY` links to code).
+
+---
+
+## Approach C - Interview knowledge lookup
+
+**Use when**: finding what the PO or specialist intends — planned features, decisions, constraints, concepts captured by `/grasp-interview`. Filters to `kind: "knowledge"` and `source: "interview"`. This is the primary discovery mechanism for Decision, Concept, and Claim nodes.
+
+```cypher
+WITH ['<term>'] AS terms
+MATCH (seed)
+WHERE seed.kind = "knowledge"
+  AND seed.source = "interview"
+  AND any(t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.id) CONTAINS t
+      OR toLower(coalesce(seed.rationale, '')) CONTAINS t)
+WITH seed,
+  size([t IN terms WHERE
+      toLower(seed.name) CONTAINS t
+      OR toLower(seed.summary) CONTAINS t
+      OR toLower(seed.id) CONTAINS t
+      OR toLower(coalesce(seed.rationale, '')) CONTAINS t]) AS score
+OPTIONAL MATCH (seed)-[r]-(n)
+WHERE n <> seed
+RETURN labels(seed)[0] AS type,
+       seed.name AS name,
+       seed.summary AS summary,
+       seed.status AS status,
+       seed.confidence AS confidence,
+       score AS relevance,
+       collect(DISTINCT [type(r), labels(n)[0], n.kind, n.name]) AS neighbors
+ORDER BY relevance DESC, type, name
+LIMIT 50;
+```
+
+**Returns**: interview node type (including Decision, Concept, Claim), name, summary, status (for Decision), confidence (for Claim), and all neighbors.
 
 ---
 
