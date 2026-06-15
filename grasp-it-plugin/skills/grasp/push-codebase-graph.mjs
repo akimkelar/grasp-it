@@ -52,7 +52,7 @@ const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
 /**
  * Convert an internal edge type string to a Neo4j relationship type (UPPER_SNAKE_CASE).
  */
-function toRelType(type) {
+export function toRelType(type) {
   return (type || 'RELATED').toUpperCase().replace(/-/g, '_');
 }
 
@@ -138,7 +138,7 @@ function buildNodesCypher(graphData, neo4jConfig) {
 /**
  * Build a cypher-shell query string for pushing edges.
  */
-function buildEdgesCypher(graphData) {
+export function buildEdgesCypher(graphData) {
   const lines = [];
   if (graphData.edges && Array.isArray(graphData.edges)) {
     for (const edge of graphData.edges) {
@@ -338,14 +338,20 @@ async function pushCodebaseGraph(projectRoot) {
   }
 }
 
-const projectRoot = process.argv[2];
+// Only run as a CLI script — skip when imported as a module (e.g., in tests)
+const isMain = process.argv[1] &&
+  fileURLToPath(import.meta.url) === (process.argv[1].startsWith('/') ? process.argv[1] : new URL(process.argv[1], 'file://').pathname);
 
-if (!projectRoot) {
-  console.error("Usage: node push-codebase-graph.mjs <project-root>");
-  process.exit(1);
+if (isMain) {
+  const projectRoot = process.argv[2];
+
+  if (!projectRoot) {
+    console.error("Usage: node push-codebase-graph.mjs <project-root>");
+    process.exit(1);
+  }
+
+  pushCodebaseGraph(projectRoot).catch((err) => {
+    console.error(`push-codebase-graph.mjs: Unexpected error: ${err.message}`);
+    process.exit(1);
+  });
 }
-
-pushCodebaseGraph(projectRoot).catch((err) => {
-  console.error(`push-codebase-graph.mjs: Unexpected error: ${err.message}`);
-  process.exit(1);
-});
