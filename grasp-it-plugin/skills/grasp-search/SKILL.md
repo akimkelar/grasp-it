@@ -136,17 +136,31 @@ The graph uses a single Neo4j database with two logical subgraphs, separated by 
 -- Codebase structure (all nodes have kind: "codebase")
 File      -[:CONTAINS]->      Function / Class
 File      -[:IMPORTS]->       File
+File      -[:EXPORTS]->       Function / Class
 Class     -[:INHERITS]->      Class
 Class     -[:IMPLEMENTS]->    Class
 Function  -[:CALLS]->         Function
+Endpoint  -[:CALLS]->         Function
 Function  -[:READS_FROM]->    Table / Endpoint
 Function  -[:WRITES_TO]->     Table / Endpoint
-Endpoint  -[:CALLS]->         Function
-File      -[:CONFIGURES]->    Config
-File      -[:DOCUMENTS]->     File
+Function  -[:TRANSFORMS]->    Table / Endpoint
+Function  -[:VALIDATES]->     *
+Function  -[:SUBSCRIBES]->    *
+Function  -[:PUBLISHES]->     *
+Function  -[:MIDDLEWARE]->    Function
+*         -[:CONFIGURES]->    Config
+*         -[:TESTED_BY]->     *
+*         -[:DEPENDS_ON]->    *
+*         -[:RELATED]->       *
+*         -[:SIMILAR_TO]->    *
+Document  -[:DOCUMENTS]->     File
 File      -[:DEPLOYS]->       File
-File      -[:TESTED_BY]->     File
-File      -[:DEPENDS_ON]->    File
+File      -[:MIGRATES]->      Table
+Pipeline  -[:TRIGGERS]->      Pipeline
+Schema    -[:DEFINES_SCHEMA]-> *
+Service   -[:SERVES]->        Endpoint
+Resource  -[:PROVISIONS]->    *
+File      -[:ROUTES]->        Endpoint
 
 -- Note: Class methods are NOT separate nodes.
 --   cls.methods is a string[] property on the Class node.

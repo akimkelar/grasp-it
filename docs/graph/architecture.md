@@ -117,9 +117,16 @@ During an interview, the skill must check the graph before creating new nodes:
 | `:CALLS` | Function/Endpoint | Function | Function/endpoint calls another function |
 | `:READS_FROM` | Function | Table/Endpoint | Reads from data source |
 | `:WRITES_TO` | Function | Table/Endpoint | Writes to data source |
+| `:TRANSFORMS` | Function | Table/Endpoint | Transforms/processes data |
+| `:VALIDATES` | Function | * | Validates data or input |
 | `:CONFIGURES` | * | Config | Configures something |
 | `:TESTED_BY` | * | * | Tested by test node |
 | `:DEPENDS_ON` | * | * | Depends on another node |
+| `:RELATED` | * | * | Topically related without a specific structural relationship |
+| `:SIMILAR_TO` | * | * | Structurally or semantically similar |
+| `:SUBSCRIBES` | Function | * | Subscribes to events or messages |
+| `:PUBLISHES` | Function | * | Publishes events or messages |
+| `:MIDDLEWARE` | Function | Function | Middleware wraps another handler |
 | `:DOCUMENTS` | Document/File | File | Doc file describes code |
 | `:DEPLOYS` | File | File | Infra file deploys code |
 | `:MIGRATES` | File | Table | SQL migration modifies table |

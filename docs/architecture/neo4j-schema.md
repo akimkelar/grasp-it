@@ -293,9 +293,16 @@ MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 | `:CALLS` | `Function` / `Endpoint` | `Function` | Function or endpoint calls another function | `weight: float`, `description: string` |
 | `:READS_FROM` | `Function` | `Table` / `Endpoint` | Reads from data source | `weight: float` |
 | `:WRITES_TO` | `Function` | `Table` / `Endpoint` | Writes to data source | `weight: float` |
+| `:TRANSFORMS` | `Function` | `Table` / `Endpoint` | Transforms or processes data | `weight: float` |
+| `:VALIDATES` | `Function` | `*` | Validates data or input | `weight: float` |
+| `:SUBSCRIBES` | `Function` | `*` | Subscribes to events or a message queue | `weight: float` |
+| `:PUBLISHES` | `Function` | `*` | Publishes events or messages | `weight: float` |
+| `:MIDDLEWARE` | `Function` | `Function` | Middleware wraps or chains another handler | `weight: float` |
 | `:CONFIGURES` | `*` | `Config` | Configures something | `weight: float` |
 | `:TESTED_BY` | `*` | `*` | Tested by test node | `weight: float` |
 | `:DEPENDS_ON` | `*` | `*` | Depends on another node | `weight: float` |
+| `:RELATED` | `*` | `*` | Topically related without a specific structural relationship | `weight: float` |
+| `:SIMILAR_TO` | `*` | `*` | Structurally or semantically similar | `weight: float` |
 
 ### Non-code File Relationships (codebase)
 
