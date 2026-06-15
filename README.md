@@ -207,12 +207,28 @@ See [`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md) for
 - pnpm >= 10
 - Neo4j (local or [Aura](https://neo4j.com/cloud/platform/aura-graph-database/))
 
-Set connection details via environment variables:
+Set connection details via environment variables or a `.env` file in your project root:
+
 ```bash
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your-password
+NEO4J_URI=bolt://localhost:7687   # URI to your Neo4j instance
+NEO4J_DATABASE=grasp              # database name (default: grasp)
+NEO4J_USERNAME=neo4j              # username
+NEO4J_PASSWORD=your-password      # password
 ```
+
+Configuration is resolved in priority order: environment variables → project `.env` → `~/.grasp-it/neo4j.env`.
+
+#### Connection type
+
+By default Grasp-It connects using the `neo4j-driver` npm package (bundled, no extra install needed).
+If you experience transient DNS failures or prefer an explicit CLI-based connection, set:
+
+```bash
+NEO4J_CONNECTION_TYPE=cypher-shell   # requires cypher-shell to be installed
+```
+
+`cypher-shell` ships with Neo4j Desktop and is available via Homebrew (`brew install neo4j`) or
+the [Neo4j Download Center](https://neo4j.com/deployment-center/).
 
 ---
 
