@@ -290,7 +290,8 @@ MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
-| `:CALLS` | `Function` / `Endpoint` | `Function` | Function or endpoint calls another function | `weight: float`, `description: string` |
+| `:CALLS` | `Function` | `Function` | Function calls another function | `weight: float`, `description: string` |
+| `:EXPOSES` | `Endpoint` | `Function` | HTTP endpoint exposes its handler function | `weight: float` |
 | `:READS_FROM` | `Function` | `Table` / `Endpoint` | Reads from data source | `weight: float` |
 | `:WRITES_TO` | `Function` | `Table` / `Endpoint` | Writes to data source | `weight: float` |
 | `:TRANSFORMS` | `Function` | `Table` / `Endpoint` | Transforms or processes data | `weight: float` |
@@ -412,7 +413,7 @@ graph TD
         FN -->|CALLS| FN
         FN -->|READS_FROM| TB
         FN -->|WRITES_TO| TB
-        EP -->|CALLS| FN
+        EP -->|EXPOSES| FN
     end
 
     F -->|IMPLEMENTED_BY\nstatus, confidence| FILE

@@ -1229,11 +1229,11 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 | `schema` | Schema definition (GraphQL, Protobuf, Prisma) | `schema:<relative-path>` |
 | `resource` | Infrastructure resource (Terraform, CloudFormation) | `resource:<relative-path>` |
 
-### Edge Types (26 total)
+### Edge Types (27 total)
 | Category | Types |
 |---|---|
 | Structural | `imports`, `exports`, `contains`, `inherits`, `implements` |
-| Behavioral | `calls`, `subscribes`, `publishes`, `middleware` |
+| Behavioral | `calls`, `exposes`, `subscribes`, `publishes`, `middleware` |
 | Data flow | `reads_from`, `writes_to`, `transforms`, `validates` |
 | Dependencies | `depends_on`, `tested_by`, `configures` |
 | Semantic | `related`, `similar_to` |

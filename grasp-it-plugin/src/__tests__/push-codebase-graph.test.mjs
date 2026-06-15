@@ -14,6 +14,7 @@ describe("toRelType", () => {
 
   describe("behavioral edge types", () => {
     it('converts "calls" → "CALLS"', () => expect(toRelType("calls")).toBe("CALLS"));
+    it('converts "exposes" → "EXPOSES"', () => expect(toRelType("exposes")).toBe("EXPOSES"));
     it('converts "reads_from" → "READS_FROM"', () => expect(toRelType("reads_from")).toBe("READS_FROM"));
     it('converts "writes_to" → "WRITES_TO"', () => expect(toRelType("writes_to")).toBe("WRITES_TO"));
     it('converts "transforms" → "TRANSFORMS"', () => expect(toRelType("transforms")).toBe("TRANSFORMS"));
@@ -84,6 +85,23 @@ describe("buildEdgesCypher", () => {
     const cypher = buildEdgesCypher(graphData);
     expect(cypher).toContain("`DEFINES_SCHEMA`");
     expect(cypher).not.toContain(":RELATES");
+  });
+
+  it("generates correct Cypher for exposes edge (Endpoint → Function)", () => {
+    const graphData = {
+      edges: [
+        {
+          source: "endpoint:api/routes.ts:POST-/users",
+          target: "function:src/handlers/users.ts:createUser",
+          type: "exposes",
+          direction: "outgoing",
+        },
+      ],
+    };
+    const cypher = buildEdgesCypher(graphData);
+    expect(cypher).toContain("`EXPOSES`");
+    expect(cypher).not.toContain("CALLS");
+    expect(cypher).not.toContain("RELATES");
   });
 
   it("uses RELATED as fallback when type is missing", () => {

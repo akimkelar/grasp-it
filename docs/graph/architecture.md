@@ -114,7 +114,8 @@ During an interview, the skill must check the graph before creating new nodes:
 | `:EXPORTS` | Module | * | Module exports node |
 | `:INHERITS` | Class | Class | Class inheritance |
 | `:IMPLEMENTS` | Class | Class | Class implements interface |
-| `:CALLS` | Function/Endpoint | Function | Function/endpoint calls another function |
+| `:CALLS` | Function | Function | Function calls another function |
+| `:EXPOSES` | Endpoint | Function | HTTP endpoint exposes its handler function |
 | `:READS_FROM` | Function | Table/Endpoint | Reads from data source |
 | `:WRITES_TO` | Function | Table/Endpoint | Writes to data source |
 | `:TRANSFORMS` | Function | Table/Endpoint | Transforms/processes data |
@@ -209,7 +210,7 @@ graph TD
         FN -->|CALLS| FN
         FN -->|READS_FROM| TB
         FN -->|WRITES_TO| TB
-        EP -->|CALLS| FN
+        EP -->|EXPOSES| FN
         FN -->|TESTED_BY| FN
         CLS -->|CONFIGURES| CFG
     end

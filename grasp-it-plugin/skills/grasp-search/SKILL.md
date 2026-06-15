@@ -140,7 +140,7 @@ File      -[:EXPORTS]->       Function / Class
 Class     -[:INHERITS]->      Class
 Class     -[:IMPLEMENTS]->    Class
 Function  -[:CALLS]->         Function
-Endpoint  -[:CALLS]->         Function
+Endpoint  -[:EXPOSES]->       Function
 Function  -[:READS_FROM]->    Table / Endpoint
 Function  -[:WRITES_TO]->     Table / Endpoint
 Function  -[:TRANSFORMS]->    Table / Endpoint
