@@ -7,35 +7,46 @@ Apply it via `:style` in Neo4j Browser — drag `graph-style.grass` onto the pan
 
 ## Design Principles
 
-### Size — encodes conceptual importance
+### Size — encodes hierarchy, codebase is smaller than knowledge
 
-| Tier | Nodes | Diameter | Rationale |
-|------|-------|----------|-----------|
-| 1 | `Domain` | 60px | Root anchor — everything hangs from here |
-| 2 | `Feature` | 52px | Primary product unit |
-| 3 | `BusinessRule` | 44px | High-level business policy |
-| 4 | `Decision` | 40px | Resolved question |
-| 5 | `Actor` | 38px | User role or system agent |
-| 6 | `Operation` | 36px | Action within a feature |
-| 7 | `Entity`, `Risk`, `Constraint` | 32px | Normal size — concrete artifacts and danger nodes |
-| 8 | `Concept`, `Claim` | 26–28px | Interview-specific abstractions |
-| 9 | `Class` | 34px | Codebase — most important structural node |
-| 10 | `Function` | 28px | Codebase — function definition |
-| 11 | `Module` | 24px | Codebase — module or namespace |
-| 12 | `File`, `Config`, `Table`, `Endpoint` | 16–22px | Codebase — smaller structural/resource nodes |
-| 13 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | 18–22px | Codebase — infrastructure and metadata nodes |
+Knowledge nodes (32–60px) are larger than codebase nodes (10–26px) to visually distinguish the two layers — knowledge represents business concepts that span multiple files, while codebase represents implementation details.
 
-### Node color — three semantic layers on a dark canvas (`#0F172A`)
+Within each layer, size reflects structural importance:
 
-All node colors sit at the same perceptual lightness (~50% HSL), so gradients within each area are driven purely by hue — not brightness. Every node reads equally well on the dark background.
+**Codebase** (larger aggregate → smaller leaf):
+`Module` (26px) → `File` (22px) → `Class` (20px) → `Function` (16px) → `Config` (14px) → `Table` (12px) → `Endpoint` (10px)
 
-**Codebase Layer** — yellow-green to teal (hue 90° → 160°)
-Codebase nodes span from bright yellow-green (File) through forest green (Function, Class) to deep teal (Endpoint). The border uses a lighter version of each node's own hue to create visible contrast while staying within the green family.
+**Knowledge** (tier 1–8, top-level → granular):
+`Domain` (60px) → `Feature` (52px) → `BusinessRule` (44px) → `Decision` (40px) → `Actor` (38px) → `Operation` (36px) → `Entity/Risk/Constraint` (32px) → `Concept/Claim` (26–28px)
 
-`Class` (CL-1, most important) → `Function` (CL-2) → `File` (CL-3) → `Module` (CL-4) → `Config` (CL-5) → `Table` (CL-6) → `Endpoint` (CL-7)
+| Tier | Nodes | Diameter |
+|------|-------|----------|
+| 1 | `Domain` | 60px |
+| 2 | `Feature` | 52px |
+| 3 | `BusinessRule` | 44px |
+| 4 | `Decision` | 40px |
+| 5 | `Actor` | 38px |
+| 6 | `Operation` | 36px |
+| 7 | `Entity`, `Risk`, `Constraint` | 32px |
+| 8 | `Concept`, `Claim` | 26–28px |
+| 9 | `Module` | 26px |
+| 10 | `File` | 22px |
+| 11 | `Class` | 20px |
+| 12 | `Function` | 16px |
+| 13 | `Config` | 14px |
+| 14 | `Table` | 12px |
+| 15 | `Endpoint` | 10px |
+| 16 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | 10–18px |
+
+### Node color — hue encodes both layer and hierarchy on a dark canvas (`#0F172A`)
+
+**Codebase Layer** — blue-green to yellow-green (hue 170° → 68°)
+Hue varies by structural size: larger/aggregate nodes (Module) start at mossy blue-green (170°), smaller/leaf nodes (Endpoint) end at yellow-green (68°). This creates an intuitive visual where "warmer" (more yellow-green) = smaller implementation detail.
+
+`Module` (CL-0, teal, 170°) → `File` (CL-1, 153°) → `Class` (CL-2, 136°) → `Function` (CL-3, 119°) → `Config` (CL-4, 102°) → `Table` (CL-5, 85°) → `Endpoint` (CL-6, 68°)
 
 **Knowledge Code-Analysis Layer** — violet to blue (hue 260° → 220°)
-Knowledge nodes from code analysis use violet-to-blue gradient. Domain is violet, gradient deepens toward blue as importance decreases. **Border: lighter violet** (`#C490F0` family) distinguishes code-analysis source.
+Domain is violet, gradient deepens toward blue as importance decreases. **Border: lighter violet** (`#C490F0` family) distinguishes code-analysis source.
 
 `Domain` (KA-1, violet) → `Feature` (KA-2, blue-violet) → `BusinessRule` (KA-3, cornflower blue) → `Actor` (KA-4) → `Operation` (KA-5) → `Entity` (KA-6) → `Risk` (KA-7, danger) → `Constraint` (KA-8, danger)
 
@@ -77,17 +88,19 @@ Risk and Constraint nodes appear in both code-analysis and interview layers but 
 
 ### Nodes
 
-#### Codebase Layer — yellow-green to teal (hue 90° → 160°), yellow-green border
+#### Codebase Layer — teal to yellow-green (hue 170° → 68°), lighter tint border
+
+Hue decreases with size: larger aggregate nodes (Module) are blue-green/teal; smaller leaf nodes (Endpoint) are yellow-green. All colors share ~40% lightness for consistent contrast on the dark canvas.
 
 | ID | Node | Fill | Stroke | Diameter | Description |
 |----|------|------|--------|----------|-------------|
-| CL-1 | `Class` | `#3A8A4A` | `#88C088` | 34px | Sage green — most important |
-| CL-2 | `Function` | `#5A9E5A` | `#98D898` | 28px | Green — function definition |
-| CL-3 | `File` | `#70B860` | `#B8E098` | 22px | Yellow-green — source file |
-| CL-4 | `Module` | `#2A7A3A` | `#78B078` | 24px | Dark green — module/namespace |
-| CL-5 | `Config` | `#1A6A2A` | `#68A068` | 20px | Olive green — configuration file |
-| CL-6 | `Table` | `#0A5A1A` | `#589058` | 18px | Dark teal — database table |
-| CL-7 | `Endpoint` | `#004A0A` | `#488048` | 16px | Teal — HTTP endpoint |
+| CL-0 | `Module` | `#3A9F7A` | `#88D8C8` | 26px | Mossy teal — largest codebase aggregate |
+| CL-1 | `File` | `#6AAF3A` | `#A8E888` | 22px | Bright green — source file |
+| CL-2 | `Class` | `#5AAF4A` | `#98E898` | 20px | Vivid green — class definition |
+| CL-3 | `Function` | `#9AC32A` | `#C8F888` | 16px | Yellow-green — function definition |
+| CL-4 | `Config` | `#4A8FAA` | `#88C8E8` | 14px | Sky blue-green — configuration |
+| CL-5 | `Table` | `#6A6FBA` | `#A8A8F8` | 12px | Lavender blue — database table |
+| CL-6 | `Endpoint` | `#9A5ECA` | `#C898F8` | 10px | Vivid purple — HTTP endpoint (smallest) |
 
 #### Knowledge Code-Analysis Layer — violet to aqua (hue 260° → 190°), lighter violet border
 

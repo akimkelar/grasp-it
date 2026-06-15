@@ -171,18 +171,18 @@ Properties: `status: "legacy"|"target"|"shared"|"planned"`, `confidence: float`
 
 ```mermaid
 graph TD
-    classDef file fill:#70B860,stroke:#B8E098,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef fn fill:#5A9E5A,stroke:#98D898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cls fill:#3A8A4A,stroke:#88C088,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef mod fill:#2A7A3A,stroke:#78B078,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef file fill:#6AAF3A,stroke:#A8E888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#4A8FAA,stroke:#88C8E8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#6A6FBA,stroke:#A8A8F8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#9A5ECA,stroke:#C898F8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef svc fill:#4A6A7A,stroke:#88A0B8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef pipe fill:#3A5A6A,stroke:#788898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef schema fill:#2A4A5A,stroke:#687888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef res fill:#1A3A4A,stroke:#586878,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef schema fill:#2A4A8A,stroke:#6880C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef res fill:#1A3A8A,stroke:#5870D8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef domain fill:#5E1EC4,stroke:#C490F0,stroke-width:3px,color:#E8EEFF,font-size:14px
     classDef feature fill:#4833C4,stroke:#A890E8,stroke-width:2px,color:#E8EEFF,font-size:14px
     classDef businessrule fill:#3D3DC4,stroke:#9898E8,stroke-width:2px,color:#E8EEFF,font-size:14px
@@ -309,18 +309,18 @@ graph TD
 
 ```mermaid
 graph TD
-    classDef file fill:#70B860,stroke:#B8E098,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef fn fill:#5A9E5A,stroke:#98D898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cls fill:#3A8A4A,stroke:#88C088,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef mod fill:#2A7A3A,stroke:#78B078,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef file fill:#6AAF3A,stroke:#A8E888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef fn fill:#9AC32A,stroke:#C8F888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cls fill:#5AAF4A,stroke:#98E898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef mod fill:#3A9F7A,stroke:#88D8C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef cfg fill:#4A8FAA,stroke:#88C8E8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef tb fill:#6A6FBA,stroke:#A8A8F8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef ep fill:#9A5ECA,stroke:#C898F8,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef svc fill:#4A6A7A,stroke:#88A0B8,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef pipe fill:#3A5A6A,stroke:#788898,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef schema fill:#2A4A5A,stroke:#687888,stroke-width:2px,color:#E8F8E8,font-size:12px
-    classDef res fill:#1A3A4A,stroke:#586878,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef svc fill:#4A6A8A,stroke:#88A0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef pipe fill:#3A5A8A,stroke:#7890C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef schema fill:#2A4A8A,stroke:#6880C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef res fill:#1A3A8A,stroke:#5870D8,stroke-width:2px,color:#E8F8E8,font-size:12px
 
     FILE["File"]
     FN["Function"]
