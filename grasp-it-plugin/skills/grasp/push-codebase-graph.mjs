@@ -50,6 +50,13 @@ const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
+ * Convert an internal edge type string to a Neo4j relationship type (UPPER_SNAKE_CASE).
+ */
+function toRelType(type) {
+  return (type || 'RELATED').toUpperCase().replace(/-/g, '_');
+}
+
+/**
  * Escape a string value for safe inline use in cypher-shell queries.
  * Handles single quotes, backslashes, and null bytes.
  */
@@ -135,19 +142,16 @@ function buildEdgesCypher(graphData) {
   const lines = [];
   if (graphData.edges && Array.isArray(graphData.edges)) {
     for (const edge of graphData.edges) {
-      // Use RELATES for all edges with type as a property
+      const relType = toRelType(edge.type);
       const edgeProps = [
-        `type: ${cypherEscape(edge.type)}`,
         `direction: ${cypherEscape(edge.direction)}`,
         `weight: ${edge.weight || 1.0}`,
       ];
-      if (edge.description) {
-        edgeProps.push(`description: ${cypherEscape(edge.description)}`);
-      }
+      if (edge.description) edgeProps.push(`description: ${cypherEscape(edge.description)}`);
       const propsStr = edgeProps.join(", ");
 
       lines.push(
-        `MATCH (a:Codebase {id: ${cypherEscape(edge.source)}}), (b:Codebase {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:RELATES {${propsStr}}]->(b);`
+        `MATCH (a:Codebase {id: ${cypherEscape(edge.source)}}), (b:Codebase {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\`]->(b) SET r += {${propsStr}};`
       );
     }
   }
@@ -284,11 +288,11 @@ async function pushCodebaseGraph(projectRoot) {
       }
     }
 
-    // Push edges with RELATES relationship type
+    // Push edges with named relationship types (UPPER_SNAKE_CASE of edge.type)
     if (graphData.edges && Array.isArray(graphData.edges)) {
       for (const edge of graphData.edges) {
+        const relType = toRelType(edge.type);
         const edgeProps = {
-          type: edge.type,
           direction: edge.direction,
           weight: edge.weight || 1.0,
         };
@@ -296,7 +300,7 @@ async function pushCodebaseGraph(projectRoot) {
 
         await session.run(
           `MATCH (a:Codebase {id: $src}), (b:Codebase {id: $tgt})
-           MERGE (a)-[r:RELATES]->(b)
+           MERGE (a)-[r:\`${relType}\`]->(b)
            SET r += $props`,
           { src: edge.source, tgt: edge.target, props: edgeProps }
         );

@@ -1166,7 +1166,7 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    fi
    ```
    
-   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates `RELATES` edges, and updates the `Project` singleton with `gitCommitHash`, `lastAnalyzedAt`, `version`, and `analyzedFiles`.
+   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates the `Project` singleton with `gitCommitHash`, `lastAnalyzedAt`, `version`, and `analyzedFiles`.
 
    **Node update strategy:** The script uses `MERGE` on node IDs to update existing nodes in place — it does NOT delete all Codebase nodes before inserting. This means:
    - Nodes in the assembled graph are created or updated (upsert behavior)

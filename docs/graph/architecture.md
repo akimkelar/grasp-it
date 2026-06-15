@@ -114,12 +114,22 @@ During an interview, the skill must check the graph before creating new nodes:
 | `:EXPORTS` | Module | * | Module exports node |
 | `:INHERITS` | Class | Class | Class inheritance |
 | `:IMPLEMENTS` | Class | Class | Class implements interface |
-| `:CALLS` | Function | Function | Function calls another |
+| `:CALLS` | Function/Endpoint | Function | Function/endpoint calls another function |
 | `:READS_FROM` | Function | Table/Endpoint | Reads from data source |
 | `:WRITES_TO` | Function | Table/Endpoint | Writes to data source |
 | `:CONFIGURES` | * | Config | Configures something |
 | `:TESTED_BY` | * | * | Tested by test node |
 | `:DEPENDS_ON` | * | * | Depends on another node |
+| `:DOCUMENTS` | Document/File | File | Doc file describes code |
+| `:DEPLOYS` | File | File | Infra file deploys code |
+| `:MIGRATES` | File | Table | SQL migration modifies table |
+| `:TRIGGERS` | Pipeline | Pipeline | CI config triggers pipeline |
+| `:DEFINES_SCHEMA` | Schema | * | Schema file defines structure |
+| `:SERVES` | Service | Endpoint | K8s/container service exposes endpoint |
+| `:PROVISIONS` | Resource | * | Terraform/IaC creates infrastructure |
+| `:ROUTES` | File | Endpoint | Routing config directs traffic |
+
+> **Note on Class methods:** Class methods are NOT stored as separate `Function` nodes. They are stored as a `methods: string[]` property on the `Class` node. There is no `Class→Function` edge in the graph. To find functions defined in the same file as a class, match by `cls.filePath`.
 
 ### Knowledge Relationships
 

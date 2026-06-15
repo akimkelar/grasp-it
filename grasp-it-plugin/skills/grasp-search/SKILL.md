@@ -95,67 +95,96 @@ For multi-line queries, pass a single-line query or use a temporary `.cypher` fi
 
 ## Graph overview
 
-The simplified Neo4j schema uses two label groups:
+The graph uses a single Neo4j database with two logical subgraphs, separated by the `kind` node property.
 
-**Codebase nodes** (structure and implementation):
+**Codebase nodes** (`kind: "codebase"`) — structure and implementation:
 
-| Type | Purpose | `kind` value |
+| Label | Purpose |
+|---|---|
+| `File` | Source file |
+| `Function` | Function or method |
+| `Class` | Class or struct |
+| `Module` | Module or package |
+| `Config` | Configuration file or entry |
+| `Table` | Database table |
+| `Endpoint` | HTTP API endpoint |
+| `Document` | Documentation file (README, docs/) |
+| `Service` | Container/service definition (Dockerfile, docker-compose, k8s) |
+| `Pipeline` | CI/CD pipeline or build target |
+| `Schema` | Protobuf/OpenAPI/GraphQL schema definition |
+| `Resource` | Infrastructure-as-code resource (Terraform, CloudFormation) |
+
+**Knowledge nodes** (`kind: "knowledge"`) — business and domain:
+
+| Label | Purpose | `source` value |
 |---|---|---|
-| `File` | Source file or module | `File` |
-| `Function` | Function or method | `Function` |
-| `Class` | Class or struct | `Class` |
-| `Module` | Module or package | `Module` |
-| `Concept` | Code-level concept | `Concept` |
-| `Config` | Configuration entity | `Config` |
-| `Service` | Service component | `Service` |
-| `Table` | Database table | `Table` |
-| `Endpoint` | API endpoint | `Endpoint` |
-| `Pipeline` | Data or build pipeline | `Pipeline` |
-| `Schema` | Schema definition | `Schema` |
-| `Resource` | External resource | `Resource` |
-
-**Knowledge nodes** (business and domain):
-
-| Type | Purpose | `kind` value |
-|---|---|---|
-| `Domain` | Business domain | `Domain` |
-| `Feature` | Workflow or process | `Feature` |
-| `Operation` | Workflow step | `Operation` |
-| `Actor` | Person or role that performs operations | `Actor` |
-| `BusinessRule` | Business rule or policy | `BusinessRule` |
-| `Article` | Documentation or article | `Article` |
-| `Entity` | Domain entity | `Entity` |
-| `Topic` | Topic or subject | `Topic` |
-| `Claim` | Assertion or claim | `Claim` |
-| `Source` | Source of information | `Source` |
-| `Decision` | Decision record | `Decision` |
-| `Constraint` | Constraint or rule | `Constraint` |
-| `Risk` | Implementation hazard or business exposure | `Risk` |
-| `Concept` | Specialist abstraction from dialogue | `Concept` |
+| `Domain` | Business domain | `"code-analysis"` |
+| `Feature` | Named product capability | `"code-analysis"` or `"interview"` |
+| `Operation` | A meaningful action within a feature | `"code-analysis"` or `"interview"` |
+| `Actor` | User role or system agent | `"code-analysis"` or `"interview"` |
+| `BusinessRule` | Business rule or policy | `"code-analysis"` or `"interview"` |
+| `Entity` | Named business object | `"code-analysis"` or `"interview"` |
+| `Risk` | Implementation hazard or business exposure | `"code-analysis"` or `"interview"` |
+| `Constraint` | Technical invariant or access condition | `"code-analysis"` or `"interview"` |
+| `Decision` | Resolved question or commitment | `"interview"` |
+| `Concept` | Key abstraction named by a specialist | `"interview"` |
+| `Claim` | Assertion made during interview | `"interview"` |
 
 **Key relationships**:
 
 ```
-Domain -[:HAS_FEATURE]-> Feature
-Feature -[:HAS_OPERATION]-> Operation
-Operation -[:PERFORMED_BY]-> Actor
-Feature -[:GOVERNED_BY]-> BusinessRule
-Feature -[:IMPLEMENTED_BY]-> Code
-Entity -[:RELATED_TO]-> Entity
-Concept -[:DEFINED_IN]-> File
-Function -[:PART_OF]-> Class
-Service -[:CALLS]-> Service
-Endpoint -[:CALLS]-> Service
-File -[:DEFINES]-> Function
-File -[:DEFINES]-> Class
+-- Codebase structure (all nodes have kind: "codebase")
+File      -[:CONTAINS]->      Function / Class
+File      -[:IMPORTS]->       File
+Class     -[:INHERITS]->      Class
+Class     -[:IMPLEMENTS]->    Class
+Function  -[:CALLS]->         Function
+Function  -[:READS_FROM]->    Table / Endpoint
+Function  -[:WRITES_TO]->     Table / Endpoint
+Endpoint  -[:CALLS]->         Function
+File      -[:CONFIGURES]->    Config
+File      -[:DOCUMENTS]->     File
+File      -[:DEPLOYS]->       File
+File      -[:TESTED_BY]->     File
+File      -[:DEPENDS_ON]->    File
+
+-- Note: Class methods are NOT separate nodes.
+--   cls.methods is a string[] property on the Class node.
+--   There is no Class→Function edge. Use cls.filePath to find related functions.
+
+-- Knowledge domain (stored as named relationship types)
+Domain       -[:HAS_FEATURE]->    Feature
+Feature      -[:HAS_OPERATION]->  Operation
+Operation    -[:SEQUENCE]->       Operation
+Operation    -[:PERFORMED_BY]->   Actor
+Operation    -[:RESTRICTED_FOR]-> Actor
+Feature      -[:USES_ENTITY]->    Entity
+Operation    -[:USES_ENTITY]->    Entity
+BusinessRule -[:GOVERNS]->        Feature / Operation
+Feature      -[:HAS_RISK]->       Risk
+Operation    -[:HAS_RISK]->       Risk
+BusinessRule -[:HAS_RISK]->       Risk
+Risk         -[:MITIGATED_BY]->   Decision / Constraint
+Feature      -[:CONSTRAINED_BY]-> Constraint
+Decision     -[:CONSTRAINED_BY]-> Constraint
+Decision     -[:DECIDES]->        Feature / BusinessRule
+Decision     -[:IMPLEMENTS]->     Concept
+Concept      -[:SUB_CONCEPT_OF]-> Concept
+Claim        -[:SUPPORTS]->       Claim / Decision
+Constraint   -[:APPLIES_IN]->     Feature / Operation / Concept
+BusinessRule -[:APPLIES_IN]->     Concept
+
+-- Bridge
+Feature / Operation / BusinessRule -[:IMPLEMENTED_BY]-> File / Function / Class / Endpoint
 ```
 
 **Searchable text fields per node**:
-- All nodes: `name`, `summary`, `key`
-- `kind` property for filtering by node category
-- Domain/Feature/Operation: `description`, `featureType`
-- Entity: `entityType`, `description`
-- Constraint: `constraintType`, `rule`
+- All nodes: `name`, `summary`, `id`
+- Knowledge nodes: `kind = "knowledge"`, also `source` (`"code-analysis"` | `"interview"`)
+- Codebase nodes: `kind = "codebase"`, also `filePath`, `complexity`
+- `Feature` / `Operation`: `status` (`"planned"` | `"partial"` | `"implemented"`)
+- `Risk`: `severity`, `probability`
+- `Constraint`: `condition`, `invariant`
 
 ---
 
@@ -168,13 +197,13 @@ New task received:
       -> permission/network issue? -> rerun query with escalation
   -> Approach 1 (broad text search, direct terms, core fields)
       -> poor results? -> retry with synonyms or shorter terms + more fields
-      -> too many scattered results? -> Approach 3 (kind-scoped) -> repeat
+      -> too many scattered results? -> Approach 3 (label-scoped) -> repeat
   -> Approach 2 (branch query on top entities)
       -> reveals hidden constraints not reachable by text
   -> [optional] Approach 4 (dependency disclosure) if deeper investigation needed
 
 Before/during modification:
-  -> Approach 5 (constraint fast-path for named operations)
+  -> Approach 5 (constraint fast-path for named features or operations)
   -> Approach 6 (file-based reverse lookup if files are already known)
   -> [optional] Point lookup for specific nodes by key if clarification needed
 
@@ -191,10 +220,10 @@ Clarify individual nodes (optional, when a node name is known):
 | Round | Fields searched | Terms |
 |---|---|---|
 | 1 | `name`, `summary` | Natural language phrases from the task |
-| 2 | + `key`, `description` | Add synonyms or shorter phrases |
-| 3 | + `constraintType`, `entityType`, `flowType` | Single-word fallback terms |
+| 2 | + `id`, `condition`, `invariant` | Add synonyms or shorter phrases |
+| 3 | Narrow by label in `WHERE` clause | Single-word fallback terms |
 
-`kind` property filtering: add `WHERE seed.kind IN [...]` to narrow to specific node categories.
+Use label filtering (`WHERE seed:Domain OR seed:Feature`) to narrow to specific node categories.
 
 ---
 
@@ -230,23 +259,23 @@ ORDER BY relevance DESC, type, name
 LIMIT 50;
 ```
 
-**On poor results** - extend to more fields with `kind` filtering:
+**On poor results** - extend to more fields with label filtering:
 
 ```cypher
 WITH ['working period', 'period', 'update'] AS terms
 MATCH (seed)
-WHERE seed.kind IN ['Domain', 'Feature', 'Entity', 'Operation', 'Concept', 'Constraint']
+WHERE (seed:Domain OR seed:Feature OR seed:Entity OR seed:Operation OR seed:Concept OR seed:Constraint)
   AND any(t IN terms WHERE
       toLower(seed.name) CONTAINS t
       OR toLower(seed.summary) CONTAINS t
-      OR toLower(seed.key) CONTAINS t
-      OR toLower(coalesce(seed.description, '')) CONTAINS t
-      OR toLower(coalesce(seed.constraintType, '')) CONTAINS t)
+      OR toLower(seed.id) CONTAINS t
+      OR toLower(coalesce(seed.condition, '')) CONTAINS t
+      OR toLower(coalesce(seed.invariant, '')) CONTAINS t)
 WITH seed,
   size([t IN terms WHERE
       toLower(seed.name) CONTAINS t
       OR toLower(seed.summary) CONTAINS t
-      OR toLower(seed.key) CONTAINS t]) AS score
+      OR toLower(seed.id) CONTAINS t]) AS score
 OPTIONAL MATCH (seed)-[r]-(n)
 WHERE n <> seed
 RETURN labels(seed)[0] AS type,
@@ -291,44 +320,63 @@ MATCH (d:Domain) WHERE d.name IN domains
 OPTIONAL MATCH (d)-[:HAS_FEATURE]->(f:Feature)
 OPTIONAL MATCH (f)-[:HAS_OPERATION]->(op:Operation)
 OPTIONAL MATCH (op)-[:PERFORMED_BY]->(a:Actor)
-OPTIONAL MATCH (f)-[:GOVERNED_BY]->(br:BusinessRule)
+OPTIONAL MATCH (br:BusinessRule)-[:GOVERNS]->(f)
 OPTIONAL MATCH (f)-[:IMPLEMENTED_BY]->(code)
 RETURN d.name AS domain,
        d.summary AS description,
        collect(DISTINCT f.name) AS features,
        collect(DISTINCT op.name) AS operations,
        collect(DISTINCT a.name) AS actors,
-       collect(DISTINCT br.name) AS businessRules
+       collect(DISTINCT br.name) AS businessRules,
+       collect(DISTINCT code.filePath) AS files
 ```
 
 ### Codebase detail (specific to codebase nodes)
 
+Codebase edges use named Neo4j relationship types (`:CONTAINS`, `:CALLS`, `:IMPORTS`, etc.) — NOT `:RELATES {type: "..."}`. The `RELATES` pattern was a previous implementation detail that has been removed.
+
 ```cypher
 WITH ['UserNotificationsService'] AS names
-MATCH (f:Function) WHERE f.name IN names
-OPTIONAL MATCH (f)-[:PART_OF]->(c:Class)
-OPTIONAL MATCH (f)-[:CALLS]->(s:Service)
-OPTIONAL MATCH (f)-[:DEFINED_IN]->(file:File)
-RETURN f.name AS function,
-       f.summary AS summary,
-       c.name AS class,
-       collect(DISTINCT s.name) AS calls,
-       file.name AS file
+MATCH (fn:Function) WHERE fn.name IN names
+OPTIONAL MATCH (file:File)-[rc:CONTAINS]->(fn)
+OPTIONAL MATCH (fn)-[rca:CALLS]->(called:Function)
+RETURN fn.name AS function,
+       fn.summary AS summary,
+       fn.filePath AS filePath,
+       file.name AS inFile,
+       collect(DISTINCT called.name) AS calls
+```
+
+To explore all edges of a codebase node (any type):
+```cypher
+MATCH (fn:Function {name: 'UserNotificationsService'})
+OPTIONAL MATCH (fn)-[r]->(out)
+WHERE out.kind = "codebase"
+OPTIONAL MATCH (fn)<-[ri]-(in)
+WHERE in.kind = "codebase"
+RETURN fn.name, fn.filePath, fn.summary,
+       collect(DISTINCT {dir: '→', type: type(r), target: out.name}) AS outEdges,
+       collect(DISTINCT {dir: '←', type: type(ri), src: in.name}) AS inEdges
+```
+
+To find what class a function/method belongs to, use `filePath` overlap — there is no Class→Function edge:
+```cypher
+MATCH (cls:Class) WHERE cls.filePath = 'src/services/UserNotifications.ts'
+RETURN cls.name, cls.methods, cls.properties
 ```
 
 ---
 
-## Approach 3 - Kind-scoped search (domain narrowing)
+## Approach 3 - Label-scoped search (domain narrowing)
 
-**Use when**: Approach 1 returns too many scattered results from unrelated domains, or the task clearly belongs to a specific kind.
+**Use when**: Approach 1 returns too many scattered results from unrelated domains, or the task clearly belongs to a specific node type.
 
-Pre-filter seeds by `kind` property, then apply text matching within that scope.
+Pre-filter seeds by label, then apply text matching within that scope.
 
 ```cypher
-WITH ['domain', 'feature'] AS kinds,
-     ['update', 'edit'] AS terms
+WITH ['update', 'edit'] AS terms
 MATCH (seed)
-WHERE seed.kind IN kinds
+WHERE (seed:Domain OR seed:Feature)
   AND any(t IN terms WHERE
       toLower(seed.name) CONTAINS t
       OR toLower(seed.summary) CONTAINS t)
@@ -387,58 +435,83 @@ ORDER BY type, name
 
 ## Approach 5 - Constraint fast-path
 
-**Use when**: the entity or domain name is known (from any prior search or from the task description) and you need a quick safety check - what are the constraints and where are they enforced.
+**Use when**: a feature or operation name is known and you need a quick safety check — what constraints govern it, what risks are attached, and which code files implement it.
 
 ```cypher
-MATCH (e:Entity)
-WHERE e.name IN ['Working Period', 'Invoice Period']
-OPTIONAL MATCH (e)-[:HAS_CONSTRAINT]->(c:Constraint)
-OPTIONAL MATCH (c)-[:ENFORCED_IN]->(f:Function)
-OPTIONAL MATCH (e)-[:DEFINED_IN]->(file:File)
-RETURN e.name AS entity,
-       e.summary AS summary,
-       collect(DISTINCT c.name + ' [' + coalesce(c.constraintType,'?') + ']') AS constraints,
-       collect(DISTINCT f.name) AS enforcingFunctions,
-       collect(DISTINCT file.name) AS files
+MATCH (f)
+WHERE f.name IN ['Working Period Feature', 'Invoice Period Feature']
+  AND f.kind = "knowledge"
+OPTIONAL MATCH (f)-[:CONSTRAINED_BY]->(cn:Constraint)
+OPTIONAL MATCH (br:BusinessRule)-[:GOVERNS]->(f)
+OPTIONAL MATCH (f)-[:HAS_RISK]->(rk:Risk)
+OPTIONAL MATCH (f)-[:IMPLEMENTED_BY]->(code)
+RETURN f.name AS node,
+       labels(f)[0] AS type,
+       collect(DISTINCT cn.name + ' — ' + coalesce(cn.condition, cn.invariant, '?')) AS constraints,
+       collect(DISTINCT br.name) AS businessRules,
+       collect(DISTINCT {name: rk.name, severity: rk.severity}) AS risks,
+       collect(DISTINCT code.filePath) AS files
 ```
 
-**Read results as**: a safety checklist. `constraints` = what validates or restricts the entity. `enforcingFunctions` + `files` = where to look for implementation scope.
+**Read results as**: a safety checklist. `constraints` = what invariants apply. `businessRules` = governing policies. `risks` = known hazards. `files` = where to look for implementation scope.
 
 ---
 
 ## Approach 6 - File-based reverse lookup
 
-**Use when**: an implementation plan already names specific files to modify. Reverses the lookup: file path -> Function/Class -> Domain/Entity/Constraint. Surfaces hidden business rules enforced in those files without reading them.
+**Use when**: an implementation plan already names specific files to modify. Reverses the lookup: file path → Function/Class → knowledge nodes (Feature/Operation/BusinessRule). Surfaces hidden business rules and constraints tied to those files without reading them.
+
+Codebase edges (named relationship types like `:CONTAINS`, `:CALLS`) and knowledge-bridge edges (`:IMPLEMENTED_BY`) use different patterns.
 
 ```cypher
 WITH ['UserNotificationsService', 'NotificationType'] AS nameFragments
-MATCH (f:Function)
-WHERE any(nm IN nameFragments WHERE f.name CONTAINS nm)
-  OR any(fp IN nameFragments WHERE f.filePath CONTAINS fp)
-MATCH (f)-[:PART_OF]->(c:Class)
-OPTIONAL MATCH (f)-[:CALLS]->(s:Service)
-OPTIONAL MATCH (c)-[:DEFINED_IN]->(file:File)
-OPTIONAL MATCH (f)-[:ENFORCES]->(constraint:Constraint)
-RETURN f.name AS function,
-       c.name AS class,
-       s.name AS service,
-       file.name AS file,
-       collect(DISTINCT constraint.name) AS constraints
-ORDER BY class, function
+MATCH (fn:Function)
+WHERE any(nm IN nameFragments WHERE fn.name CONTAINS nm)
+   OR any(fp IN nameFragments WHERE fn.filePath CONTAINS fp)
+OPTIONAL MATCH (file:File)-[rc:CONTAINS]->(fn)
+OPTIONAL MATCH (kn)-[:IMPLEMENTED_BY]->(fn)
+WHERE kn.kind = "knowledge"
+OPTIONAL MATCH (br:BusinessRule)-[:GOVERNS]->(kn)
+OPTIONAL MATCH (kn)-[:CONSTRAINED_BY]->(cn:Constraint)
+RETURN fn.name AS function,
+       fn.filePath AS filePath,
+       file.name AS inFile,
+       collect(DISTINCT {label: labels(kn)[0], name: kn.name}) AS knowledgeNodes,
+       collect(DISTINCT br.name) AS businessRules,
+       collect(DISTINCT cn.name) AS constraints
+ORDER BY filePath, function
 ```
 
-Partial file name fragments are enough - the query uses `CONTAINS`. The result shows which Functions and Classes are in those files, and what Constraints are attached to them.
+To find all functions in a file and what they call:
+```cypher
+MATCH (file:File {filePath: 'src/services/UserNotifications.ts'})
+MATCH (file)-[:CONTAINS]->(fn:Function)
+OPTIONAL MATCH (fn)-[:CALLS]->(callee:Function)
+RETURN fn.name, fn.summary, collect(DISTINCT callee.name) AS calls
+ORDER BY fn.name
+```
+
+Partial file name fragments are enough — the query uses `CONTAINS`. The result shows which knowledge concepts are realized by those functions, and what rules constrain them.
 
 ---
 
 ## Schema quick-reference
 
-To list all node names by kind (useful for exact name lookup):
+To list all node names by subgraph:
 ```cypher
 MATCH (n)
-WHERE n.kind IN ['Domain', 'Feature', 'Entity', 'Concept', 'Function', 'Class']
-RETURN n.kind AS kind, collect(n.name) AS names
-ORDER BY kind
+WHERE n.kind IN ["knowledge", "codebase"]
+RETURN n.kind AS kind, labels(n)[0] AS label, collect(n.name) AS names
+ORDER BY kind, label
+```
+
+To list knowledge nodes by type:
+```cypher
+MATCH (n)
+WHERE n.kind = "knowledge"
+  AND (n:Domain OR n:Feature OR n:Entity OR n:Concept OR n:Constraint OR n:Risk)
+RETURN labels(n)[0] AS label, n.name AS name, n.summary AS summary
+ORDER BY label, name
 ```
 
 To inspect a specific node fully:
@@ -448,13 +521,20 @@ MATCH (n) WHERE n.name = 'Working Period Domain' RETURN n
 
 To list all domains:
 ```cypher
-MATCH (n:Domain) RETURN n.key AS key, n.name AS name, n.summary AS summary
+MATCH (n:Domain) RETURN n.id AS id, n.name AS name, n.summary AS summary
 ```
 
 To list all features for a domain:
 ```cypher
 MATCH (d:Domain {name: 'Working Period Domain'})-[:HAS_FEATURE]->(f:Feature)
-RETURN f.key AS key, f.name AS name, f.featureType AS type
+RETURN f.id AS id, f.name AS name, f.status AS status, f.source AS source
+```
+
+To list features by implementation status:
+```cypher
+MATCH (n:Feature)
+RETURN n.status AS status, collect(n.name) AS features
+ORDER BY status
 ```
 
 ---
@@ -466,4 +546,8 @@ These are common reasons the skill can appear to "not work" even when the graph 
 - Do not check Java proactively. Java is only needed when `run-query.mjs` exits with code 2 (driver unavailable) and you need to fall back to `cypher-shell`.
 - Credentials are loaded by `run-query.mjs` automatically: env vars → project `.env` → `~/.grasp-it/neo4j.env`. Do not assume credentials are only in the project `.env`.
 - Sandbox/network restrictions can block Neo4j access with generic permission-style errors. The right response is to rerun the query with escalation, not to skip the graph step.
-- Use `kind` property filtering to narrow results when the node type is known - it is more precise than filtering by label alone.
+- Use label predicates (`WHERE seed:Domain OR seed:Feature`) to narrow by node type — `n.kind` only distinguishes `"codebase"` from `"knowledge"`, it does not encode the node label.
+- `BusinessRule -[:GOVERNS]-> Feature/Operation` — the direction is from rule to target, not the other way around. Queries traversing `[:GOVERNED_BY]` will return nothing.
+- `File -[:CONTAINS]-> Function/Class/Module` — use `CONTAINS`, not `DEFINES` or `PART_OF`.
+- Codebase edges use named relationship types (`:CONTAINS`, `:CALLS`, `:IMPORTS`, `:INHERITS`, `:IMPLEMENTS`, `:READS_FROM`, `:WRITES_TO`, `:CONFIGURES`, `:TESTED_BY`, `:DEPENDS_ON`, `:DOCUMENTS`, `:DEPLOYS`, etc.), NOT `:RELATES {type: '...'}`. The `RELATES` pattern was a previous implementation detail that has been fixed.
+- Class methods are NOT sub-nodes — they are stored as a `methods: string[]` property on the `Class` node. There is no `Class→Function` edge in the graph. To find functions in the same file as a class, match by `cls.filePath`.
