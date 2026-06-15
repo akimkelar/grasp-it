@@ -227,8 +227,9 @@ If you experience transient DNS failures or prefer an explicit CLI-based connect
 NEO4J_CONNECTION_TYPE=cypher-shell   # requires cypher-shell to be installed
 ```
 
-`cypher-shell` ships with Neo4j Desktop and is available via Homebrew (`brew install neo4j`) or
-the [Neo4j Download Center](https://neo4j.com/deployment-center/).
+`cypher-shell` is required for `NEO4J_CONNECTION_TYPE=cypher-shell`. See
+[`docs/configuration/cypher-shell-installation.md`](docs/configuration/cypher-shell-installation.md)
+for full installation instructions for macOS (standalone zip, Homebrew, or Neo4j Desktop).
 
 ---
 
