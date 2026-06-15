@@ -161,6 +161,7 @@ async function runQuery(neo4jConfig, query) {
   const result = await runQueryViaDriver(neo4jConfig, query);
   if (!result.ok && result.fallback) {
     // Driver failed with connection error — signal caller to use cypher-shell
+    console.error(`run-query.mjs: Query failed (signaling cypher-shell fallback): ${result.reason}`);
     process.exit(2);
   }
   return result;
@@ -195,6 +196,7 @@ if (!result.ok) {
   }
   // Check if we should signal fallback to cypher-shell
   if (result.fallback) {
+    console.error(`run-query.mjs: Query failed (signaling cypher-shell fallback): ${result.reason}`);
     process.exit(2);
   }
   console.error(`run-query.mjs: Query failed: ${result.reason}`);

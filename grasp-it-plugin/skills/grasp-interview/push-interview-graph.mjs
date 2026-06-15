@@ -273,6 +273,13 @@ async function pushInterviewGraph(projectRoot) {
     process.exit(1);
   }
 
+  // Check connection type — if cypher-shell is requested, use it directly
+  const connectionType = getConnectionType();
+  if (connectionType === "cypher-shell") {
+    pushInterviewGraphViaCypherShell(neo4jConfig, graphData);
+    return; // never reached
+  }
+
   // Try driver first; fall back to cypher-shell if driver is unavailable
   let driver;
   let driverAvailable = false;
@@ -386,6 +393,9 @@ async function pushInterviewGraph(projectRoot) {
         err.message.includes("No routing servers available") ||
         err.message.includes("ServiceUnavailable") ||
         err.message.includes("Security error") ||
+        err.message.includes("ENOTFOUND") ||
+        err.message.includes("EAI_AGAIN") ||
+        err.code === "ServiceUnavailable" ||
         !driverAvailable) {
       console.error("push-interview-graph.mjs: Retrying via cypher-shell fallback...");
       pushInterviewGraphViaCypherShell(neo4jConfig, graphData);

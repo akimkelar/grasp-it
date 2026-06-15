@@ -227,6 +227,13 @@ async function pushCodebaseGraph(projectRoot) {
     process.exit(1);
   }
 
+  // Check connection type — if cypher-shell is requested, use it directly
+  const connectionType = getConnectionType();
+  if (connectionType === "cypher-shell") {
+    pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta);
+    return; // never reached
+  }
+
   // Try driver first; fall back to cypher-shell if driver is unavailable
   let driver;
   let driverAvailable = false;
@@ -328,7 +335,16 @@ async function pushCodebaseGraph(projectRoot) {
   } catch (err) {
     console.error(`push-codebase-graph.mjs: Failed to push codebase graph: ${err.message}`);
     // Driver failed — try cypher-shell as last resort
-    if (err.message.includes("neo4j-driver") || !driverAvailable) {
+    if (err.message.includes("neo4j-driver") ||
+        err.message.includes("Connection refused") ||
+        err.message.includes("ECONNREFUSED") ||
+        err.message.includes("No routing servers available") ||
+        err.message.includes("ServiceUnavailable") ||
+        err.message.includes("Security error") ||
+        err.message.includes("ENOTFOUND") ||
+        err.message.includes("EAI_AGAIN") ||
+        err.code === "ServiceUnavailable" ||
+        !driverAvailable) {
       console.error("push-codebase-graph.mjs: Retrying via cypher-shell fallback...");
       pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta);
     }
