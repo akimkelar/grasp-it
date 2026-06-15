@@ -1,7 +1,7 @@
 node {
   color: #3A9E6A;
   border-color: #A8E0A8;
-  size: 30px;
+  size: 16px;
 }
 
 node.File {
@@ -44,6 +44,36 @@ node.Endpoint {
   color: #004A0A;
   border-color: #488048;
   size: 16px;
+}
+
+node.Document {
+  color: #5A7A8A;
+  border-color: #98B0C8;
+  size: 20px;
+}
+
+node.Service {
+  color: #4A6A7A;
+  border-color: #88A0B8;
+  size: 22px;
+}
+
+node.Pipeline {
+  color: #3A5A6A;
+  border-color: #788898;
+  size: 20px;
+}
+
+node.Schema {
+  color: #2A4A5A;
+  border-color: #687888;
+  size: 18px;
+}
+
+node.Resource {
+  color: #1A3A4A;
+  border-color: #586878;
+  size: 18px;
 }
 
 node.Domain {
@@ -237,4 +267,79 @@ relationship.DEPENDS_ON {
 relationship.IMPLEMENTED_BY {
   width: 2px;
   color: #9A6AC8;
+}
+
+relationship.EXPOSES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.TRANSFORMS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.VALIDATES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.SUBSCRIBES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.PUBLISHES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.MIDDLEWARE {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.RELATED {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.SIMILAR_TO {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.DOCUMENTS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.DEPLOYS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.TRIGGERS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.DEFINES_SCHEMA {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.SERVES {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.PROVISIONS {
+  width: 1px;
+  color: #3A9E6A;
+}
+
+relationship.ROUTES {
+  width: 1px;
+  color: #3A9E6A;
 }

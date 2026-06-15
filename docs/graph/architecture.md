@@ -178,6 +178,11 @@ graph TD
     classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef svc fill:#4A6A7A,stroke:#88A0B8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef pipe fill:#3A5A6A,stroke:#788898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef schema fill:#2A4A5A,stroke:#687888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef res fill:#1A3A4A,stroke:#586878,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef domain fill:#5E1EC4,stroke:#C490F0,stroke-width:3px,color:#E8EEFF,font-size:14px
     classDef feature fill:#4833C4,stroke:#A890E8,stroke-width:2px,color:#E8EEFF,font-size:14px
     classDef businessrule fill:#3D3DC4,stroke:#9898E8,stroke-width:2px,color:#E8EEFF,font-size:14px
@@ -200,6 +205,11 @@ graph TD
         CFG["Config"]
         TB["Table"]
         EP["Endpoint"]
+        DOC["Document"]
+        SVC["Service"]
+        PIPE["Pipeline"]
+        SCHEMA["Schema"]
+        RES["Resource"]
 
         FILE -->|CONTAINS| FN
         FILE -->|CONTAINS| CLS
@@ -213,6 +223,14 @@ graph TD
         EP -->|EXPOSES| FN
         FN -->|TESTED_BY| FN
         CLS -->|CONFIGURES| CFG
+        DOC -->|DOCUMENTS| FILE
+        SVC -->|SERVES| EP
+        PIPE -->|TRIGGERS| PIPE
+        FILE -->|DEPLOYS| FILE
+        FILE -->|MIGRATES| TB
+        SCHEMA -->|DEFINES_SCHEMA| EP
+        RES -->|PROVISIONS| SVC
+        FILE -->|ROUTES| EP
     end
 
     subgraph knowledge["Knowledge (kind: knowledge)"]
@@ -267,6 +285,11 @@ graph TD
     class CFG cfg
     class TB tb
     class EP ep
+    class DOC doc
+    class SVC svc
+    class PIPE pipe
+    class SCHEMA schema
+    class RES res
     class D domain
     class F feature
     class BR businessrule
@@ -293,6 +316,11 @@ graph TD
     classDef cfg fill:#1A6A2A,stroke:#68A068,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef tb fill:#0A5A1A,stroke:#589058,stroke-width:2px,color:#E8F8E8,font-size:12px
     classDef ep fill:#004A0A,stroke:#488048,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef doc fill:#5A7A8A,stroke:#98B0C8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef svc fill:#4A6A7A,stroke:#88A0B8,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef pipe fill:#3A5A6A,stroke:#788898,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef schema fill:#2A4A5A,stroke:#687888,stroke-width:2px,color:#E8F8E8,font-size:12px
+    classDef res fill:#1A3A4A,stroke:#586878,stroke-width:2px,color:#E8F8E8,font-size:12px
 
     FILE["File"]
     FN["Function"]
@@ -301,6 +329,11 @@ graph TD
     CFG["Config"]
     TB["Table"]
     EP["Endpoint"]
+    DOC["Document"]
+    SVC["Service"]
+    PIPE["Pipeline"]
+    SCHEMA["Schema"]
+    RES["Resource"]
 
     FILE -->|CONTAINS| FN
     FILE -->|CONTAINS| CLS
@@ -311,9 +344,17 @@ graph TD
     FN -->|CALLS| FN
     FN -->|READS_FROM| TB
     FN -->|WRITES_TO| TB
-    EP -->|CALLS| FN
+    EP -->|EXPOSES| FN
     FN -->|TESTED_BY| FN
     CLS -->|CONFIGURES| CFG
+    DOC -->|DOCUMENTS| FILE
+    SVC -->|SERVES| EP
+    PIPE -->|TRIGGERS| PIPE
+    FILE -->|DEPLOYS| FILE
+    FILE -->|MIGRATES| TB
+    SCHEMA -->|DEFINES_SCHEMA| EP
+    RES -->|PROVISIONS| SVC
+    FILE -->|ROUTES| EP
 
     class FILE file
     class FN fn
@@ -322,6 +363,11 @@ graph TD
     class CFG cfg
     class TB tb
     class EP ep
+    class DOC doc
+    class SVC svc
+    class PIPE pipe
+    class SCHEMA schema
+    class RES res
 ```
 
 #### Knowledge Code-Analysis Layer

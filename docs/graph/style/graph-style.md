@@ -23,6 +23,7 @@ Apply it via `:style` in Neo4j Browser — drag `graph-style.grass` onto the pan
 | 10 | `Function` | 28px | Codebase — function definition |
 | 11 | `Module` | 24px | Codebase — module or namespace |
 | 12 | `File`, `Config`, `Table`, `Endpoint` | 16–22px | Codebase — smaller structural/resource nodes |
+| 13 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | 18–22px | Codebase — infrastructure and metadata nodes |
 
 ### Node color — three semantic layers on a dark canvas (`#0F172A`)
 
@@ -109,13 +110,15 @@ Risk and Constraint nodes appear in both code-analysis and interview layers but 
 | KI-2 | `Concept` | `#C04070` | `#E080A0` | Pink-rose — specialist abstraction |
 | KI-3 | `Claim` | `#BC3868` | `#D87090` | Rose — interview assertion |
 
-#### Knowledge Interview Layer — rose (hue 328° → 348°), pink border
+#### Infrastructure Layer — slate-blue (hue 200° → 210°), lighter blue-gray border
 
 | ID | Node | Fill | Stroke | Description |
 |----|------|------|--------|-------------|
-| KI-1 | `Decision` | `#C44878` | `#E890B0` | Rose — resolved question |
-| KI-2 | `Concept` | `#C04070` | `#E080A0` | Pink-rose — specialist abstraction |
-| KI-3 | `Claim` | `#BC3868` | `#D87090` | Rose — interview assertion |
+| IN-1 | `Document` | `#5A7A8A` | `#98B0C8` | Slate — documentation file |
+| IN-2 | `Service` | `#4A6A7A` | `#88A0B8` | Dark slate — container/service definition |
+| IN-3 | `Pipeline` | `#3A5A6A` | `#788898` | Mid slate — CI/CD pipeline |
+| IN-4 | `Schema` | `#2A4A5A` | `#687888` | Deep slate — schema definition |
+| IN-5 | `Resource` | `#1A3A4A` | `#586878` | Darkest slate — IaC resource |
 
 ### Relationships
 
@@ -124,6 +127,8 @@ Risk and Constraint nodes appear in both code-analysis and interview layers but 
 | `HAS_FEATURE`, `HAS_OPERATION`, `DEPENDS_ON` | `#555555` | 2px | Backbone |
 | `CONTAINS`, `IMPORTS`, `EXPORTS`, `INHERITS`, `IMPLEMENTS` | `#3A9E6A` | 1px | Codebase |
 | `CALLS`, `READS_FROM`, `WRITES_TO`, `CONFIGURES`, `TESTED_BY` | `#3A9E6A` | 1px | Codebase |
+| `EXPOSES`, `TRANSFORMS`, `VALIDATES`, `SUBSCRIBES`, `PUBLISHES`, `MIDDLEWARE`, `RELATED`, `SIMILAR_TO` | `#3A9E6A` | 1px | Codebase |
+| `DOCUMENTS`, `DEPLOYS`, `MIGRATES`, `TRIGGERS`, `DEFINES_SCHEMA`, `SERVES`, `PROVISIONS`, `ROUTES` | `#3A9E6A` | 1px | Codebase |
 | `SEQUENCE`, `PERFORMED_BY`, `RESTRICTED_FOR`, `GOVERNS`, `USES_ENTITY` | `#4A7AAE` | 1px | Knowledge |
 | `DECIDES`, `SUB_CONCEPT_OF`, `IMPLEMENTS`, `SUPPORTS`, `APPLIES_IN`, `HAS_RISK`, `MITIGATED_BY` | `#4A7AAE` | 1px | Knowledge |
 | `IMPLEMENTED_BY` | `#9A6AC8` | 2px | Bridge |
