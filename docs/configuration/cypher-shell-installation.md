@@ -13,7 +13,7 @@ This guide covers installing `cypher-shell` on macOS via Homebrew.
 brew install openjdk@21
 ```
 
-After installation, Homebrew outputs a message with a `ln` command to symlink the JDK. This makes it available to system Java wrappers — no `JAVA_HOME` or shell rc edits needed.
+After installation, Homebrew outputs a message with a `ln` command to symlink the JDK. This makes it available to system Java wrappers — no `JAVA_HOME` or shell rc edits neede d.
 
 Run the symlink command (replace `$HOMEBREW_PREFIX` with your Homebrew prefix, typically `/opt/homebrew` on Apple Silicon or `/usr/local` on Intel):
 
