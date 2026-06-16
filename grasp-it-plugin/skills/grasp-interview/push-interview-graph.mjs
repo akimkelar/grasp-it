@@ -151,15 +151,22 @@ function buildNodesCypher(graphData, neo4jConfig) {
 /**
  * Build a cypher-shell query string for pushing edges.
  * Converts relationship type to UPPER_SNAKE_CASE.
+ * IMPLEMENTED_BY edges target :Codebase nodes, not :Knowledge nodes.
  */
 function buildEdgesCypher(graphData) {
   const lines = [];
   if (graphData.edges && Array.isArray(graphData.edges)) {
     for (const edge of graphData.edges) {
       const relType = edge.type.toUpperCase().replace(/-/g, "_");
-      lines.push(
-        `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Knowledge {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
-      );
+      if (relType === "IMPLEMENTED_BY") {
+        lines.push(
+          `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Codebase {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+        );
+      } else {
+        lines.push(
+          `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Knowledge {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
+        );
+      }
     }
   }
   return lines.join("\n");
@@ -194,31 +201,14 @@ function pushInterviewGraphViaCypherShell(neo4jConfig, graphData) {
 MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
   runCypherShell(neo4jConfig, layerCypher); // best-effort — don't fail if Layer doesn't exist
 
-  // Orphan check via cypher-shell
+  // Orphan check via cypher-shell (best-effort — don't exit on failure)
   const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Feature OR n:Operation OR n:Actor OR n:BusinessRule OR n:Entity OR n:Decision OR n:Constraint OR n:Concept OR n:Claim OR n:Risk) RETURN n.id AS id, n.type AS type;`;
-  try {
-    const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
-    const uri = NEO4J_URI || "neo4j://localhost:7687";
-    const cypherUri = uri
-      .replace(/^neo4j\+s:\/\//, "bolt+s://")
-      .replace(/^neo4j:\/\//, "bolt://");
-    const database = neo4jConfig.NEO4J_DATABASE || "grasp";
-    const output = execFileSync(
-      "cypher-shell",
-      ["-a", cypherUri, "-u", NEO4J_USERNAME || "neo4j", "-p", NEO4J_PASSWORD || "password", "-d", database, "--format", "plain"],
-      { input: orphanQuery, encoding: "utf-8" }
-    );
-    const lines = output.trim().split("\n").filter(l => l && !l.startsWith("+"));
-    for (const line of lines) {
-      try {
-        const [id, type] = line.split("\t");
-        if (id) {
-          console.error(`push-interview-graph.mjs: WARNING — node has no secondary label: ${id} (type: ${type})`);
-        }
-      } catch {}
+  const orphanResult = runCypherShell(neo4jConfig, orphanQuery);
+  if (!orphanResult.ok) {
+    if (orphanResult.reason && orphanResult.reason.includes("cypher-shell not found")) {
+      console.error(`push-interview-graph.mjs: WARNING — orphan check skipped: ${orphanResult.reason}`);
     }
-  } catch {
-    // Orphan check is best-effort
+    // Other errors are silently ignored — orphan check is best-effort
   }
 
   console.log("push-interview-graph.mjs: Interview graph pushed to Neo4j via cypher-shell successfully.");
@@ -449,14 +439,23 @@ async function pushInterviewGraph(projectRoot) {
       }
 
       // Push edges with correct relationship type (UPPER_SNAKE_CASE)
+      // IMPLEMENTED_BY edges target :Codebase nodes (File, Function, Class), not :Knowledge nodes
       if (graphData.edges && Array.isArray(graphData.edges)) {
         for (const edge of graphData.edges) {
           const relType = edge.type.toUpperCase().replace(/-/g, "_");
-          await session.run(
-            `MATCH (a:Knowledge {id: $src}), (b:Knowledge {id: $tgt})
-             MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
-            { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
-          );
+          if (relType === "IMPLEMENTED_BY") {
+            await session.run(
+              `MATCH (a:Knowledge {id: $src}), (b:Codebase {id: $tgt})
+               MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
+              { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
+            );
+          } else {
+            await session.run(
+              `MATCH (a:Knowledge {id: $src}), (b:Knowledge {id: $tgt})
+               MERGE (a)-[r:\`${relType}\` {weight: $w}]->(b)`,
+              { src: edge.source, tgt: edge.target, w: edge.weight || 1.0 }
+            );
+          }
         }
       }
 

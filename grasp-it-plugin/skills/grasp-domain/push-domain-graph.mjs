@@ -184,31 +184,14 @@ function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
   const updateCypher = `MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash;`;
   runCypherShell(neo4jConfig, updateCypher); // best-effort — don't fail if Project doesn't exist yet
 
-  // Orphan check via cypher-shell
+  // Orphan check via cypher-shell (best-effort — don't exit on failure)
   const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule OR n:Risk OR n:Constraint) RETURN n.id AS id, n.type AS type;`;
-  try {
-    const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
-    const uri = NEO4J_URI || "neo4j://localhost:7687";
-    const cypherUri = uri
-      .replace(/^neo4j\+s:\/\//, "bolt+s://")
-      .replace(/^neo4j:\/\//, "bolt://");
-    const database = neo4jConfig.NEO4J_DATABASE || "grasp";
-    const output = execFileSync(
-      "cypher-shell",
-      ["-a", cypherUri, "-u", NEO4J_USERNAME || "neo4j", "-p", NEO4J_PASSWORD || "password", "-d", database, "--format", "plain"],
-      { input: orphanQuery, encoding: "utf-8" }
-    );
-    const lines = output.trim().split("\n").filter(l => l && !l.startsWith("+"));
-    for (const line of lines) {
-      try {
-        const [id, type] = line.split("\t");
-        if (id) {
-          console.error(`push-domain-graph.mjs: WARNING — node has no secondary label: ${id} (type: ${type})`);
-        }
-      } catch {}
+  const orphanResult = runCypherShell(neo4jConfig, orphanQuery);
+  if (!orphanResult.ok) {
+    if (orphanResult.reason && orphanResult.reason.includes("cypher-shell not found")) {
+      console.error(`push-domain-graph.mjs: WARNING — orphan check skipped: ${orphanResult.reason}`);
     }
-  } catch {
-    // Orphan check is best-effort
+    // Other errors are silently ignored — orphan check is best-effort
   }
 
   console.log("push-domain-graph.mjs: Domain graph pushed to Neo4j via cypher-shell successfully.");
