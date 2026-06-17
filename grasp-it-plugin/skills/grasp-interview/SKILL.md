@@ -29,11 +29,11 @@ and enables queries that separate intent from implementation.
 
 Interview nodes carry `generatedAt` (ISO 8601 timestamp) but do NOT carry `sourceCommit` or `sourceFiles` — those are only present on code-analysis nodes.
 
-**Neo4j label convention:** All knowledge nodes use a dual-label pattern: the base label `Knowledge`
-plus a secondary type label (e.g., `Knowledge:Feature`). When writing to Neo4j, always use
-`MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`SecondaryLabel\`` — do NOT merge on multiple
-labels simultaneously. For the full label convention, UPPER_SNAKE_CASE relationship types, and
-`toNeo4jLabel` mapping rules, see `docs/architecture/neo4j-schema.md`. For the interview-specific node and relationship diagram (which shows exactly which nodes and relationships belong in the interview layer) and node reuse guidelines, see `docs/graph/architecture.md`.
+**Before writing any nodes or edges, read both schema documents:**
+- `docs/architecture/neo4j-schema.md` — complete property list per node type, label convention, `toNeo4jLabel` mapping, UPPER_SNAKE_CASE relationship types, ID formats. **The push script does not validate property names** — a wrong key (e.g. `text` instead of `ruleText`) is silently written to the graph under the wrong name.
+- `docs/graph/architecture.md` — interview-layer node/relationship diagram and node reuse guidelines.
+
+**Neo4j label convention:** All knowledge nodes use a dual-label pattern: the base label `Knowledge` plus a secondary type label (e.g., `Knowledge:Feature`). Every node written by this skill must carry `kind: "knowledge"` and `source: "interview"` — these are required, not optional. When writing to Neo4j, always use `MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`SecondaryLabel\`` — do NOT merge on multiple labels simultaneously.
 
 ### Node Types and Reuse Guidelines
 
@@ -204,7 +204,7 @@ If the feature belongs to an existing domain, create a `HAS_FEATURE` edge from t
 
 Tell the specialist:
 
-> "We're going to explore [topic] together. I'll ask you one question at a time. For each question I'll tell you what I currently think the answer is — your job is to correct me, extend me, or confirm me. When I think I understand something, I'll paraphrase it back and you confirm. We'll keep going until we both agree the picture is complete and correct. I'll save what we agree on to the knowledge graph as we go."
+> "We're going to explore [topic] together. I'll ask you one question at a time — mostly open questions so you can describe things in your own words. At the end of each topic I'll paraphrase what I understood and you correct me. We'll keep going until we both agree the picture is complete and correct. I'll save what we agree on to the knowledge graph as we go."
 
 Create `$PROJECT_ROOT/.grasp-it/intermediate/interview-context.json`:
 
@@ -305,8 +305,6 @@ After this aspect, write to the graph:
 - A `Constraint` node for each permission invariant (e.g. "only [actor] can [action]")
 - A `Claim` node for any permission rule that was stated but not fully confirmed (confidence: `"tentative"`)
 - A `Risk` node for any scenario where permission enforcement is unclear or could be bypassed
-
-**For each uncertainty identified anywhere in the interview**, create a `Claim` node (`confidence: "tentative"`) to record the open question. If the uncertainty is about something that MUST be true in order for the feature to work correctly, also create a `Constraint` node and link it with `APPLIES_IN`. If the uncertainty is about something that COULD go wrong, create a `Risk` node and link it with `HAS_RISK`.
 
 ---
 
@@ -591,76 +589,7 @@ When the specialist confirms the synthesis is correct:
 
 ---
 
-## Phase 5: Merge into Knowledge Graph
-
-### 5a. Load existing graph
-
-Query Neo4j for the existing knowledge graph:
-```bash
-node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n"
-node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH ()-[r]->() RETURN r"
-```
-If Neo4j query fails, report the error and **STOP**.
-
-Read `pr-nodes.json` and `pr-edges.json` as the incoming interview output.
-
-### 5b. Classify each incoming node
-
-For each incoming node, compare against all existing nodes by `id`:
-
-- **Same `id`, same `source: "interview"`** — re-run of the same skill on the same topic:
-  - Update `summary`, `rationale`, `scope`, `tags` with the incoming values
-  - If the existing node has `status: "accepted"` or `"implemented"`, keep that status (do not downgrade to `"draft"`)
-  - Keep all existing edges; append incoming edges that are not already present (deduplicate by `(source, target, type)`)
-
-- **Same `id`, different `source`** (e.g., existing has `source: "code-analysis"`, incoming has `source: "interview"`) — concurrent runs with different perspectives:
-  - **Do not overwrite.** Rename the incoming node's `id` by appending a double-dash suffix and the source name: `feature:invoice-assignment` becomes `feature:invoice-assignment--interview`
-  - This preserves both perspectives explicitly. A later query can show divergences: "here is what the code does vs. what the PO wants."
-
-- **New `id`** (no existing node with that id):
-  - Append the incoming node as-is
-
-### 5c. Track conflicts for user reporting
-
-Maintain a `conflicts[]` list: for every same-`id`, different-`source` rename, record `{ id, existingSource, incomingSource, existingSummary, incomingSummary }`.
-
-### 5d. Merge edges
-
-Edges: deduplicate by `(source, target, type)` composite. All new edges are appended; existing edges are preserved.
-
-### 5e. Ensure layer exists
-
-Ensure a `layer:knowledge` layer exists in the graph — add all new (or renamed) node IDs to its `nodeIds` list.
-
-### 5f. Validate and write
-
-1. Validate the merged graph against the schema
-2. Write the merged graph back to Neo4j using `push-interview-graph.mjs`:
-   ```bash
-   node "$PLUGIN_ROOT/skills/grasp-interview/push-interview-graph.mjs" "$PROJECT_ROOT"
-   ```
-
-   **Critical — dual-label MERGE pattern:** When writing nodes directly via Cypher, always use:
-   ```cypher
-   MERGE (n:Knowledge {id: $id}) SET n += $props SET n:`<SecondaryLabel>`
-   ```
-   Do NOT use `MERGE (n:Knowledge:Feature {id: ...})` — Neo4j's MERGE matches on ALL specified labels, which can create duplicate nodes when a `Knowledge`-only node already exists from prior `/grasp` runs. The secondary label must be added in a separate `SET n:\`<Label>\`` clause.
-
-   If Neo4j write fails, report the error and **STOP**.
-
-### 5g. Report conflicts to user
-
-If `conflicts` is non-empty, after writing the graph report to the user:
-
-> "I found [N] nodes that already existed from code analysis. Here's where the interview description differs from what the code does:
-> - **[id]**: code says \"[existingSummary]\" / interview says \"[incomingSummary]\"
-> ..."
-
-This turns a merge conflict into actionable information — the implementor knows where intent and implementation diverge.
-
----
-
-## Phase 6: Summary
+## Phase 5: Summary
 
 Report to the specialist:
 
@@ -679,140 +608,3 @@ If any open questions remain, offer to continue: *"There are [N] open items. Sho
 Offer to launch the dashboard:
 
 > Run `/grasp-dashboard` to visualize the knowledge graph.
-
----
-
-## Reference: Node Shapes
-
-```jsonc
-{
-  "id": "feature:<kebab-name>",
-  "type": "feature",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<one-paragraph description>",
-  "status": "planned",
-  "tags": [],
-  "complexity": "moderate"
-}
-
-{
-  "id": "operation:<kebab-name>",
-  "type": "operation",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<what this action does>",
-  "status": "planned",
-  "tags": []
-}
-
-{
-  "id": "actor:<kebab-name>",
-  "type": "actor",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<who this is>",
-  "permissions": ["<what they can do>"],
-  "restrictions": ["<what they cannot do>"],
-  "tags": []
-}
-
-{
-  "id": "business-rule:<kebab-name>",
-  "type": "business-rule",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<what the rule says>",
-  "ruleText": "<plain-language policy statement>",
-  "status": "active",
-  "scope": ["<feature-or-domain>"],
-  "tags": []
-}
-
-{
-  "id": "entity:<kebab-name>",
-  "type": "entity",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<what this object is and its lifecycle>",
-  "tags": []
-}
-
-{
-  "id": "decision:<kebab-name>",
-  "type": "decision",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<what was decided>",
-  "rationale": "<why this, not alternatives>",
-  "status": "accepted",
-  "scope": ["<feature-or-domain>"],
-  "tags": []
-}
-
-{
-  "id": "constraint:<kebab-name>",
-  "type": "constraint",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "condition": "<when this applies>",
-  "invariant": "<what must always hold true>",
-  "scope": ["<feature>"],
-  "tags": []
-}
-
-{
-  "id": "concept:<kebab-name>",
-  "type": "concept",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<precise definition — not vague>",
-  "tags": []
-}
-
-// Claims use a short UUID rather than kebab-case because multiple distinct claims can exist
-// about the same topic and a name-based ID would collide. Generate 8 random hex characters.
-{
-  "id": "claim:<short-uuid>",
-  "type": "claim",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<the assertion>",
-  "confidence": "agreed",
-  "rationale": "<evidence or reasoning>",
-  "tags": []
-}
-
-{
-  "id": "risk:<kebab-name>",
-  "type": "risk",
-  "kind": "knowledge",
-  "source": "interview",
-  "author": "<specialist name or role>",
-  "name": "<name>",
-  "summary": "<what could go wrong and why it matters>",
-  "severity": "high",
-  "probability": "medium",
-  "mitigation": "<how this risk is or could be addressed — empty string if none>",
-  "scope": ["<feature-or-domain>"],
-  "tags": []
-}
-```
