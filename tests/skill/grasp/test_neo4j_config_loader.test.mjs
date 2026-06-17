@@ -41,9 +41,13 @@ process.stdout.write(JSON.stringify(config));
 `;
   writeFileSync(driverPath, driverCode);
 
+  const merged = { ...process.env, ...env };
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete merged[k];
+  }
   const result = spawnSync('node', [driverPath], {
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
+    env: merged,
   });
 
   rmSync(tmpDir, { recursive: true, force: true });
@@ -106,7 +110,13 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
       writeFileSync(join(root, '.env'),
         `NEO4J_URI=bolt://localhost:7687\nNEO4J_USERNAME=neo4j\nNEO4J_PASSWORD=password\nNEO4J_DATABASE=projectdb\n`
       );
-      const config = runConfigLoader(LOADER_PATH, root, {});
+      const config = runConfigLoader(LOADER_PATH, root, {
+        NEO4J_URI: undefined,
+        NEO4J_DATABASE: undefined,
+        NEO4J_USERNAME: undefined,
+        NEO4J_PASSWORD: undefined,
+        NEO4J_CONNECTION_TYPE: undefined,
+      });
       expect(config.NEO4J_DATABASE).toBe('projectdb');
     });
 
@@ -149,7 +159,13 @@ describe.each(LOADERS)('neo4j-config-loader.mjs [$name]', ({ path: LOADER_PATH }
       );
       const projectRoot = mkdtempSync(join(tmpdir(), 'cfg-global-project-'));
       try {
-        const config = runConfigLoader(LOADER_PATH, projectRoot, {});
+        const config = runConfigLoader(LOADER_PATH, projectRoot, {
+          NEO4J_URI: undefined,
+          NEO4J_DATABASE: undefined,
+          NEO4J_USERNAME: undefined,
+          NEO4J_PASSWORD: undefined,
+          NEO4J_CONNECTION_TYPE: undefined,
+        });
         expect(config.NEO4J_DATABASE).toBe('globaldb');
       } finally {
         rmSync(projectRoot, { recursive: true, force: true });

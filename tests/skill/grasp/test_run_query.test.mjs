@@ -11,9 +11,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function runScript(scriptPath, args, env = {}) {
+  const merged = { ...process.env, ...env };
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete merged[k];
+  }
   return spawnSync('node', [scriptPath, ...args], {
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
+    env: merged,
   });
 }
 
@@ -54,7 +58,14 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
     });
 
     it('exits 0 with empty results when no Neo4j configuration is found', () => {
-      const result = runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], { HOME: root });
+      const result = runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], {
+        HOME: root,
+        NEO4J_URI: undefined,
+        NEO4J_DATABASE: undefined,
+        NEO4J_USERNAME: undefined,
+        NEO4J_PASSWORD: undefined,
+        NEO4J_CONNECTION_TYPE: undefined,
+      });
       expect(result.status).toBe(0);
       const parsed = JSON.parse(result.stdout);
       expect(parsed.results).toEqual([]);
