@@ -1,6 +1,6 @@
 # Building and Publishing a New Plugin Version
 
-for the information about supporting the plugin for different platforms, read docs/architecture/plugin-platform-resolution.md
+for the information about supporting the plugin for different platforms, read docs/configuration/plugin-platform-resolution.md
 
 ## Version Control
 
