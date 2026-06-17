@@ -30,8 +30,8 @@ and enables queries that separate intent from implementation.
 Interview nodes carry `generatedAt` (ISO 8601 timestamp) but do NOT carry `sourceCommit` or `sourceFiles` — those are only present on code-analysis nodes.
 
 **Before writing any nodes or edges, read both schema documents:**
-- `docs/architecture/neo4j-schema.md` — complete property list per node type, label convention, `toNeo4jLabel` mapping, UPPER_SNAKE_CASE relationship types, ID formats. **The push script does not validate property names** — a wrong key (e.g. `text` instead of `ruleText`) is silently written to the graph under the wrong name.
-- `docs/graph/architecture.md` — interview-layer node/relationship diagram and node reuse guidelines.
+- `$PLUGIN_ROOT/docs/architecture/neo4j-schema.md` — complete property list per node type, label convention, `toNeo4jLabel` mapping, UPPER_SNAKE_CASE relationship types, ID formats. **The push script does not validate property names** — a wrong key (e.g. `text` instead of `ruleText`) is silently written to the graph under the wrong name.
+- `$PLUGIN_ROOT/docs/graph/architecture.md` — interview-layer node/relationship diagram and node reuse guidelines.
 
 **Neo4j label convention:** All knowledge nodes use a dual-label pattern: the base label `Knowledge` plus a secondary type label (e.g., `Knowledge:Feature`). Every node written by this skill must carry `kind: "knowledge"` and `source: "interview"` — these are required, not optional. When writing to Neo4j, always use `MERGE (n:Knowledge {id: $id}) SET n += $props SET n:\`SecondaryLabel\`` — do NOT merge on multiple labels simultaneously.
 
