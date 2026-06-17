@@ -15,10 +15,16 @@ brew install openjdk@21
 
 After installation, Homebrew outputs a message with a `ln` command to symlink the JDK. This makes it available to system Java wrappers — no `JAVA_HOME` or shell rc edits neede d.
 
-Run the symlink command (replace `$HOMEBREW_PREFIX` with your Homebrew prefix, typically `/opt/homebrew` on Apple Silicon or `/usr/local` on Intel):
+To find your Homebrew prefix:
 
 ```bash
-sudo ln -sfn $HOMEBREW_PREFIX/opt/openjdk@21/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-21.jdk
+brew --prefix
+```
+
+Then run the symlink command:
+
+```bash
+sudo ln -sfn $(brew --prefix)/opt/openjdk@21/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-21.jdk
 ```
 
 ## Step 2: Install cypher-shell

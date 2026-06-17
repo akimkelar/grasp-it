@@ -255,4 +255,203 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       expect(result.stderr).toMatch(/install|brew|apt|neo4j\.com/i);
     });
   });
+
+  // ── Fix 1: domain type is now in TYPE_TO_LABEL ───────────────────────────────
+
+  describe('FIX-1: domain node type is accepted (not rejected)', () => {
+    it('domain node type does not trigger unknown-type warning', () => {
+      writeGraph([
+        { id: 'domain:billing', name: 'Billing', summary: 'The billing domain', type: 'domain' },
+      ]);
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_TEST_MOCK: '1',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      // Must NOT be rejected as an unknown type
+      expect(result.stderr).not.toContain("Unknown node type 'domain'");
+      // Script reaches the connection phase — not a pre-flight validation failure
+      expect(result.stderr).toMatch(/neo4j-driver not available|cypher-shell|Connection refused|ECONNREFUSED|failed|install/i);
+    });
+
+    it('domain node is included in the generated Cypher (cypher-shell path)', () => {
+      writeGraph([
+        { id: 'domain:billing', name: 'Billing', summary: 'The billing domain', type: 'domain' },
+      ]);
+
+      // Mock that echoes stdin (the Cypher query) to stderr so we can inspect it,
+      // then exits 0 to let the script proceed through all phases.
+      const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
+      writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+      });
+
+      rmSync(mockDir, { recursive: true, force: true });
+
+      // The mock echoes stdin (the Cypher query); it should reference the Domain label
+      expect(result.stderr).toContain('Domain');
+      expect(result.stderr).toContain('domain:billing');
+    });
+  });
+
+  // ── Fix 2: unknown node type is filtered (warns + skips) not fatal ────────────
+
+  describe('FIX-2: unknown node type is filtered out with a warning, not fatal', () => {
+    it('unknown type emits warning but does not abort (only valid nodes remain)', () => {
+      writeGraph([
+        { id: 'foobar:bad', name: 'Bad', summary: 'Unknown type', type: 'foobar' },
+        { id: 'feature:good', name: 'Good', summary: 'Valid type', type: 'feature' },
+      ]);
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_TEST_MOCK: '1',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      // Warning is emitted for the bad node
+      expect(result.stderr).toContain("Unknown node type 'foobar'");
+      // Script does NOT abort before reaching Neo4j push — it reaches driver/cypher-shell phase
+      expect(result.stderr).toMatch(/neo4j-driver not available|cypher-shell|failed|install/i);
+    });
+
+    it('all-unknown batch: warning emitted but script still proceeds to connection phase', () => {
+      writeGraph([
+        { id: 'notype:a', name: 'A', summary: 'Bad', type: 'notype' },
+      ]);
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_TEST_MOCK: '1',
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+      });
+
+      expect(result.stderr).toContain("Unknown node type 'notype'");
+      // Even with zero valid nodes remaining the script proceeds to the push phase
+      // (no early exit just because of unknown types)
+      expect(result.stderr).not.toContain('Nodes file not found');
+      expect(result.stderr).not.toContain('Edges file not found');
+    });
+  });
+
+  // ── Fix 3: edge type with spaces produces valid UPPER_SNAKE_CASE ─────────────
+
+  describe('FIX-3: edge type with spaces is normalised to UPPER_SNAKE_CASE', () => {
+    it('space in edge type is replaced with underscore in generated Cypher (cypher-shell path)', () => {
+      writeGraph(
+        [
+          { id: 'feature:a', name: 'A', summary: 'Feature A', type: 'feature' },
+          { id: 'feature:b', name: 'B', summary: 'Feature B', type: 'feature' },
+        ],
+        [
+          { source: 'feature:a', target: 'feature:b', type: 'has feature', weight: 1.0 },
+        ],
+      );
+
+      // Mock echoes stdin (the Cypher query) to stderr and exits 0 so all phases run.
+      // Nodes are pushed first (succeeds), then edges — the edge Cypher with the
+      // normalised relationship type will appear in stderr.
+      const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
+      writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+      });
+
+      rmSync(mockDir, { recursive: true, force: true });
+
+      // The relationship type with space should be normalised: "has feature" → "HAS_FEATURE"
+      expect(result.stderr).toContain('HAS_FEATURE');
+      // Raw space should NOT appear as part of a relationship type in the Cypher output
+      expect(result.stderr).not.toMatch(/:`HAS FEATURE`/);
+    });
+
+    it('hyphen and space in edge type both become underscores', () => {
+      writeGraph(
+        [
+          { id: 'feature:a', name: 'A', summary: 'A', type: 'feature' },
+          { id: 'feature:b', name: 'B', summary: 'B', type: 'feature' },
+        ],
+        [
+          { source: 'feature:a', target: 'feature:b', type: 'is-part of', weight: 1.0 },
+        ],
+      );
+
+      // Mock echoes stdin (Cypher query) to stderr and exits 0.
+      const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
+      writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+      });
+
+      rmSync(mockDir, { recursive: true, force: true });
+
+      // "is-part of" → "IS_PART_OF"
+      expect(result.stderr).toContain('IS_PART_OF');
+    });
+  });
+
+  // ── Fix 4: orphan check WHERE clause includes n:Domain ───────────────────────
+
+  describe('FIX-4: orphan check WHERE clause includes n:Domain', () => {
+    it('cypher-shell orphan query contains n:Domain in the NOT clause', () => {
+      writeGraph([
+        { id: 'domain:billing', name: 'Billing', summary: 'Billing domain', type: 'domain' },
+      ]);
+
+      // Use a mock cypher-shell that echoes stdin so we can inspect the query
+      const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
+      // Echo stdin to stderr so spawnSync captures it; first invocation (nodes) exits 0,
+      // subsequent ones (edges, layer, orphan-check) also exit 0.
+      writeFileSync(
+        join(mockDir, 'cypher-shell'),
+        `#!/bin/sh\ncat >&2\necho "---" >&2\n`,
+        { mode: 0o755 },
+      );
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'grasp',
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+      });
+
+      rmSync(mockDir, { recursive: true, force: true });
+
+      // The orphan-check query should include n:Domain so Domain nodes are not
+      // incorrectly flagged as orphans
+      expect(result.stderr).toMatch(/n:Domain/);
+    });
+  });
 });

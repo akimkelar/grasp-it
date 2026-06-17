@@ -129,7 +129,9 @@ describe('push-interview-graph.mjs', () => {
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
-    it('exits 1 when unknown node type is encountered', () => {
+    it('skips unknown node type with a warning but does NOT abort the push', () => {
+      // Fix: unknown node types are now filtered out with a warning rather than
+      // calling process.exit(1), so valid nodes in the same batch still get pushed.
       const nodesData = {
         nodes: [
           { id: 'node1', name: 'Test', summary: 'Test', type: 'unknown-type' },
@@ -146,8 +148,41 @@ describe('push-interview-graph.mjs', () => {
         NEO4J_TEST_MOCK: '1',
       });
 
-      expect(result.status).toBe(1);
+      // The warning message is printed but the script proceeds past the validation phase
       expect(result.stderr).toContain("Unknown node type 'unknown-type'");
+      // It should NOT exit early with "Nodes file not found" or similar pre-flight errors
+      expect(result.stderr).not.toContain('Nodes file not found');
+      // It reaches the driver/cypher-shell phase (not a pre-flight validation abort).
+      // With NEO4J_TEST_MOCK=1 and no cypher-shell in the default PATH, the script may
+      // exit 0 (cypher-shell fallback with no data to push) or 1 (connection error).
+      expect([0, 1]).toContain(result.status);
+    });
+
+    it('skips unknown node type but still pushes valid nodes in same batch', () => {
+      // When a batch contains both valid and unknown-typed nodes, unknown ones are
+      // skipped (warned) and the rest of the batch continues to the push phase.
+      const nodesData = {
+        nodes: [
+          { id: 'foobar:bad-node', name: 'Bad Node', summary: 'Has unknown type', type: 'foobar' },
+          { id: 'feature:good-feature', name: 'Good Feature', summary: 'Has valid type', type: 'feature' },
+        ],
+      };
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
+      writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
+
+      const result = runPushInterviewGraph(root, {
+        NEO4J_URI: 'neo4j://localhost:9999',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+        NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
+      });
+
+      // Warning about the bad node is emitted
+      expect(result.stderr).toContain("Unknown node type 'foobar'");
+      // Script proceeds to the connection phase rather than aborting early
+      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED|neo4j-driver not available|cypher-shell/i);
+      expect(result.status).toBe(1);
     });
   });
 

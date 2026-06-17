@@ -34,6 +34,7 @@ const NODES_FILE = "pr-nodes.json";
 const EDGES_FILE = "pr-edges.json";
 
 const TYPE_TO_LABEL = {
+  domain: "Domain",
   feature: "Feature",
   operation: "Operation",
   actor: "Actor",
@@ -157,7 +158,7 @@ function buildEdgesCypher(graphData) {
   const lines = [];
   if (graphData.edges && Array.isArray(graphData.edges)) {
     for (const edge of graphData.edges) {
-      const relType = edge.type.toUpperCase().replace(/-/g, "_");
+      const relType = edge.type.toUpperCase().replace(/[\s-]/g, "_");
       if (relType === "IMPLEMENTED_BY") {
         lines.push(
           `MATCH (a:Knowledge {id: ${cypherEscape(edge.source)}}), (b:Codebase {id: ${cypherEscape(edge.target)}}) MERGE (a)-[r:\`${relType}\` {weight: ${edge.weight || 1.0}}]->(b);`
@@ -202,7 +203,7 @@ MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
   runCypherShell(neo4jConfig, layerCypher); // best-effort — don't fail if Layer doesn't exist
 
   // Orphan check via cypher-shell (best-effort — don't exit on failure)
-  const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Feature OR n:Operation OR n:Actor OR n:BusinessRule OR n:Entity OR n:Decision OR n:Constraint OR n:Concept OR n:Claim OR n:Risk) RETURN n.id AS id, n.type AS type;`;
+  const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:BusinessRule OR n:Entity OR n:Decision OR n:Constraint OR n:Concept OR n:Claim OR n:Risk) RETURN n.id AS id, n.type AS type;`;
   const orphanResult = runCypherShell(neo4jConfig, orphanQuery);
   if (!orphanResult.ok) {
     if (orphanResult.reason && orphanResult.reason.includes("cypher-shell not found")) {
@@ -298,14 +299,16 @@ async function pushInterviewGraph(projectRoot) {
   };
 
   // Validate all nodes have a known type and map to a secondary label
+  // Unknown types are warned and skipped rather than aborting the entire push.
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
-    for (const node of graphData.nodes) {
+    graphData.nodes = graphData.nodes.filter((node) => {
       const derivedType = node.type || (node.id ? node.id.split(":")[0] : null);
       if (!TYPE_TO_LABEL[derivedType]) {
-        console.error(`push-interview-graph.mjs: Unknown node type '${derivedType}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
-        process.exit(1);
+        console.error(`push-interview-graph.mjs: Unknown node type '${derivedType}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+        return false;
       }
-    }
+      return true;
+    });
   }
 
   const neo4jConfig = getNeo4jConfig(projectRoot);
@@ -442,7 +445,7 @@ async function pushInterviewGraph(projectRoot) {
       // IMPLEMENTED_BY edges target :Codebase nodes (File, Function, Class), not :Knowledge nodes
       if (graphData.edges && Array.isArray(graphData.edges)) {
         for (const edge of graphData.edges) {
-          const relType = edge.type.toUpperCase().replace(/-/g, "_");
+          const relType = edge.type.toUpperCase().replace(/[\s-]/g, "_");
           if (relType === "IMPLEMENTED_BY") {
             await session.run(
               `MATCH (a:Knowledge {id: $src}), (b:Codebase {id: $tgt})
@@ -464,22 +467,22 @@ async function pushInterviewGraph(projectRoot) {
         `MATCH (n:Knowledge {source: 'interview'}) WITH collect(n.id) AS nodeIds
          MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds`
       );
+
+      // Post-push validation: check no node has only Knowledge without secondary label
+      const orphanCheckResult = await session.run(
+        `MATCH (n:Knowledge)
+         WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:BusinessRule OR n:Entity OR n:Decision OR n:Constraint OR n:Concept OR n:Claim OR n:Risk)
+         RETURN n.id AS id, n.type AS type`
+      );
+      const orphans = orphanCheckResult.records.map(r => ({ id: r.get("id"), type: r.get("type") }));
+      if (orphans.length > 0) {
+        console.error(`push-interview-graph.mjs: WARNING — ${orphans.length} node(s) have no secondary label:`);
+        for (const o of orphans) {
+          console.error(`  ${o.id} (type: ${o.type})`);
+        }
+      }
     } finally {
       await session.close();
-    }
-
-    // Post-push validation: check no node has only Knowledge without secondary label
-    const orphanCheck = await driver.session({ database: neo4jConfig.NEO4J_DATABASE || "grasp" }).run(
-      `MATCH (n:Knowledge)
-       WHERE NOT (n:Feature OR n:Operation OR n:Actor OR n:BusinessRule OR n:Entity OR n:Decision OR n:Constraint OR n:Concept OR n:Claim OR n:Risk)
-       RETURN n.id AS id, n.type AS type`
-    );
-    const orphans = orphanCheck.records.map(r => ({ id: r.get("id"), type: r.get("type") }));
-    if (orphans.length > 0) {
-      console.error(`push-interview-graph.mjs: WARNING — ${orphans.length} node(s) have no secondary label:`);
-      for (const o of orphans) {
-        console.error(`  ${o.id} (type: ${o.type})`);
-      }
     }
   }
 
@@ -509,6 +512,7 @@ async function pushInterviewGraph(projectRoot) {
         !driverAvailable) {
       console.error("push-interview-graph.mjs: Retrying via cypher-shell fallback...");
       pushInterviewGraphViaCypherShell(neo4jConfig, graphData);
+      return; // pushInterviewGraphViaCypherShell calls process.exit internally
     }
     process.exit(1);
   } finally {
