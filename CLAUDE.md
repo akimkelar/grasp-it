@@ -19,11 +19,11 @@ An open-source tool combining LLM intelligence + static analysis to produce a kn
 
 The project analyzes codebases and produces a structured knowledge graph stored in Neo4j:
 
-- **[`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md)** — full schema design (databases, node labels, relationship types, mermaid diagrams, key query patterns, indexes)
-- **[`docs/architecture/schema-evolution-plan.md`](docs/architecture/schema-evolution-plan.md)** — settled decisions and rationale, Groovy/Grails support tasks (G1–G6)
+- **[`docs/architecture/neo4j-schema.md`](docs/architecture/neo4j-schema.md)** — full schema design (databases, node labels, relationship types, mermaid diagrams, key query patterns, indexes) - must read.
+- **[`docs/architecture/schema-evolution-plan.md`](docs/architecture/schema-evolution-plan.md)** — settled decisions and rationale, Groovy/Grails support tasks (G1–G6) - read only in case if the schema is going to be updated.
 
 Supporting documentation:
-- **[`docs/graph/architecture.md`](docs/graph/architecture.md)** — high-level graph overview and diagram
+- **[`docs/graph/architecture.md`](docs/graph/architecture.md)** — high-level graph overview and diagram - must read.
 - **[`docs/graph/outdating-rules.md`](docs/graph/outdating-rules.md)** — detecting and resolving stale nodes
 - **[`docs/graph/quality-rules.md`](docs/graph/quality-rules.md)** — quality dimensions and validation queries
 - **[`docs/graph/seeding-rules.md`](docs/graph/seeding-rules.md)** — initial graph creation quality bar

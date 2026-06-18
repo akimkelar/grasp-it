@@ -237,6 +237,8 @@ The interview is divided into **eight standard aspects** plus **topic-specific d
 
 **The question lists below are not scripts — they are examples of the kinds of questions that expose gaps in each aspect.** For every topic, think about what is specific to THIS domain: its terminology, its risk profile, its unusual rules. Ask the questions that would surface inconsistencies in the concept as described — not a generic checklist. The goal is to find contradictions, undefined terms, unmitigated risks, and silent assumptions before anything is built.
 
+**The "After this aspect, write to the graph" lists are also not restrictions** — they show the node types most naturally surfaced by each aspect's questions. Any aspect can produce any node type. If an identity discussion reveals a risk, write the Risk node. If an actors discussion surfaces a business rule, write the BusinessRule node. Aspects are analytical lenses, not silos.
+
 Questions must be asked **one at a time**. Within each aspect: **open questions come first** — let the specialist establish their own framing before you impose yours. Hypothesis and paraphrase questions close each block, synthesizing what you heard and getting explicit confirmation before writing to the graph. **Never open a block with a hypothesis** — that leads the witness and suppresses knowledge that doesn't fit your current frame.
 
 ### Question Modes
@@ -495,6 +497,17 @@ After each topic block, write the appropriate nodes:
 The graph should be dense. A single aspect typically produces **5–15 nodes** across multiple types — not one or two. Use the full vocabulary: Feature, Operation, Actor, Entity, BusinessRule, Decision, Constraint, Concept, Claim, Risk. Every named abstraction the specialist introduced becomes a Concept node. Every uncertain statement becomes a Claim. Every deliberate choice becomes a Decision. Do not wait for a "natural" node — create them proactively.
 
 After each aspect is completed and you have paraphrase-checked the key findings with the specialist:
+
+**0. Pre-write graph sync** — before touching the intermediate files, read the current graph state for all knowledge nodes related to this topic. This catches duplicates and property conflicts introduced by parallel interviews on the same topic since Phase 1b. Substitute `$TOPIC` (lowercased topic name) from `interview-context.json`:
+
+```bash
+node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge) WHERE toLower(coalesce(n.name, n.summary, '')) CONTAINS '$TOPIC' RETURN n.id AS id, labels(n)[1] AS type, properties(n) AS props ORDER BY type LIMIT 60"
+```
+
+For each node returned:
+- **Same `id`, same properties** → already present; skip — no update to `pr-nodes.json` needed
+- **Same `id`, conflicting property value** → do NOT overwrite; create a `Claim` node: `{id: "claim:conflict-<node-id>-<field>", summary: "Parallel interview conflict on <field> for <node-id>: graph has '<existing>', current interview says '<incoming>'", confidence: "tentative", source: "interview"}`; queue a question for the next block: *"A teammate recorded [field] as [existing value] for [node]. You described it as [incoming value]. Which is right, or do both apply in different contexts?"*. When the specialist resolves the conflict: write the agreed value to the node, then delete the conflict `Claim` node from both `pr-nodes.json` and Neo4j (`MATCH (n:Claim {id: "claim:conflict-..."}) DETACH DELETE n`).
+- **No matching `id`** → new node; proceed with creation
 
 1. Update `pr-nodes.json` — append new nodes, update existing ones (by matching `id`)
 2. Update `pr-edges.json` — append new edges (deduplicate by `(source, target, type)`)
