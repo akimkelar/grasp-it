@@ -692,6 +692,19 @@ Capture stderr. Append any line starting with `Warning:` to `$PHASE_WARNINGS` fo
 
 If the script exits non-zero, the failure is hard — relay the full stderr to the user as a Phase 1.5 failure. Do not attempt to recover; the script's internal fallback (count-based) already handles recoverable issues. A non-zero exit means a fundamental problem (missing input file, malformed JSON, etc.).
 
+## Phase 1.6 — EXTRACT MODULES
+
+Report: `[Phase 1.6/6] Extracting modules...`
+
+Run the bundled module extraction script:
+```bash
+node <SKILL_DIR>/extract-modules.mjs $PROJECT_ROOT
+```
+
+Reads `.grasp-it/intermediate/scan-result.json`, writes `.grasp-it/intermediate/modules.json`.
+
+The script deterministically identifies modules from workspace manifests (pnpm-workspace.yaml, package.json workspaces, lerna.json, tsconfig.json paths) or falls back to top-level directory analysis. It is non-fatal — if no modules are found, it writes `{"scriptCompleted":true,"modules":[]}` and the skill continues. A zero-module result is normal for single-package repos.
+
 ---
 
 ## Phase 2 — ANALYZE
@@ -907,6 +920,14 @@ Assemble the full KnowledgeGraph JSON object:
   "layers": [<layers from Phase 4>]
 }
 ```
+
+0.5. **Module injection:** If `modules.json` exists (Phase 1.6 produced a non-empty list), read it and inject module nodes into the graph before validation:
+   ```bash
+   if [ -f "$PROJECT_ROOT/.grasp-it/intermediate/modules.json" ]; then
+     MODULES_INJECTED=1
+   fi
+   ```
+   Each module from `modules.json.modules[]` becomes a `module` node (type: `module`, id: `module:<name>`, name, summary, tags: `["module"]`). Additionally, for each module's `fileIds[]`, emit a `contains` edge from the module node to each file ID (with weight: 1.0, as defined in the Edge Weight Conventions). Module nodes are added to the `nodes` array and their edges to the `edges` array.
 
 1. Before writing the assembled graph, validate that:
    - `layers` is an array of objects with these required fields: `id`, `name`, `description`, `nodeIds`
