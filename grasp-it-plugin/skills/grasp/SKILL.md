@@ -436,7 +436,7 @@ Determine whether to run a full analysis or incremental update.
    ```
 
    **Note:** The `first-use-setup.mjs` script is ephemeral — it is written during Phase 0 and
-   cleaned up with the rest of `$PROJECT_ROOT/.grasp-it/tmp/` in Phase 7 step 4.
+   cleaned up with the rest of `$PROJECT_ROOT/.grasp-it/tmp/` in Phase 6 step 3.
 
  1.7. **Neo4j schema setup (first-use):**
    On first use, the graph requires schema constraints and indexes before `MERGE` operations
@@ -566,14 +566,14 @@ Determine whether to run a full analysis or incremental update.
    |---|---|
    | `--full` flag in `$ARGUMENTS` | Full analysis (all phases) |
    | No existing graph or meta | Full analysis (all phases) |
-   | `--review` flag + existing graph + unchanged commit hash | Skip to Phase 6 (review-only — reuse existing assembled graph) |
+   | `--review` flag + existing graph + unchanged commit hash | Skip to Phase 5 (review-only — reuse existing assembled graph) |
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
    | `--files` scope + existing graph | Targeted analysis of the listed files only. Uses the full analysis path (Phases 1–7), but only analyzes the specified files. The `push-codebase-graph.mjs` script uses `MERGE` (not delete-then-insert) so existing nodes outside the `--files` scope are preserved. |
 
    **Note on `--files` scope:** The `--files` option overrides file discovery to analyze only the listed paths. It does NOT change the decision-logic branch — a `--files` run with an existing graph still follows the table above. However, when `--files` is combined with an existing graph, the analysis is treated as a targeted update of only the listed files; the `push-codebase-graph.mjs` script updates nodes in place via `MERGE` rather than deleting all Codebase nodes first.
 
-   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
+   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`, then jump directly to Phase 5 step 3.
 
    For incremental updates, get the changed file list:
    ```bash
@@ -632,7 +632,7 @@ Set up and verify the `.graspignore` file before scanning.
 
 ## Phase 1 — SCAN (Full analysis only)
 
-Report to the user: `[Phase 1/7] Scanning project files...`
+Report to the user: `[Phase 1/6] Scanning project files...`
 
 Dispatch a subagent using the `project-scanner` agent definition (at `agents/project-scanner.md`). Append the following additional context:
 
@@ -679,7 +679,7 @@ If the scan result includes `filteredByIgnore > 0`, report:
 
 ## Phase 1.5 — BATCH
 
-Report: `[Phase 1.5/7] Computing semantic batches...`
+Report: `[Phase 1.5/6] Computing semantic batches...`
 
 Run the bundled batching script:
 ```bash
@@ -700,7 +700,7 @@ If the script exits non-zero, the failure is hard — relay the full stderr to t
 
 Load `.grasp-it/intermediate/batches.json` (produced by Phase 1.5). Iterate the `batches[]` array.
 
-Report: `[Phase 2/7] Analyzing files — <totalFiles> files in <totalBatches> batches (up to 5 concurrent)...`
+Report: `[Phase 2/6] Analyzing files — <totalFiles> files in <totalBatches> batches (up to 5 concurrent)...`
 
 For each batch, dispatch a subagent using the `file-analyzer` agent definition (at `agents/file-analyzer.md`). Run up to **5 subagents concurrently**. Append the following additional context:
 
@@ -780,7 +780,7 @@ After batches complete:
 
 ## Phase 3 — ASSEMBLE REVIEW
 
-Report to the user: `[Phase 3/7] Reviewing assembled graph...`
+Report to the user: `[Phase 3/6] Reviewing assembled graph...`
 
 Dispatch a subagent using the `assemble-reviewer` agent definition (at `agents/assemble-reviewer.md`).
 
@@ -804,7 +804,7 @@ After the subagent completes, read `$PROJECT_ROOT/.grasp-it/intermediate/assembl
 
 ## Phase 4 — ARCHITECTURE
 
-Report to the user: `[Phase 4/7] Identifying architectural layers...`
+Report to the user: `[Phase 4/6] Identifying architectural layers...`
 
 **Build the combined prompt template:**
  1. Use the `architecture-analyzer` agent definition (at `agents/architecture-analyzer.md`).
@@ -885,82 +885,9 @@ All four fields (`id`, `name`, `description`, `nodeIds`) are required.
 
 ---
 
-## Phase 5 — TOUR
+## Phase 5 — REVIEW
 
-Report to the user: `[Phase 5/7] Building guided tour...`
-
-Dispatch a subagent using the `tour-builder` agent definition (at `agents/tour-builder.md`). Append the following additional context:
-
-> **Additional context from main session:**
->
-> Project README (first 3000 chars):
-> ```
-> $README_CONTENT
-> ```
->
-> Project entry point: `$ENTRY_POINT`
->
-> Use the README to align the tour narrative with the project's own documentation. Start the tour from the entry point if one was detected. The tour should tell the same story the README tells, but through the lens of actual code structure.
->
-> $LANGUAGE_DIRECTIVE
-
-Pass these parameters in the dispatch prompt:
-
-> Create a guided learning tour for this codebase.
-> Project root: `$PROJECT_ROOT`
-> Write output to: `$PROJECT_ROOT/.grasp-it/intermediate/tour.json`
-> Project: `<projectName>` — `<projectDescription>`
-> Languages: `<languages>`
->
-> Nodes (all file-level nodes — includes code files, config, document, service, pipeline, table, schema, resource, endpoint):
-> ```json
-> [list of {id, name, filePath, summary, type} for ALL file-level nodes — do NOT include function or class nodes]
-> ```
->
-> Layers:
-> ```json
-> [list of {id, name, description} for each layer — omit nodeIds]
-> ```
->
-> Edges (all types — includes imports, calls, configures, documents, deploys, triggers, etc.):
-> ```json
-> [list of ALL edges — include all edge types for complete graph topology analysis]
-> ```
-
-After the subagent completes, read `$PROJECT_ROOT/.grasp-it/intermediate/tour.json` and normalize it into a final `tour` array. Apply these steps **in order**:
-
-1. **Unwrap envelope:** If the file contains `{ "steps": [...] }` instead of a plain array, extract the inner array. (The prompt requests a plain array, but LLMs may still produce an envelope.)
-2. **Rename legacy fields:** If any step has `nodesToInspect` instead of `nodeIds`, rename it → `nodeIds`. If any step has `whyItMatters` instead of `description`, rename it → `description`.
-3. **Convert file paths:** If `nodeIds` entries are raw file paths without a known prefix (`file:`, `config:`, `document:`, `service:`, `pipeline:`, `table:`, `schema:`, `resource:`, `endpoint:`), convert them to `file:<relative-path>`.
-4. **Drop dangling refs:** Remove any `nodeIds` entries that do not exist in the merged node set.
-5. **Sort** by `order` before saving.
-
-Each element of the final `tour` array MUST have this shape:
-
-```json
-[
-  {
-    "order": 1,
-    "title": "Project Overview",
-    "description": "Start with the README to grasp the project's purpose and architecture.",
-    "nodeIds": ["document:README.md"]
-  },
-  {
-    "order": 2,
-    "title": "Application Entry Point",
-    "description": "This step explains how the frontend boots and mounts.",
-    "nodeIds": ["file:src/main.tsx", "file:src/App.tsx"]
-  }
-]
-```
-
-Required fields: `order`, `title`, `description`, `nodeIds`. Preserve optional `languageLesson` when present.
-
----
-
-## Phase 6 — REVIEW
-
-Report to the user: `[Phase 6/7] Validating knowledge graph...`
+Report to the user: `[Phase 5/6] Validating knowledge graph...`
 
 Assemble the full KnowledgeGraph JSON object:
 
@@ -977,17 +904,13 @@ Assemble the full KnowledgeGraph JSON object:
   },
   "nodes": [<all nodes from assembled-graph.json after Phase 3 review>],
   "edges": [<all edges from assembled-graph.json after Phase 3 review>],
-  "layers": [<layers from Phase 4>],
-  "tour": [<steps from Phase 5>]
+  "layers": [<layers from Phase 4>]
 }
 ```
 
 1. Before writing the assembled graph, validate that:
    - `layers` is an array of objects with these required fields: `id`, `name`, `description`, `nodeIds`
-   - `tour` is an array of objects with these required fields: `order`, `title`, `description`, `nodeIds`
-   - `tour[*].languageLesson` is allowed as an optional string field
    - Every `layers[*].nodeIds` entry exists in the merged node set
-   - Every `tour[*].nodeIds` entry exists in the merged node set
 
    If validation fails, automatically normalize and rewrite the graph into this shape before saving. If the graph still fails final validation after the normalization pass, save it with warnings but mark dashboard auto-launch as skipped.
 
@@ -1035,7 +958,6 @@ try {
   const fileNodes = graph.nodes.filter(n => fileLevelTypes.has(n.type)).map(n => n.id);
   const assigned = new Map();
   if (!Array.isArray(graph.layers)) { if (graph.layers) warnings.push('graph.layers is not an array'); graph.layers = []; }
-  if (!Array.isArray(graph.tour)) { if (graph.tour) warnings.push('graph.tour is not an array'); graph.tour = []; }
   graph.layers.forEach(layer => {
     (layer.nodeIds || []).forEach(id => {
       if (!nodeIds.has(id)) issues.push(`Layer '${layer.id}' refs missing node '${id}'`);
@@ -1045,11 +967,6 @@ try {
   });
   fileNodes.forEach(id => {
     if (!assigned.has(id)) issues.push(`File node '${id}' not in any layer`);
-  });
-  graph.tour.forEach((step, i) => {
-    (step.nodeIds || []).forEach(id => {
-      if (!nodeIds.has(id)) issues.push(`Tour step[${i}] refs missing node '${id}'`);
-    });
   });
   const withEdges = new Set([
     ...graph.edges.map(e => e.source),
@@ -1062,7 +979,6 @@ try {
     totalNodes: graph.nodes.length,
     totalEdges: graph.edges.length,
     totalLayers: graph.layers.length,
-    tourSteps: graph.tour.length,
     nodeTypes: graph.nodes.reduce((a, n) => { a[n.type] = (a[n.type]||0)+1; return a; }, {}),
     edgeTypes: graph.edges.reduce((a, e) => { a[e.type] = (a[e.type]||0)+1; return a; }, {})
   };
@@ -1096,7 +1012,7 @@ Dispatch a subagent using the `graph-reviewer` agent definition (at `agents/grap
 > ```
 >
 > Phase warnings/errors accumulated during analysis:
-> - [list any batch failures, skipped files, or warnings from Phases 2-5]
+> - [list any batch failures, skipped files, or warnings from Phases 2-4]
 >
 > Cross-validate: every file in the scan inventory should have a corresponding node in the graph (node types may vary: `file:`, `config:`, `document:`, `service:`, `pipeline:`, `table:`, `schema:`, `resource:`, `endpoint:`). Flag any missing files. Also flag any graph nodes whose `filePath` doesn't appear in the scan inventory.
 
@@ -1120,13 +1036,13 @@ Pass these parameters in the dispatch prompt:
    - Re-run the final graph validation after automated fixes
    - If critical issues remain after one fix attempt, save the graph anyway but include the warnings in the final report and mark dashboard auto-launch as skipped
 
-6. **If `issues` array is empty:** Proceed to Phase 7.
+6. **If `issues` array is empty:** Proceed to Phase 6.
 
 ---
 
-## Phase 7 — SAVE
+## Phase 6 — SAVE
 
-Report to the user: `[Phase 7/7] Saving knowledge graph...`
+Report to the user: `[Phase 6/6] Saving knowledge graph...`
 
 **Neo4j-only:** The knowledge graph is written directly to Neo4j. There is no JSON file fallback. If Neo4j is unavailable, the skill fails.
 
@@ -1151,7 +1067,7 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 
    The script uses `TreeSitterPlugin + PluginRegistry` exactly like `extract-structure.mjs`, so the baseline matches the comparison logic used during auto-updates.
 
-   **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 7 and report the error. Do NOT proceed to step 2.**
+   **If the script exits non-zero or stdout does not include `Fingerprints baseline:`, abort Phase 6 and report the error. Do NOT proceed to step 2.**
 
 2. **Persist knowledge graph to Neo4j:**
    After fingerprints are saved, push the assembled graph to Neo4j using the bundled script:
@@ -1190,7 +1106,6 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    - Nodes created (broken down by type: file, function, class, config, document, service, table, endpoint, pipeline, schema, resource)
    - Edges created (broken down by type)
    - Layers identified (with names)
-   - Tour steps generated (count)
    - Any warnings from the reviewer
    - Confirmation that the graph was saved to Neo4j
 
@@ -1202,7 +1117,7 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
 ## Error Handling
 
 - If any subagent dispatch fails, retry **once** with the same prompt plus additional context about the failure.
-- Track all warnings and errors from each phase in a `$PHASE_WARNINGS` list. When using `--review`, pass this list to the graph-reviewer in Phase 6. On the default path, include accumulated warnings in the Phase 7 final report.
+- Track all warnings and errors from each phase in a `$PHASE_WARNINGS` list. When using `--review`, pass this list to the graph-reviewer in Phase 5. On the default path, include accumulated warnings in the Phase 6 final report.
 - If it fails a second time, skip that phase and continue with partial results.
 - ALWAYS save partial results — a partial graph is better than no graph.
 - Report any skipped phases or errors in the final summary so the user knows what happened.

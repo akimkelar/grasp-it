@@ -69,6 +69,41 @@ describe("schema validation", () => {
     expect(result.issues).toEqual([]);
   });
 
+  it("accepts graph without tour field (tour is optional)", () => {
+    const graphWithoutTour = {
+      version: "1.0.0",
+      project: {
+        name: "test-project",
+        languages: ["typescript"],
+        frameworks: ["vitest"],
+        description: "A test project",
+        analyzedAt: "2026-03-14T00:00:00.000Z",
+        gitCommitHash: "abc123",
+      },
+      nodes: [
+        {
+          id: "node-1",
+          type: "file",
+          name: "index.ts",
+          filePath: "src/index.ts",
+          lineRange: [1, 50],
+          summary: "Entry point",
+          tags: ["entry"],
+          complexity: "simple",
+        },
+      ],
+      edges: [],
+      layers: [
+        { id: "layer-1", name: "Core", description: "Core layer", nodeIds: ["node-1"] },
+      ],
+      // no tour field — should default to [] and pass validation
+    };
+    const result = validateGraph(graphWithoutTour);
+    expect(result.success).toBe(true);
+    expect(result.data!.tour).toEqual([]);
+    expect(result.issues).toEqual([]);
+  });
+
   it("accepts kind 'project' for Project singleton nodes", () => {
     const graph = structuredClone(validGraph);
     (graph as any).kind = "project";

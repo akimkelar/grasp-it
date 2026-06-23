@@ -461,7 +461,7 @@ export const KnowledgeGraphSchema = z.object({
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),
   layers: z.array(LayerSchema),
-  tour: z.array(TourStepSchema),
+  tour: z.array(TourStepSchema).optional().default([]),
 });
 
 // ── Neo4j label and relationship-type conversion ─────────────────────────────

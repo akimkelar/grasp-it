@@ -164,6 +164,28 @@ export function buildEdgesCypher(graphData) {
 }
 
 /**
+ * Build a cypher-shell query string for pushing Layer nodes and :IN_LAYER edges.
+ */
+export function buildLayersCypher(graphData) {
+  const lines = [];
+  if (graphData.layers && Array.isArray(graphData.layers)) {
+    for (const layer of graphData.layers) {
+      lines.push(
+        `MERGE (l:Layer:Codebase {id: ${cypherEscape(layer.id)}}) SET l += {name: ${cypherEscape(layer.name || "")}, description: ${cypherEscape(layer.description || "")}, kind: "codebase"};`
+      );
+      if (layer.nodeIds && Array.isArray(layer.nodeIds)) {
+        for (const nodeId of layer.nodeIds) {
+          lines.push(
+            `MATCH (l:Layer:Codebase {id: ${cypherEscape(layer.id)}}), (n:Codebase {id: ${cypherEscape(nodeId)}}) WHERE n.kind = "codebase" MERGE (l)-[r:IN_LAYER]->(n) SET r += {weight: 1.0};`
+          );
+        }
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
  * Push codebase graph using cypher-shell (fallback when driver is unavailable).
  */
 function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
@@ -185,6 +207,16 @@ function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
     const result = runCypherShell(neo4jConfig, edgesCypher);
     if (!result.ok) {
       console.error(`push-codebase-graph.mjs: cypher-shell edge push failed: ${result.reason}`);
+      process.exit(1);
+    }
+  }
+
+  // Push layers
+  const layersCypher = buildLayersCypher(graphData);
+  if (layersCypher) {
+    const result = runCypherShell(neo4jConfig, layersCypher);
+    if (!result.ok) {
+      console.error(`push-codebase-graph.mjs: cypher-shell layer push failed: ${result.reason}`);
       process.exit(1);
     }
   }
@@ -409,6 +441,34 @@ async function pushCodebaseGraph(projectRoot) {
              SET r += $props`,
             { src: edge.source, tgt: edge.target, props: edgeProps }
           );
+        }
+      }
+
+      // Push Layer nodes and :IN_LAYER edges
+      if (graphData.layers && Array.isArray(graphData.layers)) {
+        for (const layer of graphData.layers) {
+          // MERGE the Layer node with dual labels: Layer + Codebase
+          await session.run(
+            `MERGE (l:Layer:Codebase {id: $layerId})
+             SET l += {name: $name, description: $description, kind: "codebase"}`,
+            {
+              layerId: layer.id,
+              name: layer.name || "",
+              description: layer.description || "",
+            }
+          );
+          // MERGE :IN_LAYER edges from layer to each nodeId
+          if (layer.nodeIds && Array.isArray(layer.nodeIds)) {
+            for (const nodeId of layer.nodeIds) {
+              await session.run(
+                `MATCH (l:Layer:Codebase {id: $layerId}), (n:Codebase {id: $nodeId})
+                 WHERE n.kind = "codebase"
+                 MERGE (l)-[r:IN_LAYER]->(n)
+                 SET r += {weight: 1.0}`,
+                { layerId: layer.id, nodeId }
+              );
+            }
+          }
         }
       }
 
