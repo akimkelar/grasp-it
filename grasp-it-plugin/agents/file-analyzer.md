@@ -146,35 +146,18 @@ After the script completes, read `$PROJECT_ROOT/.grasp-it/tmp/ua-file-extract-re
 
 For each file in the script's `results` array, produce `GraphNode` and `GraphEdge` objects by combining the script's structural data with your expert judgment.
 
-### Step 1 -- Create File Node
+### Step 1 -- Enrich File Nodes
 
-For every file in the results (and any skipped files that you can still read), create a node. The **node type** depends on the file's category:
+**The node type for every file-level node is set deterministically by `extract-structure.mjs` from the `fileCategory` field. Do not override it.**
 
-#### Node type mapping by fileCategory:
+The script emits a `fileNodes[]` array on every result object. Each entry contains:
+`{ id, type, name, filePath, fileCategory }`
 
-| fileCategory | Default Node Type | Override Conditions |
-|---|---|---|
-| `code` | `file` | Standard code file |
-| `config` | `config` | Configuration file |
-| `docs` | `document` | Documentation file |
-| `infra` | `service` | For Dockerfiles, docker-compose, K8s manifests |
-| `infra` | `pipeline` | For CI/CD configs (.github/workflows, .gitlab-ci, Jenkinsfile) |
-| `infra` | `resource` | For Terraform, CloudFormation, Vagrant |
-| `data` | `table` | For SQL files defining tables |
-| `data` | `schema` | For GraphQL, Protobuf, Prisma schema definitions |
-| `data` | `endpoint` | For API schema files (OpenAPI, Swagger) |
-| `script` | `file` | Shell scripts (treat like code) |
-| `markup` | `file` | HTML/CSS files (treat like code) |
+The LLM's job is **only to enrich** each pre-existing file node by adding `summary`, `tags`, `complexity`, and optionally `languageNotes`. Do NOT re-emit the `id`, `type`, `name`, `filePath`, or `fileCategory` fields — they are already set.
 
-**Choosing between infra sub-types:** Use the file's language and path to decide:
-- `service`: Dockerfile, docker-compose.*, K8s manifests
-- `pipeline`: .github/workflows/*, .gitlab-ci.yml, Jenkinsfile, .circleci/*
-- `resource`: *.tf, *.tfvars, CloudFormation templates, Vagrantfile
+**Sub-file nodes** (services, endpoints, resources, steps, definitions from non-code files) are still created by the LLM as before — the script provides the structural data but the LLM creates the corresponding `service:`, `endpoint:`, `resource:`, `step:`, or `schema:` nodes.
 
-**Choosing between data sub-types:** Use the file content:
-- `table`: SQL files with CREATE TABLE or migration files
-- `schema`: GraphQL (.graphql), Protobuf (.proto), Prisma (.prisma) schema definitions
-- `endpoint`: OpenAPI/Swagger spec files
+**Function and class nodes** require full population — they are NOT pre-populated by the script.
 
 Using the script's extracted data, determine:
 
@@ -433,9 +416,14 @@ Produce a single, valid JSON block. Before writing, verify that all arrays and o
 - `tags` (string[]) -- 3-5 lowercase hyphenated tags, NEVER empty
 - `complexity` (string) -- one of: `simple`, `moderate`, `complex`
 
+**Pre-populated fields for file-level nodes (do NOT re-emit):**
+For `file`, `config`, `document`, `service`, `pipeline`, `table`, `endpoint`, `schema`, and `resource` nodes: the extraction script has already set `id`, `type`, `name`, `filePath`, and `fileCategory`. You MUST NOT override these — only add `summary`, `tags`, `complexity`, and optionally `languageNotes`.
+
 **Conditionally required fields:**
 - `filePath` (string) -- REQUIRED for file-level nodes (file, config, document, service, pipeline, schema, resource), optional for sub-file nodes
 - `lineRange` ([number, number]) -- include for `function` and `class` nodes, sourced directly from script output
+
+**Function and class nodes** require all fields (`id`, `type`, `name`, `filePath`, `summary`, `tags`, `complexity`, `lineRange`) to be fully populated — they are NOT pre-populated by the extraction script.
 
 **Optional fields:**
 - `languageNotes` (string) -- only when there is a genuinely notable pattern
@@ -470,7 +458,7 @@ Use these hints for common edge patterns:
 
 - NEVER invent file paths. Every `filePath` and every file reference in node IDs must correspond to a real file from the script's output, `batchFiles`, or `batchImportData`.
 - NEVER create edges to nodes that do not exist. Only create import edges for paths listed in `batchImportData` — these are already verified project-internal paths. For non-code edges (configures, documents, deploys, etc.), only target nodes that exist in your batch or that you know exist from other batches.
-- ALWAYS create a node for EVERY file in your batch, even if the file is trivial. Use the appropriate node type based on fileCategory.
+- ALWAYS enrich a node for EVERY file in your batch (file nodes are pre-populated by the script; only add summary, tags, complexity).
 - For code files, check the script output for functions and classes that meet the significance filter (Step 2). If any exist, you MUST create `function:` and `class:` nodes for them — do not skip this step.
 - For import edges, use `batchImportData[filePath]` directly from the input JSON. Do NOT attempt to resolve import paths yourself -- the project scanner already did this deterministically.
 - NEVER produce duplicate node IDs within your batch.

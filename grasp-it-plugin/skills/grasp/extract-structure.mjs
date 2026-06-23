@@ -140,6 +140,112 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------
+// fileCategory -> node-type lookup table.
+// ---------------------------------------------------------------------------
+
+/**
+ * Deterministic mapping from infra language to node type.
+ * Used when fileCategory is 'infra' to disambiguate service/pipeline/resource.
+ */
+const INFRA_LANGUAGE_TYPE = Object.freeze({
+  dockerfile: 'service',
+  terraform: 'resource',
+  jenkinsfile: 'pipeline',
+  vagrantfile: 'resource',
+  makefile: 'service', // ambiguous; default to service per spec
+});
+
+/**
+ * Deterministic mapping from data language to node type.
+ * Used when fileCategory is 'data' to disambiguate table/schema/endpoint.
+ */
+const DATA_LANGUAGE_TYPE = Object.freeze({
+  sql: 'table',
+  graphql: 'schema',
+  protobuf: 'schema',
+  prisma: 'schema',
+  openapi: 'endpoint', // OpenAPI/Swagger language id (if detected)
+});
+
+/**
+ * Returns the deterministic node type for a file based on its fileCategory.
+ * Language hints are used to disambiguate infra and data sub-categories.
+ *
+ * Lookup table from task brief:
+ *   code        -> file
+ *   config      -> config
+ *   docs        -> document
+ *   infra       -> service | pipeline | resource  (see INFRA_LANGUAGE_TYPE)
+ *   data        -> table | schema | endpoint      (see DATA_LANGUAGE_TYPE)
+ *   script      -> file
+ *   markup      -> file
+ *
+ * Edge cases: empty/unknown fileCategory defaults to 'file'.
+ */
+export function nodeTypeForFile(file) {
+  const { fileCategory, path, language } = file;
+
+  switch (fileCategory) {
+    case 'code':
+    case 'script':
+    case 'markup':
+      return 'file';
+    case 'config':
+      return 'config';
+    case 'docs':
+      return 'document';
+    case 'infra': {
+      const subtype = INFRA_LANGUAGE_TYPE[language];
+      if (subtype) return subtype;
+      // Fallback for unrecognised infra: path-based heuristics for the
+      // remaining cases (.github/workflows, *.tf not captured by language).
+      const posix = path.split('/').join('/');
+      if (posix.startsWith('.github/workflows/') ||
+          posix.startsWith('.circleci/') ||
+          /\.(gitlab-ci|jenkinsfile)/i.test(posix)) {
+        return 'pipeline';
+      }
+      if (/\.(tf|tfvars)$/i.test(path) || /cloudformation|vagrantfile/i.test(posix)) {
+        return 'resource';
+      }
+      return 'service'; // Dockerfile, docker-compose.*, k8s, Makefile default
+    }
+    case 'data': {
+      const subtype = DATA_LANGUAGE_TYPE[language];
+      if (subtype) return subtype;
+      // Fallback for files that may not have a recognised language id.
+      // Path contains openapi/swagger -> endpoint.
+      if (/openapi|swagger/i.test(path)) return 'endpoint';
+      if (/\.(graphql|gql)$/i.test(path)) return 'schema';
+      if (/\.sql$/i.test(path)) return 'table';
+      return 'table'; // default for data files without recognised language
+    }
+    default:
+      return 'file'; // unknown category defaults to file
+  }
+}
+
+/**
+ * Builds a file-level base node object deterministically from file metadata.
+ * The LLM is responsible only for enriching (summary, tags, complexity).
+ *
+ * @param {object} file - file descriptor from batchFiles
+ * @returns {object} { id, type, name, filePath, fileCategory }
+ */
+export function buildFileNode(file) {
+  const type = nodeTypeForFile(file);
+  const name = file.path.split('/').pop();
+  const id = `${type}:${file.path}`;
+  return {
+    id,
+    type,
+    name,
+    filePath: file.path,
+    fileCategory: file.fileCategory,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Result builder: maps StructuralAnalysis to the expected output schema.
 // Exported for unit tests; pure function, no I/O.
 // ---------------------------------------------------------------------------
@@ -150,6 +256,8 @@ export function buildResult(file, totalLines, nonEmptyLines, analysis, callGraph
     fileCategory: file.fileCategory,
     totalLines,
     nonEmptyLines,
+    // Deterministic file-level node — LLM enriches only.
+    fileNodes: [buildFileNode(file)],
   };
 
   if (!analysis) {
