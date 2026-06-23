@@ -27,9 +27,9 @@ Analyze the current codebase and produce a knowledge graph stored in Neo4j. The 
 Throughout execution, report progress to the user at each phase transition and during batch processing. This keeps users informed on large codebases where analysis can take a long time.
 
 - **Phase transitions:** At the start of each phase, print a status line:
-  > `[Phase N/7] <phase name>...`
+  > `[Phase N/6] <phase name>...`
   >
-  > Example: `[Phase 2/7] Analyzing files (12 batches)...`
+  > Example: `[Phase 2/6] Analyzing files (12 batches)...`
 
 - **Batch progress:** During Phase 2, report each batch with its index and total:
   > `Analyzing batch X/N (files: foo.ts, bar.ts, ...)` (list up to 3 filenames, then `...` if more)
