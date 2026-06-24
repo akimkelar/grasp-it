@@ -56,6 +56,12 @@ During an interview, check the graph before creating new nodes. The same node ty
 
 **Critical nodes for graph connectivity**: `Domain` and `Feature` must always be connected — they form the backbone of the graph structure. In 95%+ of interviews the domain already exists; find it in the graph and attach the feature to it.
 
+### Internal `type` value vs. Neo4j label
+
+The table above lists the **internal `type` value** written to the JSON `pr-nodes.json` — these are lowercase / kebab-case strings (`feature`, `operation`, `actor`, `business-rule`, `entity`, `decision`, `constraint`, `concept`, `claim`, `risk`). The Neo4j label is derived from this value via `toNeo4jLabel` — single-word types become PascalCase directly (`feature` → `Feature`), while the only multi-word type (`business-rule`) becomes `BusinessRule`.
+
+**When writing JSON `type` fields, use the lowercase / kebab-case form from the table above.** Do not use the Neo4j label name (`Feature`, `BusinessRule`) as the `type` value — even though the Neo4j label for `business-rule` happens to be `BusinessRule`, the internal representation in `pr-nodes.json` is always kebab-case. The push script normalises PascalCase labels back to kebab-case as a safety net, but the canonical form is lowercase / kebab-case.
+
 ### Key Relationship Types (UPPER_SNAKE_CASE in Neo4j)
 
 - `SUB_CONCEPT_OF` — concept composition (part-of hierarchy)
@@ -496,6 +502,15 @@ After each topic block, write the appropriate nodes:
 
 The graph should be dense. A single aspect typically produces **5–15 nodes** across multiple types — not one or two. Use the full vocabulary: Feature, Operation, Actor, Entity, BusinessRule, Decision, Constraint, Concept, Claim, Risk. Every named abstraction the specialist introduced becomes a Concept node. Every uncertain statement becomes a Claim. Every deliberate choice becomes a Decision. Do not wait for a "natural" node — create them proactively.
 
+**Mandatory cross-aspect checklist (run after every aspect write, before moving on):** Before moving on, scan the conversation since the last write and create nodes you may have missed. These are not optional — the graph is incomplete without them.
+
+- **Operation nodes** — for every named action the specialist described (a verb the system performs), create an `Operation` node, plus a `HAS_OPERATION` edge from the Feature (or a `SEQUENCE` edge from the previous Operation in the flow). The per-aspect "write to the graph" lists are not restrictions — Operations can surface in any aspect.
+- **Claim nodes** — for every hedged or uncertain statement ("maybe", "I think", "we'd have to verify", "depends on"), create a `Claim` node with `confidence: "tentative"`. A claim is the place to park something unresolved until the specialist confirms or corrects it.
+- **Constraint nodes** — for every "must always be true" / "must never" / "this is non-negotiable" invariant, create a `Constraint` node with `condition` and `invariant` populated. Distinguish Constraints from `business-rule` nodes: constraints are technical invariants the implementation must enforce; business-rules are policy statements. Both can be present in the same aspect.
+- **Actor nodes** — for every actor mentioned (a role, a person type, a system agent, an external party), create an `Actor` node (reuse from the graph if one already exists with the same `id`). Add a `PERFORMED_BY` edge from any operation this actor initiates, plus a `RESTRICTED_FOR` edge if the actor is blocked from an action.
+
+Skipping this checklist is the most common reason the first push produces a sparse graph. Run it every time.
+
 After each aspect is completed and you have paraphrase-checked the key findings with the specialist:
 
 **0. Pre-write graph sync** — before touching the intermediate files, read the current graph state for all knowledge nodes related to this topic. This catches duplicates and property conflicts introduced by parallel interviews on the same topic since Phase 1b. Substitute `$TOPIC` (lowercased topic name) from `interview-context.json`:
@@ -524,6 +539,8 @@ For each node returned:
 6. Say briefly what was captured: *"I've recorded [N] nodes — [breakdown by type: X features, Y concepts, Z rules, etc.]. Moving on to [next aspect]."*
 
 Do not batch graph writes to the end — capturing incrementally (including the Neo4j push and read-back) allows the specialist to see the graph grow and correct misunderstandings before they propagate.
+
+**Topic-driven fallback (when the specialist leads the conversation):** The eight aspects are a default shape, not a sequence gate. When the specialist volunteers rich context up front — describing actors, entities, rules, decisions, and risks across multiple aspects in a single answer — the formal aspect-by-aspect traversal doesn't happen. In this mode, do NOT wait for an aspect paraphrase-check to fire before writing. **If the specialist has answered 3 or more substantive questions without a graph write, pause and write what has been established so far, even if the current aspect is not formally complete.** Use a partial paraphrase to confirm understanding before the push: *"Before I write — let me capture what I've understood so far: [summary]. Is that right, or should I correct anything before we continue?"* Then run the full write pipeline (pre-write sync → nodes → edges → push → verify). This keeps the graph growing in topic-driven sessions the same way it does in aspect-by-aspect sessions.
 
 ---
 

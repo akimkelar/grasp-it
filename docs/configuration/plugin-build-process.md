@@ -59,7 +59,7 @@ pnpm --filter @grasp-it/core test
 pnpm test
 ```
 
-Expected counts at the time of writing: **912 core tests** in 41 files; **200+ skill tests** across the `tests/` tree. A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
+Expected counts at the time of writing: **912 core tests** in 41 files; **~470 skill tests** across the `tests/` tree (skill-test count grows as new bug-fix regression tests land — see `tests/skill/grasp-interview/test_push_interview_graph_skill_bugs.test.mjs` for the pattern). A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
 
 The 2 timeout-prone tests in `tests/skill/grasp/test_silent_exit_bugs.test.mjs` (real-network DNS retry probes) are slow but pre-existing; they should not block a release.
 
@@ -126,6 +126,7 @@ To revert to upstream: uninstall and reinstall from the marketplace.
 - **Agent model field**: agents intentionally omit `model` from frontmatter so each platform falls back to its configured default. `inherit` is a Claude-Code-only keyword that other tools (`opencode` etc.) reject as a literal model id.
 - **Knowledge graph schema changes**: when bumping schema (adding a node label, relationship type, or index), update both `docs/architecture/neo4j-schema.md` and `setup-neo4j-schema.cypher` in the same release. The schema is the contract downstream tools depend on.
 - **Versions move independently**: the two `package.json` files can drift in theory (different release cadences) but in practice are kept in lockstep. Do not let them desynchronize.
+- **PascalCase → kebab-case defence in depth**: `push-interview-graph.mjs` normalises PascalCase labels (e.g. `BusinessRule`) back to kebab-case internal types (`business-rule`) before the `TYPE_TO_LABEL` lookup. The normalisation is exercised by `test_push_interview_graph_skill_bugs.test.mjs` (BUG-01 regression). If you refactor the node-type pipeline, keep the `normaliseNodeType()` helper and the `TYPE_ALIASES` map — without them the LLM writing `"type": "BusinessRule"` into `pr-nodes.json` causes silent data loss.
 
 ## Troubleshooting
 
@@ -142,3 +143,6 @@ The repo pins Node 22+ and pnpm 10+. Use a version manager (`nvm`, `asdf`, etc.)
 - Confirm `plugin.json` version is strictly higher than the cached version.
 - Confirm the commit is on `main` (not a topic branch).
 - Run `/plugin update` from inside Claude Code — the marketplace re-poll takes a moment.
+
+**Interview nodes silently dropped (`Unknown node type 'BusinessRule'` in stderr):**
+The push script `push-interview-graph.mjs` filters out nodes whose `type` value is not in `TYPE_TO_LABEL`. The `BusinessRule` → `business-rule` mapping is the most common miss — the Neo4j label is `BusinessRule` (PascalCase), but the JSON `type` field in `pr-nodes.json` must be kebab-case `business-rule`. The script normalises PascalCase inputs as a safety net, but the LLM should still be told to write kebab-case. If you see this warning in the push transcript, check `pr-nodes.json` for `BusinessRule` entries and re-run with `"type": "business-rule"`, or rely on the defence-in-depth normalisation that runs at the start of `pushInterviewGraph()`.

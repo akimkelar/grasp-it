@@ -47,6 +47,43 @@ const TYPE_TO_LABEL = {
   risk: "Risk",
 };
 
+// Defence-in-depth: if the LLM writes a PascalCase Neo4j label into the
+// `type` field of pr-nodes.json (e.g. "BusinessRule" instead of the
+// canonical "business-rule"), normalise it before the lookup. The schema
+// uses lowercase/kebab-case for the internal `type` value; the Neo4j label
+// is derived via toNeo4jLabel. Silently skipping these nodes was the root
+// cause of BUG-01 in 2026-06-24_10-58_grasp-interview-report.md.
+const TYPE_ALIASES = {
+  BusinessRule: "business-rule",
+  BusinessRules: "business-rule",
+  Domain: "domain",
+  Feature: "feature",
+  Operation: "operation",
+  Actor: "actor",
+  Entity: "entity",
+  Decision: "decision",
+  Constraint: "constraint",
+  Concept: "concept",
+  Claim: "claim",
+  Risk: "risk",
+};
+
+function normaliseNodeType(rawType) {
+  if (rawType == null) return rawType;
+  if (TYPE_TO_LABEL[rawType]) return rawType;
+  if (TYPE_ALIASES[rawType]) return TYPE_ALIASES[rawType];
+  // "BusinessRules" or other near-misses: derive kebab-case from PascalCase
+  if (/^[A-Z][A-Za-z]+$/.test(rawType)) {
+    const kebab = rawType
+      .replace(/s$/, "")
+      .replace(/([a-z])([A-Z])/g, "$1-$2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+      .toLowerCase();
+    if (TYPE_TO_LABEL[kebab]) return kebab;
+  }
+  return rawType;
+}
+
 const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -101,11 +138,13 @@ function buildNodesCypher(graphData, neo4jConfig) {
   const lines = [];
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
     for (const node of graphData.nodes) {
-      const secondaryLabel = TYPE_TO_LABEL[node.type];
+      const normalisedType = normaliseNodeType(node.type);
+      const secondaryLabel = TYPE_TO_LABEL[normalisedType];
       if (!secondaryLabel) {
         console.error(`push-interview-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
         continue;
       }
+      node.type = normalisedType;
 
       const props = {
         id: node.id,
@@ -212,7 +251,12 @@ MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
     // Other errors are silently ignored — orphan check is best-effort
   }
 
-  console.log("push-interview-graph.mjs: Interview graph pushed to Neo4j via cypher-shell successfully.");
+  const totalNodes = (graphData.nodes || []).length;
+  if (skippedCount > 0) {
+    console.error(`push-interview-graph.mjs: Interview graph push via cypher-shell completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
+    process.exit(2);
+  }
+  console.log(`push-interview-graph.mjs: Interview graph pushed to Neo4j via cypher-shell successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
   process.exit(0);
 }
 
@@ -300,13 +344,23 @@ async function pushInterviewGraph(projectRoot) {
 
   // Validate all nodes have a known type and map to a secondary label
   // Unknown types are warned and skipped rather than aborting the entire push.
+  // The skip count is reported in the final summary so a silent data loss is
+  // visible to the LLM (BUG-02 in 2026-06-24_10-58_grasp-interview-report.md).
+  let skippedCount = 0;
+  let writtenCount = 0;
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
     graphData.nodes = graphData.nodes.filter((node) => {
-      const derivedType = node.type || (node.id ? node.id.split(":")[0] : null);
+      const derivedType =
+        normaliseNodeType(node.type) ||
+        (node.id ? normaliseNodeType(node.id.split(":")[0]) : null);
       if (!TYPE_TO_LABEL[derivedType]) {
-        console.error(`push-interview-graph.mjs: Unknown node type '${derivedType}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+        console.error(`push-interview-graph.mjs: Unknown node type '${node.type}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+        skippedCount++;
         return false;
       }
+      // Persist the normalised type so downstream code sees the canonical value
+      node.type = derivedType;
+      writtenCount++;
       return true;
     });
   }
@@ -402,7 +456,9 @@ async function pushInterviewGraph(projectRoot) {
       // Push nodes with dual labels: Knowledge + specific type label
       if (graphData.nodes && Array.isArray(graphData.nodes)) {
         for (const node of graphData.nodes) {
-          const derivedType = node.type || (node.id ? node.id.split(":")[0] : null);
+          const derivedType =
+            normaliseNodeType(node.type) ||
+            (node.id ? normaliseNodeType(node.id.split(":")[0]) : null);
           const secondaryLabel = TYPE_TO_LABEL[derivedType];
           if (!secondaryLabel) {
             throw new Error(`Node ${node.id} has unknown type: ${derivedType}`);
@@ -488,7 +544,13 @@ async function pushInterviewGraph(projectRoot) {
 
   try {
     await withRetry(runDriverAttempt, { retries: 3, delayMs: retryDelayMs, label: "push-interview-graph.mjs" });
-    console.log("push-interview-graph.mjs: Interview graph pushed to Neo4j successfully.");
+    if (skippedCount > 0) {
+      const totalNodes = (graphData.nodes || []).length;
+      console.error(`push-interview-graph.mjs: Interview graph push completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
+      process.exit(2);
+    }
+    const totalNodes = (graphData.nodes || []).length;
+    console.log(`push-interview-graph.mjs: Interview graph pushed to Neo4j successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
     process.exit(0);
   } catch (err) {
     console.error(`push-interview-graph.mjs: Failed to push interview graph: ${err.message}`);
