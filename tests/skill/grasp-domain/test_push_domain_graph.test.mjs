@@ -24,6 +24,9 @@ function runPushDomainGraph(projectRoot, extraEnv = {}) {
   // Build a clean env: start with process.env, then apply extraEnv
   // (undefined values are skipped so they don't override existing env vars)
   const env = { ...process.env };
+  // Default: make the driver fail immediately so tests don't hang on real connections.
+  // Tests that need the real driver can pass NEO4J_TEST_MOCK: undefined to unset it.
+  env.NEO4J_TEST_MOCK = '1';
   for (const [key, val] of Object.entries(extraEnv)) {
     if (val === undefined) {
       delete env[key];
@@ -31,25 +34,55 @@ function runPushDomainGraph(projectRoot, extraEnv = {}) {
       env[key] = val;
     }
   }
+  // Default PATH strips real cypher-shell by prepending the mock directory created in beforeEach.
+  // Tests can override PATH explicitly via extraEnv to test specific cypher-shell behavior.
+  if (!('PATH' in extraEnv) && activeMockCypherShellDir) {
+    env.PATH = `${activeMockCypherShellDir}:${env.PATH}`;
+  }
   return spawnSync('node', [scriptPath, projectRoot], {
     encoding: 'utf-8',
     env,
+    timeout: 30_000,
   });
+}
+
+// Module-level reference to the per-test mock cypher-shell directory.
+// Set by beforeEach, used by runPushDomainGraph so the default PATH always
+// resolves to the mock (real cypher-shell hangs on unreachable hosts).
+let activeMockCypherShellDir = null;
+
+/**
+ * Write a mock cypher-shell binary to `mockDir`. The mock fails fast with exit 1
+ * so tests can exercise the cypher-shell fallback path without hanging on a real
+ * cypher-shell trying to connect to an unreachable host.
+ */
+function writeMockCypherShell(mockDir) {
+  const shellPath = join(mockDir, 'cypher-shell');
+  writeFileSync(shellPath, `#!/bin/sh\nexit 1\n`, { mode: 0o755 });
+  return shellPath;
 }
 
 // ── Test suite ───────────────────────────────────────────────────────────────
 
 describe('push-domain-graph.mjs', () => {
   let root;
+  let mockCypherShellDir;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'push-domain-graph-test-'));
     // The script reads domain-analysis.json from .grasp-it/intermediate/
     mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
+    // Mock cypher-shell directory — prepended to PATH so the cypher-shell fallback
+    // fails fast instead of hanging on an unreachable host.
+    mockCypherShellDir = mkdtempSync(join(tmpdir(), 'push-domain-mock-cypher-'));
+    writeMockCypherShell(mockCypherShellDir);
+    activeMockCypherShellDir = mockCypherShellDir;
   });
 
   afterEach(() => {
     if (root) rmSync(root, { recursive: true, force: true });
+    if (mockCypherShellDir) rmSync(mockCypherShellDir, { recursive: true, force: true });
+    activeMockCypherShellDir = null;
   });
 
   // ── Test 1: exits 1 when domain-analysis.json is not found ──────────────
@@ -640,8 +673,10 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
-        // Include cypher-shell in PATH so fallback is attempted
-        PATH: `${process.env.PATH}`,
+        // Mock cypher-shell in PATH so fallback fails fast instead of hanging on real cypher-shell.
+        // NEO4J_TEST_MOCK=1 makes the driver fail immediately so we don't wait for a real driver timeout.
+        PATH: `${mockCypherShellDir}:${process.env.PATH}`,
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -671,7 +706,8 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
-        PATH: `${process.env.PATH}`,
+        PATH: `${mockCypherShellDir}:${process.env.PATH}`,
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -700,7 +736,8 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
-        PATH: `${process.env.PATH}`,
+        PATH: `${mockCypherShellDir}:${process.env.PATH}`,
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -738,7 +775,8 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
-        PATH: `${process.env.PATH}`,
+        PATH: `${mockCypherShellDir}:${process.env.PATH}`,
+        NEO4J_TEST_MOCK: '1',
       });
 
       expect(result.status).toBe(1);
@@ -765,7 +803,8 @@ describe('push-domain-graph.mjs', () => {
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
-        PATH: `${process.env.PATH}`,
+        PATH: `${mockCypherShellDir}:${process.env.PATH}`,
+        NEO4J_TEST_MOCK: '1',
       });
 
       // Empty graph — no DELETE cleanup, no nodes/edges to push, exits 0

@@ -118,7 +118,7 @@ function runQueryViaCypherShell(neo4jConfig, query) {
         "-d", neo4jConfig.NEO4J_DATABASE || "grasp",
         "--format", "json",
       ],
-      { input: query, encoding: "utf-8" },
+      { input: query, encoding: "utf-8", timeout: 10_000 },
     );
 
     // cypher-shell --format json outputs: [{"keys":[...], "fields":[{"row":[...]}]}]

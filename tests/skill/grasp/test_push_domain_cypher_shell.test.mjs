@@ -123,6 +123,16 @@ function writeConceptGraph(root, nodes = [], edges = []) {
   );
 }
 
+// Aliases preserved from the pre-rename `grasp-interview` skill — same file layout.
+// push-concept-graph.mjs reads pr-nodes.json / pr-edges.json regardless of name.
+function makeInterviewRoot() {
+  return makeConceptRoot();
+}
+
+function writeInterviewGraph(root, nodes = [], edges = []) {
+  return writeConceptGraph(root, nodes, edges);
+}
+
 const SAMPLE_INTERVIEW_NODE = {
   id: 'feature:checkout',
   name: 'Checkout',
