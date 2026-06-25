@@ -59,7 +59,7 @@ pnpm --filter @grasp-it/core test
 pnpm test
 ```
 
-Expected counts at the time of writing: **912 core tests** in 41 files; **~470 skill tests** across the `tests/` tree (skill-test count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern). A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
+Expected counts at the time of writing: **912 core tests** in 41 files; **595 skill tests** in 34 files across the `tests/` tree (skill-test count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern). A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
 
 The 2 timeout-prone tests in `tests/skill/grasp/test_silent_exit_bugs.test.mjs` (real-network DNS retry probes) are slow but pre-existing; they should not block a release.
 

@@ -123,16 +123,6 @@ function writeConceptGraph(root, nodes = [], edges = []) {
   );
 }
 
-// Aliases preserved from the pre-rename `grasp-interview` skill — same file layout.
-// push-concept-graph.mjs reads pr-nodes.json / pr-edges.json regardless of name.
-function makeInterviewRoot() {
-  return makeConceptRoot();
-}
-
-function writeInterviewGraph(root, nodes = [], edges = []) {
-  return writeConceptGraph(root, nodes, edges);
-}
-
 const SAMPLE_INTERVIEW_NODE = {
   id: 'feature:checkout',
   name: 'Checkout',
@@ -417,7 +407,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
 
   describe('full push flow', () => {
     it('exits 0 when cypher-shell succeeds for all stages', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE, SAMPLE_PAYMENT_NODE], [SAMPLE_INTERVIEW_EDGE]);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE, SAMPLE_PAYMENT_NODE], [SAMPLE_INTERVIEW_EDGE]);
       writeMockCypherShell(mockDir, 'exit 0');
 
       const result = runInterview();
@@ -427,7 +417,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('exits 0 with empty graph (no nodes, no edges)', () => {
-      writeInterviewGraph(root, [], []);
+      writeConceptGraph(root, [], []);
       writeMockCypherShell(mockDir, 'exit 0');
 
       const result = runInterview();
@@ -436,7 +426,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('invokes cypher-shell with correct database flag', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
       const logFile = join(root, 'calls.log');
       writeMockCypherShell(mockDir, `echo "$@" >> "${logFile}"\nexit 0`);
 
@@ -452,7 +442,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
 
   describe('URI conversion', () => {
     it('converts neo4j:// to bolt:// for cypher-shell', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
       writeMockCypherShell(mockDir, 'echo "$@" >&2\nexit 1');
 
       const result = runInterview({ NEO4J_URI: 'neo4j://localhost:7687' });
@@ -462,7 +452,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('converts neo4j+s:// to bolt+s:// for cypher-shell', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
       writeMockCypherShell(mockDir, 'echo "$@" >&2\nexit 1');
 
       const result = runInterview({ NEO4J_URI: 'neo4j+s://secure.example.com:7687' });
@@ -476,7 +466,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
 
   describe('error propagation', () => {
     it('exits 1 and logs error when node push fails (cypher-shell exits 1)', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
       writeMockCypherShell(mockDir, 'echo "Connection failed" >&2\nexit 1');
 
       const result = runInterview();
@@ -486,7 +476,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('exits 1 with friendly message when cypher-shell is not installed', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
 
       const result = runScript(PUSH_CONCEPT, [root], {
         NEO4J_URI: 'bolt://localhost:7687',
@@ -505,7 +495,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
 
   describe('IMPLEMENTED_BY edges target :Codebase nodes (Gap 2 fix)', () => {
     it('generates MATCH (b:Codebase ...) for IMPLEMENTED_BY edges in cypher-shell path', () => {
-      writeInterviewGraph(
+      writeConceptGraph(
         root,
         [SAMPLE_INTERVIEW_NODE],
         [SAMPLE_INTERVIEW_IMPLEMENTED_BY_EDGE]
@@ -522,7 +512,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('generates MATCH (b:Knowledge ...) for non-IMPLEMENTED_BY edges', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE, SAMPLE_PAYMENT_NODE], [SAMPLE_INTERVIEW_EDGE]);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE, SAMPLE_PAYMENT_NODE], [SAMPLE_INTERVIEW_EDGE]);
       const logFile = join(root, 'queries.log');
       writeMockCypherShell(mockDir, `cat >> "${logFile}"\nexit 0`);
 
@@ -546,7 +536,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
         type: 'IMPLEMENTED_BY',
         weight: 1.0,
       };
-      writeInterviewGraph(
+      writeConceptGraph(
         root,
         [SAMPLE_INTERVIEW_NODE, SAMPLE_PAYMENT_NODE],
         [knowledgeEdge, implEdge]
@@ -568,7 +558,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
 
   describe('orphan check behavior', () => {
     it('logs ENOENT warning when cypher-shell not found (empty graph, PATH without cypher-shell)', () => {
-      writeInterviewGraph(root, [], []); // empty graph skips node/edge push
+      writeConceptGraph(root, [], []); // empty graph skips node/edge push
 
       const result = runScript(PUSH_CONCEPT, [root], {
         NEO4J_URI: 'bolt://localhost:7687',
@@ -584,7 +574,7 @@ describe('push-concept-graph.mjs — NEO4J_CONNECTION_TYPE=cypher-shell', () => 
     });
 
     it('does not exit on orphan check failure (best-effort) — succeeds with nodes', () => {
-      writeInterviewGraph(root, [SAMPLE_INTERVIEW_NODE], []);
+      writeConceptGraph(root, [SAMPLE_INTERVIEW_NODE], []);
       const countFile = join(root, 'count.txt');
       writeFileSync(countFile, '0');
       // Succeed on call 1 (node push) + call 2 (layer update), fail on call 3 (orphan check)
@@ -646,8 +636,8 @@ describe('Gap 1 fix: orphan check uses runCypherShell helper consistently', () =
   });
 
   it('push-concept-graph.mjs: ENOENT on orphan check logs warning (not silent)', () => {
-    root = makeInterviewRoot();
-    writeInterviewGraph(root, [], []); // empty graph: skip node+edge push
+    root = makeConceptRoot();
+    writeConceptGraph(root, [], []); // empty graph: skip node+edge push
 
     const result = runScript(PUSH_CONCEPT, [root], {
       NEO4J_URI: 'bolt://localhost:7687',
