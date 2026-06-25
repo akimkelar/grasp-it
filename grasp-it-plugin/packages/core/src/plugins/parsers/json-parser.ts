@@ -5,7 +5,7 @@ import type { AnalyzerPlugin, StructuralAnalysis, SectionInfo, ReferenceResoluti
  * result can be passed to the standard `JSON.parse`. Preserves string contents
  * verbatim — comment-like sequences inside strings are not removed.
  *
- * Plain JSON passes through unchanged (no `//`, `/* *​/`, or trailing commas
+ * Plain JSON passes through unchanged (no `//`, slash-star/star-slash, or trailing commas
  * to remove).
  */
 export function stripJsoncSyntax(content: string): string {
@@ -63,7 +63,7 @@ export function stripJsoncSyntax(content: string): string {
  * Handles package.json, tsconfig.json, wrangler.jsonc, JSON Schema, and OpenAPI spec files.
  * Does not descend into nested object structures beyond top-level keys.
  *
- * JSONC support: line comments (`// ...`), block comments (`/* ... *​/`), and
+ * JSONC support: line comments (`// ...`), block comments (slash-star ... star-slash), and
  * trailing commas are stripped before `JSON.parse`. Strings are preserved.
  */
 export class JSONConfigParser implements AnalyzerPlugin {

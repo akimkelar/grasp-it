@@ -1,14 +1,14 @@
 /**
- * Tests for push-interview-graph.mjs
+ * Tests for push-concept-graph.mjs
  *
- * Reads pr-nodes.json and pr-edges.json from .grasp-it/ and pushes interview knowledge to Neo4j.
+ * Reads pr-nodes.json and pr-edges.json from .grasp-it/ and pushes concept plan knowledge to Neo4j.
  */
 
 // Some tests involve real Neo4j connections that may hang on close — allow extra time
 const TEST_TIMEOUT = 30_000;
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from 'node:os';
 import { join } from "node:path";
 import { spawnSync } from 'node:child_process';
@@ -19,8 +19,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function runPushInterviewGraph(projectRoot, extraEnv = {}) {
-  const scriptPath = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
+function runPushConceptGraph(projectRoot, extraEnv = {}) {
+  const scriptPath = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
   // Build a clean env: start with process.env, then apply extraEnv
   // (undefined values are skipped so they don't override existing env vars)
   const env = { ...process.env };
@@ -31,19 +31,29 @@ function runPushInterviewGraph(projectRoot, extraEnv = {}) {
       env[key] = val;
     }
   }
+  // Strip cypher-shell from PATH so the cypher-shell fallback in push-concept-graph.mjs
+  // fails fast (ENOENT) instead of hanging on an unreachable port. This makes the tests
+  // independent of whether cypher-shell is installed in the test environment.
+  if (env.PATH && !extraEnv.PATH) {
+    env.PATH = env.PATH
+      .split(':')
+      .filter(p => !existsSync(join(p, 'cypher-shell')))
+      .join(':');
+  }
   return spawnSync('node', [scriptPath, projectRoot], {
     encoding: 'utf-8',
     env,
+    timeout: 25_000,
   });
 }
 
 // ── Test suite ───────────────────────────────────────────────────────────────
 
-describe('push-interview-graph.mjs', () => {
+describe('push-concept-graph.mjs', () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'push-interview-graph-test-'));
+    root = mkdtempSync(join(tmpdir(), 'push-concept-graph-test-'));
     // The script reads pr-nodes.json and pr-edges.json from .grasp-it/intermediate/
     mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
   });
@@ -57,7 +67,7 @@ describe('push-interview-graph.mjs', () => {
   describe('exit code 1 when pr-nodes.json is not found', () => {
     it('exits with code 1 and prints error message', () => {
       // .grasp-it/intermediate/ directory exists but pr-nodes.json does not
-      const result = runPushInterviewGraph(root);
+      const result = runPushConceptGraph(root);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('Nodes file not found');
     });
@@ -68,7 +78,7 @@ describe('push-interview-graph.mjs', () => {
   describe('exit code 1 when pr-edges.json is not found', () => {
     it('exits with code 1 when pr-nodes.json exists but pr-edges.json does not', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify({ nodes: [] }));
-      const result = runPushInterviewGraph(root);
+      const result = runPushConceptGraph(root);
       expect(result.status).toBe(1);
       expect(result.stderr).toContain('Edges file not found');
     });
@@ -83,7 +93,7 @@ describe('push-interview-graph.mjs', () => {
 
       // Pass empty strings for Neo4j env vars to override any in the test environment,
       // then delete them so getNeo4jConfig sees no config
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: '',
         NEO4J_USERNAME: '',
         NEO4J_PASSWORD: '',
@@ -115,7 +125,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -125,7 +135,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Should fail on Neo4j connection, not on node type validation
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED|cypher-shell fallback/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED|cypher-shell fallback/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
@@ -140,7 +150,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -170,7 +180,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -181,7 +191,7 @@ describe('push-interview-graph.mjs', () => {
       // Warning about the bad node is emitted
       expect(result.stderr).toContain("Unknown node type 'foobar'");
       // Script proceeds to the connection phase rather than aborting early
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED|neo4j-driver not available|cypher-shell/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED|neo4j-driver not available|cypher-shell/i);
       expect(result.status).toBe(1);
     });
   });
@@ -208,7 +218,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -218,7 +228,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means Risk node was processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
@@ -240,7 +250,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -250,7 +260,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means Constraint node was processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
@@ -278,7 +288,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify(edgesData));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -288,7 +298,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means edges were processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
@@ -306,12 +316,15 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
       // Set a reachable host for driver (will fail), but PATH that excludes cypher-shell
-      // so that the fallback also fails
-      const result = runPushInterviewGraph(root, {
+      // so that the fallback also fails. NEO4J_TEST_MOCK=1 makes the driver fail
+      // immediately (rather than timing out trying to connect), so the fallback
+      // path is exercised regardless of whether neo4j-driver is installed.
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
         NEO4J_DATABASE: 'neo4j',
+        NEO4J_TEST_MOCK: '1',
         // Remove cypher-shell from PATH so fallback also fails
         PATH: '/usr/local/bin:/usr/bin:/bin',
       });
@@ -322,7 +335,7 @@ describe('push-interview-graph.mjs', () => {
       expect(result.stderr).not.toContain('Edges file not found');
       expect(result.stderr).not.toContain('No Neo4j configuration found');
       // Either driver fail or fallback fail — both are valid outcomes here
-      expect(result.stderr).toMatch(/neo4j-driver not available|Failed to push interview graph|cypher-shell|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/neo4j-driver not available|Failed to push concept graph|cypher-shell|Connection refused|ECONNREFUSED/i);
     });
   });
 
@@ -338,7 +351,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -348,7 +361,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means node processing (and cypherEscape) succeeded
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Syntax error');
       expect(result.stderr).not.toContain('single quote');
     });
@@ -362,7 +375,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -372,7 +385,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means node processing succeeded
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
     });
   });
 
@@ -389,7 +402,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -399,11 +412,11 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means Claim nodes were processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
     });
   });
 
-  // ── Test 10: generatedAt field is added to all interview nodes ───────────
+  // ── Test 10: generatedAt field is added to all concept plan nodes ───────────
 
   describe('generatedAt field handling', () => {
     it('adds generatedAt to nodes that do not have it', () => {
@@ -417,7 +430,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -427,7 +440,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means nodes were processed (generatedAt would be added)
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
@@ -442,7 +455,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -452,14 +465,14 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means nodes were processed
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
     });
   });
 
-  // ── Test 11: interview nodes do NOT carry sourceCommit or sourceFiles ───
+  // ── Test 11: concept plan nodes do NOT carry sourceCommit or sourceFiles ───
 
-  describe('interview node source properties', () => {
-    it('processes nodes without sourceCommit and sourceFiles (interview nodes)', () => {
+  describe('concept plan node source properties', () => {
+    it('processes nodes without sourceCommit and sourceFiles (concept plan nodes)', () => {
       const nodesData = {
         nodes: [
           { id: 'feature:test-feature', name: 'Test Feature', summary: 'A test feature', type: 'feature' },
@@ -471,7 +484,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -481,16 +494,16 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means nodes were processed without error
-      // (interview nodes should not have sourceCommit or sourceFiles)
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      // (concept plan nodes should not have sourceCommit or sourceFiles)
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
 
-  // ── Test 12: all interview-specific node types are handled ─────────────
+  // ── Test 12: all concept-plan-specific node types are handled ─────────────
 
-  describe('interview-specific node types', () => {
-    it('handles Decision, Concept, and Claim nodes (interview-specific types)', () => {
+  describe('concept-plan-specific node types', () => {
+    it('handles Decision, Concept, and Claim nodes (concept-plan-specific types)', () => {
       const nodesData = {
         nodes: [
           { id: 'decision:use-jwt-only', name: 'Use JWT Only', summary: 'Decided to use JWT for auth', type: 'decision', rationale: 'Simpler than session auth', status: 'accepted' },
@@ -501,7 +514,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -510,8 +523,8 @@ describe('push-interview-graph.mjs', () => {
       });
 
       expect(result.status).toBe(1);
-      // Connection error means interview-specific nodes were processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      // Connection error means concept-plan-specific nodes were processed correctly
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
@@ -531,7 +544,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -541,12 +554,12 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means reusable nodes were processed correctly
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
   });
 
-  // ── Test 14: author field is added to all interview nodes ───────────────
+  // ── Test 14: author field is added to all concept plan nodes ───────────────
 
   describe('author field handling', () => {
     it('adds author to nodes when provided', () => {
@@ -559,7 +572,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -569,7 +582,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means nodes were processed
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
@@ -582,7 +595,7 @@ describe('push-interview-graph.mjs', () => {
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'), JSON.stringify(nodesData));
       writeFileSync(join(root, '.grasp-it', 'intermediate', 'pr-edges.json'), JSON.stringify({ edges: [] }));
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -592,7 +605,7 @@ describe('push-interview-graph.mjs', () => {
 
       expect(result.status).toBe(1);
       // Connection error means nodes were processed (author defaults to empty string)
-      expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|ECONNREFUSED/i);
+      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED/i);
     });
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Tests for NEO4J_CONNECTION_TYPE environment variable handling.
  *
- * Verifies that push-interview-graph.mjs, push-domain-graph.mjs, and
+ * Verifies that push-concept-graph.mjs, push-domain-graph.mjs, and
  * push-codebase-graph.mjs route to the correct connection path when
  * NEO4J_CONNECTION_TYPE is set to "cypher-shell" or "driver".
  *
@@ -46,7 +46,7 @@ function runScript(scriptPath, projectRoot, extraEnv = {}, extraArgs = []) {
 }
 
 // Script paths
-const PUSH_INTERVIEW_GRAPH = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
+const PUSH_CONCEPT_GRAPH = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
 const PUSH_DOMAIN_GRAPH = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-domain/push-domain-graph.mjs');
 const PUSH_CODEBASE_GRAPH = resolve(__dirname, '../../grasp-it-plugin/skills/grasp/push-codebase-graph.mjs');
 const RUN_QUERY_SCRIPT = resolve(__dirname, '../../grasp-it-plugin/skills/grasp/run-query.mjs');
@@ -59,13 +59,13 @@ const NEO4J_ENV = {
   NEO4J_DATABASE: 'grasp',
 };
 
-// ── push-interview-graph.mjs ──────────────────────────────────────────────────
+// ── push-concept-graph.mjs ──────────────────────────────────────────────────
 
-describe('NEO4J_CONNECTION_TYPE — push-interview-graph.mjs', () => {
+describe('NEO4J_CONNECTION_TYPE — push-concept-graph.mjs', () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'conn-type-interview-'));
+    root = mkdtempSync(join(tmpdir(), 'conn-type-concept-'));
     mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
 
     // Write minimal valid graph files
@@ -84,7 +84,7 @@ describe('NEO4J_CONNECTION_TYPE — push-interview-graph.mjs', () => {
   });
 
   it('uses cypher-shell directly when NEO4J_CONNECTION_TYPE=cypher-shell (no driver attempt)', () => {
-    const result = runScript(PUSH_INTERVIEW_GRAPH, root, {
+    const result = runScript(PUSH_CONCEPT_GRAPH, root, {
       ...NEO4J_ENV,
       NEO4J_CONNECTION_TYPE: 'cypher-shell',
       // Remove cypher-shell from PATH so the cypher-shell call fails quickly
@@ -99,7 +99,7 @@ describe('NEO4J_CONNECTION_TYPE — push-interview-graph.mjs', () => {
   });
 
   it('uses driver when NEO4J_CONNECTION_TYPE=driver', () => {
-    const result = runScript(PUSH_INTERVIEW_GRAPH, root, {
+    const result = runScript(PUSH_CONCEPT_GRAPH, root, {
       ...NEO4J_ENV,
       NEO4J_CONNECTION_TYPE: 'driver',
       NEO4J_TEST_MOCK: '1',
@@ -107,11 +107,11 @@ describe('NEO4J_CONNECTION_TYPE — push-interview-graph.mjs', () => {
 
     expect(result.status).toBe(1);
     // With driver path, the driver error appears first
-    expect(result.stderr).toMatch(/Failed to push interview graph|Connection refused|neo4j-driver not available/i);
+    expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|neo4j-driver not available/i);
   });
 
   it('uses driver by default when NEO4J_CONNECTION_TYPE is not set', () => {
-    const result = runScript(PUSH_INTERVIEW_GRAPH, root, {
+    const result = runScript(PUSH_CONCEPT_GRAPH, root, {
       ...NEO4J_ENV,
       NEO4J_CONNECTION_TYPE: undefined,
       NEO4J_TEST_MOCK: '1',
@@ -125,7 +125,7 @@ describe('NEO4J_CONNECTION_TYPE — push-interview-graph.mjs', () => {
 
   it('with NEO4J_CONNECTION_TYPE=cypher-shell, stderr does not mention driver fallback message', () => {
     // Use real PATH — cypher-shell may or may not exist; driver should never be tried
-    const result = runScript(PUSH_INTERVIEW_GRAPH, root, {
+    const result = runScript(PUSH_CONCEPT_GRAPH, root, {
       ...NEO4J_ENV,
       NEO4J_CONNECTION_TYPE: 'cypher-shell',
     });

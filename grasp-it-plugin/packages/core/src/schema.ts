@@ -412,7 +412,7 @@ export const GraphNodeSchema = z.object({
   subConcepts: z.array(z.string()).optional(),
   constrainedBy: z.array(z.string()).optional(),
   kind: z.enum(["codebase", "knowledge", "project"]).optional(),
-  source: z.enum(["code-analysis", "interview", "wiki"]).optional(),
+  source: z.enum(["code-analysis", "concept", "wiki"]).optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   probability: z.enum(["low", "medium", "high"]).optional(),
   mitigation: z.string().optional(),

@@ -23,7 +23,7 @@ import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PUSH_INTERVIEW_SCRIPT = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
+const PUSH_CONCEPT_SCRIPT = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
 const PUSH_DOMAIN_SCRIPT = resolve(__dirname, '../../grasp-it-plugin/skills/grasp-domain/push-domain-graph.mjs');
 const PUSH_CODEBASE_SCRIPT = resolve(__dirname, '../../grasp-it-plugin/skills/grasp/push-codebase-graph.mjs');
 
@@ -54,7 +54,7 @@ function runScript(scriptPath, projectRoot, extraEnv = {}) {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function writeInterviewFixtures(root) {
+function writeConceptFixtures(root) {
   mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
   writeFileSync(
     join(root, '.grasp-it', 'intermediate', 'pr-nodes.json'),
@@ -91,14 +91,14 @@ function writeCodebaseFixtures(root) {
   );
 }
 
-// ── push-interview-graph.mjs retry tests ─────────────────────────────────────
+// ── push-concept-graph.mjs retry tests ─────────────────────────────────────
 
-describe('push-interview-graph.mjs — retry logic', () => {
+describe('push-concept-graph.mjs — retry logic', () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'retry-interview-'));
-    writeInterviewFixtures(root);
+    root = mkdtempSync(join(tmpdir(), 'retry-concept-'));
+    writeConceptFixtures(root);
   });
 
   afterEach(() => {
@@ -107,7 +107,7 @@ describe('push-interview-graph.mjs — retry logic', () => {
 
   it('logs retry attempt to stderr when ENOTFOUND occurs on first connection attempt', () => {
     // NEO4J_TEST_MOCK_FAIL_TIMES=1 → first attempt throws ENOTFOUND, second succeeds
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, root, {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, root, {
       ...BASE_NEO4J_ENV,
       NEO4J_TEST_MOCK_FAIL_TIMES: '1',
     });
@@ -120,7 +120,7 @@ describe('push-interview-graph.mjs — retry logic', () => {
 
   it('triggers cypher-shell fallback after all 3 retries exhausted with DNS errors', () => {
     // NEO4J_TEST_MOCK_FAIL_TIMES=10 → all 3 attempts fail with ENOTFOUND (retries cap at 3)
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, root, {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, root, {
       ...BASE_NEO4J_ENV,
       NEO4J_TEST_MOCK_FAIL_TIMES: '10',
       PATH: '/usr/local/bin:/usr/bin:/bin',
@@ -136,7 +136,7 @@ describe('push-interview-graph.mjs — retry logic', () => {
 
   it('does NOT retry on non-retryable auth failure', () => {
     // NEO4J_TEST_MOCK_AUTH_FAIL=1 → throws auth error which is not retryable
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, root, {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, root, {
       ...BASE_NEO4J_ENV,
       NEO4J_TEST_MOCK_AUTH_FAIL: '1',
     });
@@ -144,12 +144,12 @@ describe('push-interview-graph.mjs — retry logic', () => {
     // Must NOT contain any retry log line
     expect(result.stderr).not.toMatch(/Connection attempt \d+\/3 failed.*Retrying/);
     // Must report the auth failure
-    expect(result.stderr).toMatch(/Failed to push interview graph|authentication|unauthorized/i);
+    expect(result.stderr).toMatch(/Failed to push concept graph|authentication|unauthorized/i);
   });
 
   it('exits 0 when first attempt fails but second attempt succeeds', () => {
     // fail_times=1: first attempt throws retryable ENOTFOUND, second returns immediately
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, root, {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, root, {
       ...BASE_NEO4J_ENV,
       NEO4J_TEST_MOCK_FAIL_TIMES: '1',
     });

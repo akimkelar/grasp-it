@@ -25,7 +25,7 @@ Seeding generates an initial useful graph from a codebase. The goal is not just 
 - `Risk` nodes from code-visible hazards (float arithmetic, external API calls, complex time-boundary conditionals, missing validation on critical paths)
 - `Constraint` nodes from interface contracts, validation guards, and access control invariants
 
-### From `/grasp-interview` (PO interview)
+### From `/grasp-concept` (concept plan)
 
 - `Feature` descriptions with `status: "planned"`
 - `Actor` definitions with `permissions` and `restrictions`
@@ -93,7 +93,7 @@ The following fields should be treated as the default metadata set for knowledge
 - `name`
 - `summary`
 - `generatedAt` (ISO 8601 timestamp — when the node was created or last refreshed)
-- `sourceCommit` (git hash — commit at which this node was derived from code; omit for interview-derived nodes)
+- `sourceCommit` (git hash — commit at which this node was derived from code; omit for concept-derived nodes)
 - `status`
 - `sourceFiles`
 
@@ -130,7 +130,7 @@ Seeding is the initial graph creation. After seeding, the graph is updated incre
 
 - `/grasp` rebuilds the codebase subgraph (deterministic, script-only)
 - `/grasp-domain` updates domain/feature/operation knowledge (LLM, from script signals)
-- `/grasp-interview` adds or updates PO interview knowledge (LLM, from PO input)
+- `/grasp-concept` adds or updates concept plan knowledge (LLM, from specialist input)
 
 The graph is never fully deleted and rebuilt from scratch — only the codebase subgraph is wiped per `/grasp` run. Knowledge subgraph persists and is updated incrementally.
 

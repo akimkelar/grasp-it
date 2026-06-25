@@ -119,16 +119,16 @@ The graph uses a single Neo4j database with two logical subgraphs, separated by 
 | Label | Purpose | `source` value |
 |---|---|---|
 | `Domain` | Business domain | `"code-analysis"` |
-| `Feature` | Named product capability | `"code-analysis"` or `"interview"` |
-| `Operation` | A meaningful action within a feature | `"code-analysis"` or `"interview"` |
-| `Actor` | User role or system agent | `"code-analysis"` or `"interview"` |
-| `BusinessRule` | Business rule or policy | `"code-analysis"` or `"interview"` |
-| `Entity` | Named business object | `"code-analysis"` or `"interview"` |
-| `Risk` | Implementation hazard or business exposure | `"code-analysis"` or `"interview"` |
-| `Constraint` | Technical invariant or access condition | `"code-analysis"` or `"interview"` |
-| `Decision` | Resolved question or commitment | `"interview"` |
-| `Concept` | Key abstraction named by a specialist | `"interview"` |
-| `Claim` | Assertion made during interview | `"interview"` |
+| `Feature` | Named product capability | `"code-analysis"` or `"concept"` |
+| `Operation` | A meaningful action within a feature | `"code-analysis"` or `"concept"` |
+| `Actor` | User role or system agent | `"code-analysis"` or `"concept"` |
+| `BusinessRule` | Business rule or policy | `"code-analysis"` or `"concept"` |
+| `Entity` | Named business object | `"code-analysis"` or `"concept"` |
+| `Risk` | Implementation hazard or business exposure | `"code-analysis"` or `"concept"` |
+| `Constraint` | Technical invariant or access condition | `"code-analysis"` or `"concept"` |
+| `Decision` | Resolved question or commitment | `"concept"` |
+| `Concept` | Key abstraction named by a specialist | `"concept"` |
+| `Claim` | Assertion made during concept plan | `"concept"` |
 
 **Key relationships**:
 
@@ -194,7 +194,7 @@ Feature / Operation / BusinessRule -[:IMPLEMENTED_BY]-> File / Function / Class 
 
 **Searchable text fields per node**:
 - All nodes: `name`, `summary`, `id`
-- Knowledge nodes: `kind = "knowledge"`, also `source` (`"code-analysis"` | `"interview"`)
+- Knowledge nodes: `kind = "knowledge"`, also `source` (`"code-analysis"` | `"concept"`)
 - Codebase nodes: `kind = "codebase"`, also `filePath`, `complexity`
 - `Feature` / `Operation`: `status` (`"planned"` | `"partial"` | `"implemented"`)
 - `Risk`: `severity`, `probability`
@@ -214,7 +214,7 @@ New task received:
       -> too many scattered results? -> Approach 3 (label-scoped) -> repeat
       -> scope is known to be code elements? -> Approach A (codebase lookup)
       -> scope is known to be from code analysis? -> Approach B (code-analysis lookup)
-      -> scope is known to be from interviews? -> Approach C (interview lookup)
+      -> scope is known to be from concept plans? -> Approach C (concept lookup)
   -> Approach 2 (branch query on top entities)
       -> reveals hidden constraints not reachable by text
   -> [optional] Approach 4 (dependency disclosure) if deeper investigation needed
@@ -488,15 +488,15 @@ LIMIT 50;
 
 ---
 
-## Approach C - Interview knowledge lookup
+## Approach C - Concept knowledge lookup
 
-**Use when**: finding what the PO or specialist intends — planned features, decisions, constraints, concepts captured by `/grasp-interview`. Filters to `kind: "knowledge"` and `source: "interview"`. This is the primary discovery mechanism for Decision, Concept, and Claim nodes.
+**Use when**: finding what the specialist intends — planned features, decisions, constraints, concepts captured by `/grasp-concept`. Filters to `kind: "knowledge"` and `source: "concept"`. This is the primary discovery mechanism for Decision, Concept, and Claim nodes.
 
 ```cypher
 WITH ['<term>'] AS terms
 MATCH (seed)
 WHERE seed.kind = "knowledge"
-  AND seed.source = "interview"
+  AND seed.source = "concept"
   AND any(t IN terms WHERE
       toLower(seed.name) CONTAINS t
       OR toLower(seed.summary) CONTAINS t
@@ -521,7 +521,7 @@ ORDER BY relevance DESC, type, name
 LIMIT 50;
 ```
 
-**Returns**: interview node type (including Decision, Concept, Claim), name, summary, status (for Decision), confidence (for Claim), and all neighbors.
+**Returns**: concept node type (including Decision, Concept, Claim), name, summary, status (for Decision), confidence (for Claim), and all neighbors.
 
 ---
 

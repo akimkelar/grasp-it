@@ -2,11 +2,11 @@
  * Tests for silent-exit bugs (BUG-01, BUG-02, and related patterns).
  *
  * BUG-01: run-query.mjs called process.exit(2) without printing the reason to stderr.
- * BUG-02: push-interview-graph.mjs fallback condition missed DNS-failure error codes/messages.
+ * BUG-02: push-concept-graph.mjs fallback condition missed DNS-failure error codes/messages.
  *
  * Scripts covered:
  *   - run-query.mjs (BUG-01)
- *   - push-interview-graph.mjs (BUG-02 + DNS fallback)
+ *   - push-concept-graph.mjs (BUG-02 + DNS fallback)
  *   - push-domain-graph.mjs (same pattern as BUG-02)
  *   - push-codebase-graph.mjs (same pattern as BUG-02, incomplete fallback condition)
  */
@@ -24,7 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Script paths ──────────────────────────────────────────────────────────────
 
 const RUN_QUERY_SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/run-query.mjs');
-const PUSH_INTERVIEW_SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
+const PUSH_CONCEPT_SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
 const PUSH_DOMAIN_SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-domain/push-domain-graph.mjs');
 const PUSH_CODEBASE_SCRIPT = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/push-codebase-graph.mjs');
 
@@ -109,9 +109,9 @@ describe('BUG-01: run-query.mjs prints reason to stderr before exit(2)', () => {
   });
 });
 
-// ── BUG-02: push-interview-graph.mjs fallback triggered for DNS failures ─────
+// ── BUG-02: push-concept-graph.mjs fallback triggered for DNS failures ─────
 
-describe('BUG-02: push-interview-graph.mjs triggers fallback for DNS-like errors', () => {
+describe('BUG-02: push-concept-graph.mjs triggers fallback for DNS-like errors', () => {
   let root;
 
   beforeEach(() => {
@@ -137,7 +137,7 @@ describe('BUG-02: push-interview-graph.mjs triggers fallback for DNS-like errors
     // The driver throws an error with ENOTFOUND in the message for DNS failures.
     // With our fix, this should trigger the cypher-shell fallback path.
     // Since cypher-shell isn't available either (path stripped), it will fail at exit(1).
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, [root], {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, [root], {
       NEO4J_URI: 'neo4j://this.host.does.not.exist.invalid:7687',
       NEO4J_USERNAME: 'neo4j',
       NEO4J_PASSWORD: 'password',
@@ -156,7 +156,7 @@ describe('BUG-02: push-interview-graph.mjs triggers fallback for DNS-like errors
     // an error with code "ServiceUnavailable". We simulate this via NEO4J_TEST_MOCK
     // which throws 'Connection refused (TestMock)' — covered by the existing condition.
     // This test validates the fallback IS attempted when mock error is thrown.
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, [root], {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, [root], {
       NEO4J_URI: 'neo4j://localhost:9999',
       NEO4J_USERNAME: 'neo4j',
       NEO4J_PASSWORD: 'password',
@@ -171,7 +171,7 @@ describe('BUG-02: push-interview-graph.mjs triggers fallback for DNS-like errors
   });
 
   it('stderr message is visible (not silent) when fallback is triggered', () => {
-    const result = runScript(PUSH_INTERVIEW_SCRIPT, [root], {
+    const result = runScript(PUSH_CONCEPT_SCRIPT, [root], {
       NEO4J_URI: 'neo4j://localhost:9999',
       NEO4J_USERNAME: 'neo4j',
       NEO4J_PASSWORD: 'password',

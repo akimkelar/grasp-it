@@ -30,7 +30,6 @@ interface DomainStalenessResult {
  * If domainCommit is null/missing, the domain graph has never been built — treat as stale.
  */
 export async function checkDomainStaleness(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   projectId: string,
 ): Promise<DomainStalenessResult> {

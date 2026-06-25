@@ -101,7 +101,7 @@ describe("filter-structural-changes.mjs", () => {
     expect(stdout).toContain("Fingerprints baseline missing");
     expect(readOutput("structural-changed-files.txt")).toBe("src/foo.ts\nsrc/bar.ts");
     expect(readOutput("cosmetic-only-files.txt")).toBe("");
-  });
+  }, 30_000); // Spawns Node + imports @grasp-it/core; flaky under load at 5s default. Matches runScript's 30s execSync budget.
 
   // ── No changed-files.txt — graceful exit ──────────────────────────────────
 

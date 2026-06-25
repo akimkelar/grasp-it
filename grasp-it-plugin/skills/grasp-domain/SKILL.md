@@ -18,7 +18,7 @@ Extracts business domain knowledge — domains, features, operations, actors, bu
 ## Graph Schema
 
 **All nodes created by this skill carry `kind: "knowledge"` and `source: "code-analysis"`.** This
-distinguishes code-mined knowledge from specialist-described knowledge (`source: "interview"`)
+distinguishes code-mined knowledge from specialist-described knowledge (`source: "concept"`)
 and enables queries that separate implemented facts from planned intent.
 
 **All knowledge nodes must include a `sourceFiles: string[]` property.** This array tracks which

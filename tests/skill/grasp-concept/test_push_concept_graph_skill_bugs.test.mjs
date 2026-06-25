@@ -8,13 +8,13 @@
  * BUG-01 (SKILL.md):    Narrative instructions that tell the LLM to create
  *         BusinessRule nodes must use the kebab-case "business-rule" form,
  *         matching the type table and ID prefix convention.
- * BUG-02:               push-interview-graph.mjs must exit non-zero when
+ * BUG-02:               push-concept-graph.mjs must exit non-zero when
  *         any node was skipped (currently exits 0 even with skipped nodes,
  *         masking data loss).
  * BUG-03:               SKILL.md must define a fallback trigger for topic-
- *         driven interviews (the LLM should write to the graph after a
- *         bounded number of substantive answers even without a formal
- *         aspect paraphrase-check).
+ *         driven concept plan sessions (the LLM should write to the graph
+ *         after a bounded number of substantive answers even without a
+ *         formal aspect paraphrase-check).
  * BUG-04:               SKILL.md must include a mandatory cross-aspect
  *         checklist that scans for Operations, Constraints, Claims, and
  *         Actors — the per-aspect lists alone produce sparse graphs.
@@ -27,6 +27,7 @@ import {
   rmSync,
   mkdirSync,
   readFileSync,
+  existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -38,14 +39,14 @@ const REPO_ROOT = resolve(__dirname, "../../..");
 
 const SKILL_PATH = join(
   REPO_ROOT,
-  "grasp-it-plugin/skills/grasp-interview/SKILL.md",
+  "grasp-it-plugin/skills/grasp-concept/SKILL.md",
 );
 const SCRIPT_PATH = join(
   REPO_ROOT,
-  "grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs",
+  "grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs",
 );
 
-function runPushInterviewGraph(projectRoot, extraEnv = {}) {
+function runPushConceptGraph(projectRoot, extraEnv = {}) {
   const env = { ...process.env };
   for (const [key, val] of Object.entries(extraEnv)) {
     if (val === undefined) {
@@ -54,10 +55,19 @@ function runPushInterviewGraph(projectRoot, extraEnv = {}) {
       env[key] = val;
     }
   }
+  // Strip cypher-shell from PATH so the cypher-shell fallback in push-concept-graph.mjs
+  // fails fast (ENOENT) instead of hanging on an unreachable port. This makes the tests
+  // independent of whether cypher-shell is installed in the test environment.
+  if (env.PATH && !extraEnv.PATH) {
+    env.PATH = env.PATH
+      .split(":")
+      .filter(p => !existsSync(join(p, "cypher-shell")))
+      .join(":");
+  }
   return spawnSync("node", [SCRIPT_PATH, projectRoot], {
     encoding: "utf-8",
     env,
-    timeout: 30_000,
+    timeout: 25_000,
   });
 }
 
@@ -67,7 +77,7 @@ describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "interview-bug1-"));
+    root = mkdtempSync(join(tmpdir(), "concept-bug1-"));
     mkdirSync(join(root, ".grasp-it", "intermediate"), { recursive: true });
   });
 
@@ -107,7 +117,7 @@ describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
     ]);
 
     const mockDir = makeEchoingCypherShell();
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -135,7 +145,7 @@ describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
     ]);
 
     const mockDir = makeEchoingCypherShell();
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -168,7 +178,7 @@ describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
     ]);
 
     const mockDir = makeEchoingCypherShell();
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -204,7 +214,7 @@ describe("BUG-01: SKILL.md distinguishes JSON 'type' (kebab-case) from Neo4j lab
     // must use kebab-case (it's the only multi-word type, so it's the
     // easiest place for the LLM to mistakenly see PascalCase as canonical).
     const tableMatch = content.match(
-      /\| Node type \| Description \| Behavior in interview \|([\s\S]*?)(?=\n\n|\n### )/,
+      /\| Node type \| Description \| Behavior in planning \|([\s\S]*?)(?=\n\n|\n### )/,
     );
     expect(tableMatch).not.toBeNull();
     const table = tableMatch[1];
@@ -226,7 +236,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "interview-bug2-"));
+    root = mkdtempSync(join(tmpdir(), "concept-bug2-"));
     mkdirSync(join(root, ".grasp-it", "intermediate"), { recursive: true });
   });
 
@@ -248,7 +258,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
   it("exits non-zero when at least one node is skipped due to unknown type", () => {
     // NEO4J_TEST_MOCK_FAIL_TIMES=0 makes the mock driver succeed immediately
     // (no real connection, no real DB), so the script reaches the success
-    // path. With the bug, this prints "Interview graph pushed to Neo4j
+    // path. With the bug, this prints "Concept graph pushed to Neo4j
     // successfully." and exits 0 even though a node was skipped. The fix
     // must surface the skip in the exit code.
     writeGraph([
@@ -256,7 +266,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
       { id: "feature:good", name: "Good", summary: "Valid", type: "feature" },
     ]);
 
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -277,7 +287,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
       { id: "foobar:bad", name: "Bad", summary: "Unknown", type: "foobar" },
     ]);
 
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -301,7 +311,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
       { id: "feature:good", name: "Good", summary: "Valid", type: "feature" },
     ]);
 
-    const result = runPushInterviewGraph(root, {
+    const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
@@ -321,13 +331,13 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
 describe("BUG-03: SKILL.md defines a topic-driven fallback trigger", () => {
   const content = readFileSync(SKILL_PATH, "utf-8");
 
-  it("contains a periodic-write fallback trigger for topic-driven interviews", () => {
+  it("contains a periodic-write fallback trigger for topic-driven concept plan sessions", () => {
     // The bug: when the specialist drives the conversation substantively
     // (rich context upfront), the eight-aspect structure is not traversed
     // sequentially and the LLM batches the entire first write to the end.
-    // Fix: a count-based fallback that pauses the interview to write what
-    // has been established so far, even if the current aspect is not
-    // formally complete.
+    // Fix: a count-based fallback that pauses the concept plan session to
+    // write what has been established so far, even if the current aspect
+    // is not formally complete.
     expect(content).toMatch(/3 or more substantive|substantive questions? without/i);
   });
 

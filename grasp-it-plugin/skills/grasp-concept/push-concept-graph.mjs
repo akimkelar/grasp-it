@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * push-interview-graph.mjs
+ * push-concept-graph.mjs
  *
  * Reads pr-nodes.json and pr-edges.json from .grasp-it/intermediate/ and pushes
- * interview knowledge to Neo4j using the Knowledge + specific label pattern.
+ * concept plan knowledge to Neo4j using the Knowledge + specific label pattern.
  *
  * Fully self-contained — uses only neo4j-driver (no TypeScript imports).
  *
  * Usage:
- *   node push-interview-graph.mjs <project-root>
+ *   node push-concept-graph.mjs <project-root>
  *
  * Arguments:
  *   project-root  — root of the project being analyzed
@@ -17,7 +17,8 @@
  *   0 — success
  *   1 — failure (file not found, Neo4j error, etc.)
  *
- * All interview nodes carry generatedAt (ISO timestamp). They do NOT carry
+ * All concept plan nodes carry `source: "concept"` and `kind: "knowledge"`,
+ * plus a generatedAt (ISO timestamp). They do NOT carry
  * sourceCommit or sourceFiles — those are only present on code-analysis nodes.
  */
 
@@ -52,7 +53,7 @@ const TYPE_TO_LABEL = {
 // canonical "business-rule"), normalise it before the lookup. The schema
 // uses lowercase/kebab-case for the internal `type` value; the Neo4j label
 // is derived via toNeo4jLabel. Silently skipping these nodes was the root
-// cause of BUG-01 in 2026-06-24_10-58_grasp-interview-report.md.
+// cause of BUG-01 in 2026-06-24_10-58_grasp-concept-report.md.
 const TYPE_ALIASES = {
   BusinessRule: "business-rule",
   BusinessRules: "business-rule",
@@ -141,7 +142,7 @@ function buildNodesCypher(graphData, neo4jConfig) {
       const normalisedType = normaliseNodeType(node.type);
       const secondaryLabel = TYPE_TO_LABEL[normalisedType];
       if (!secondaryLabel) {
-        console.error(`push-interview-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+        console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
         continue;
       }
       node.type = normalisedType;
@@ -151,7 +152,7 @@ function buildNodesCypher(graphData, neo4jConfig) {
         name: node.name || "",
         summary: node.summary || "",
         kind: "knowledge",
-        source: "interview",
+        source: "concept",
         type: node.type,
         tags: node.tags || [],
         generatedAt: node.generatedAt || new Date().toISOString(),
@@ -213,15 +214,15 @@ function buildEdgesCypher(graphData) {
 }
 
 /**
- * Push interview graph using cypher-shell (fallback when driver is unavailable).
+ * Push concept plan graph using cypher-shell (fallback when driver is unavailable).
  */
-function pushInterviewGraphViaCypherShell(neo4jConfig, graphData) {
+function pushConceptGraphViaCypherShell(neo4jConfig, graphData) {
   // Push nodes
   const nodesCypher = buildNodesCypher(graphData, neo4jConfig);
   if (nodesCypher) {
     const result = runCypherShell(neo4jConfig, nodesCypher);
     if (!result.ok) {
-      console.error(`push-interview-graph.mjs: cypher-shell node push failed: ${result.reason}`);
+      console.error(`push-concept-graph.mjs: cypher-shell node push failed: ${result.reason}`);
       process.exit(1);
     }
   }
@@ -231,13 +232,13 @@ function pushInterviewGraphViaCypherShell(neo4jConfig, graphData) {
   if (edgesCypher) {
     const result = runCypherShell(neo4jConfig, edgesCypher);
     if (!result.ok) {
-      console.error(`push-interview-graph.mjs: cypher-shell edge push failed: ${result.reason}`);
+      console.error(`push-concept-graph.mjs: cypher-shell edge push failed: ${result.reason}`);
       process.exit(1);
     }
   }
 
   // Ensure layer exists
-  const layerCypher = `MATCH (n:Knowledge {source: 'interview'}) WITH collect(n.id) AS nodeIds
+  const layerCypher = `MATCH (n:Knowledge {source: 'concept'}) WITH collect(n.id) AS nodeIds
 MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
   runCypherShell(neo4jConfig, layerCypher); // best-effort — don't fail if Layer doesn't exist
 
@@ -246,17 +247,17 @@ MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
   const orphanResult = runCypherShell(neo4jConfig, orphanQuery);
   if (!orphanResult.ok) {
     if (orphanResult.reason && orphanResult.reason.includes("cypher-shell not found")) {
-      console.error(`push-interview-graph.mjs: WARNING — orphan check skipped: ${orphanResult.reason}`);
+      console.error(`push-concept-graph.mjs: WARNING — orphan check skipped: ${orphanResult.reason}`);
     }
     // Other errors are silently ignored — orphan check is best-effort
   }
 
   const totalNodes = (graphData.nodes || []).length;
   if (skippedCount > 0) {
-    console.error(`push-interview-graph.mjs: Interview graph push via cypher-shell completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
+    console.error(`push-concept-graph.mjs: Concept plan graph push via cypher-shell completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
     process.exit(2);
   }
-  console.log(`push-interview-graph.mjs: Interview graph pushed to Neo4j via cypher-shell successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
+  console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j via cypher-shell successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
   process.exit(0);
 }
 
@@ -283,7 +284,7 @@ function isRetryable(err) {
  * @param {() => Promise<any>} fn - Async function to call
  * @param {{ retries?: number, delayMs?: number, label?: string }} options
  */
-async function withRetry(fn, { retries = 3, delayMs = 2000, label = "push-interview-graph.mjs" } = {}) {
+async function withRetry(fn, { retries = 3, delayMs = 2000, label = "push-concept-graph.mjs" } = {}) {
   let lastErr;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -306,17 +307,17 @@ async function withRetry(fn, { retries = 3, delayMs = 2000, label = "push-interv
 
 // ── Main push logic ─────────────────────────────────────────────────────────────
 
-async function pushInterviewGraph(projectRoot) {
+async function pushConceptGraph(projectRoot) {
   const nodesPath = join(projectRoot, INTERMEDIATE_DIR, NODES_FILE);
   const edgesPath = join(projectRoot, INTERMEDIATE_DIR, EDGES_FILE);
 
   if (!existsSync(nodesPath)) {
-    console.error(`push-interview-graph.mjs: Nodes file not found at ${nodesPath}`);
+    console.error(`push-concept-graph.mjs: Nodes file not found at ${nodesPath}`);
     process.exit(1);
   }
 
   if (!existsSync(edgesPath)) {
-    console.error(`push-interview-graph.mjs: Edges file not found at ${edgesPath}`);
+    console.error(`push-concept-graph.mjs: Edges file not found at ${edgesPath}`);
     process.exit(1);
   }
 
@@ -325,7 +326,7 @@ async function pushInterviewGraph(projectRoot) {
     const nodesContent = readFileSync(nodesPath, "utf-8");
     nodesData = JSON.parse(nodesContent);
   } catch (err) {
-    console.error(`push-interview-graph.mjs: Failed to read/parse nodes file: ${err.message}`);
+    console.error(`push-concept-graph.mjs: Failed to read/parse nodes file: ${err.message}`);
     process.exit(1);
   }
 
@@ -333,7 +334,7 @@ async function pushInterviewGraph(projectRoot) {
     const edgesContent = readFileSync(edgesPath, "utf-8");
     edgesData = JSON.parse(edgesContent);
   } catch (err) {
-    console.error(`push-interview-graph.mjs: Failed to read/parse edges file: ${err.message}`);
+    console.error(`push-concept-graph.mjs: Failed to read/parse edges file: ${err.message}`);
     process.exit(1);
   }
 
@@ -345,7 +346,7 @@ async function pushInterviewGraph(projectRoot) {
   // Validate all nodes have a known type and map to a secondary label
   // Unknown types are warned and skipped rather than aborting the entire push.
   // The skip count is reported in the final summary so a silent data loss is
-  // visible to the LLM (BUG-02 in 2026-06-24_10-58_grasp-interview-report.md).
+  // visible to the LLM (BUG-02 in 2026-06-24_10-58_grasp-concept-report.md).
   let skippedCount = 0;
   let writtenCount = 0;
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
@@ -354,7 +355,7 @@ async function pushInterviewGraph(projectRoot) {
         normaliseNodeType(node.type) ||
         (node.id ? normaliseNodeType(node.id.split(":")[0]) : null);
       if (!TYPE_TO_LABEL[derivedType]) {
-        console.error(`push-interview-graph.mjs: Unknown node type '${node.type}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
+        console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
         skippedCount++;
         return false;
       }
@@ -367,14 +368,14 @@ async function pushInterviewGraph(projectRoot) {
 
   const neo4jConfig = getNeo4jConfig(projectRoot);
   if (!neo4jConfig) {
-    console.error("push-interview-graph.mjs: No Neo4j configuration found");
+    console.error("push-concept-graph.mjs: No Neo4j configuration found");
     process.exit(1);
   }
 
   // Check connection type — if cypher-shell is requested, use it directly
   const connectionType = getConnectionType();
   if (connectionType === "cypher-shell") {
-    pushInterviewGraphViaCypherShell(neo4jConfig, graphData);
+    pushConceptGraphViaCypherShell(neo4jConfig, graphData);
     return; // never reached
   }
 
@@ -407,11 +408,11 @@ async function pushInterviewGraph(projectRoot) {
       driverAvailable = true;
     }
   } catch (err) {
-    console.error(`push-interview-graph.mjs: neo4j-driver not available (${err.message}) — will use cypher-shell fallback.`);
+    console.error(`push-concept-graph.mjs: neo4j-driver not available (${err.message}) — will use cypher-shell fallback.`);
   }
 
   if (!driverAvailable) {
-    pushInterviewGraphViaCypherShell(neo4jConfig, graphData);
+    pushConceptGraphViaCypherShell(neo4jConfig, graphData);
     return; // never reached
   }
 
@@ -469,7 +470,7 @@ async function pushInterviewGraph(projectRoot) {
             name: node.name || "",
             summary: node.summary || "",
             kind: "knowledge",
-            source: "interview",
+            source: "concept",
             type: node.type,
             tags: node.tags || [],
             generatedAt: node.generatedAt || new Date().toISOString(),
@@ -520,7 +521,7 @@ async function pushInterviewGraph(projectRoot) {
 
       // Ensure layer exists
       await session.run(
-        `MATCH (n:Knowledge {source: 'interview'}) WITH collect(n.id) AS nodeIds
+        `MATCH (n:Knowledge {source: 'concept'}) WITH collect(n.id) AS nodeIds
          MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds`
       );
 
@@ -532,7 +533,7 @@ async function pushInterviewGraph(projectRoot) {
       );
       const orphans = orphanCheckResult.records.map(r => ({ id: r.get("id"), type: r.get("type") }));
       if (orphans.length > 0) {
-        console.error(`push-interview-graph.mjs: WARNING — ${orphans.length} node(s) have no secondary label:`);
+        console.error(`push-concept-graph.mjs: WARNING — ${orphans.length} node(s) have no secondary label:`);
         for (const o of orphans) {
           console.error(`  ${o.id} (type: ${o.type})`);
         }
@@ -543,22 +544,22 @@ async function pushInterviewGraph(projectRoot) {
   }
 
   try {
-    await withRetry(runDriverAttempt, { retries: 3, delayMs: retryDelayMs, label: "push-interview-graph.mjs" });
+    await withRetry(runDriverAttempt, { retries: 3, delayMs: retryDelayMs, label: "push-concept-graph.mjs" });
     if (skippedCount > 0) {
       const totalNodes = (graphData.nodes || []).length;
-      console.error(`push-interview-graph.mjs: Interview graph push completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
+      console.error(`push-concept-graph.mjs: Concept plan graph push completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
       process.exit(2);
     }
     const totalNodes = (graphData.nodes || []).length;
-    console.log(`push-interview-graph.mjs: Interview graph pushed to Neo4j successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
+    console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
     process.exit(0);
   } catch (err) {
-    console.error(`push-interview-graph.mjs: Failed to push interview graph: ${err.message}`);
+    console.error(`push-concept-graph.mjs: Failed to push concept plan graph: ${err.message}`);
     // Emit a specific DNS diagnostic before falling back
     const errMsg = err.message || "";
     if (errMsg.includes("ENOTFOUND") || errMsg.includes("EAI_AGAIN") || errMsg.includes("getaddrinfo")) {
       process.stderr.write(
-        `push-interview-graph.mjs: DNS resolution failed for ${neo4jHostname}.\n` +
+        `push-concept-graph.mjs: DNS resolution failed for ${neo4jHostname}.\n` +
         `If running in a container or sandbox (e.g. Codex), ensure the container's DNS\n` +
         `can resolve this hostname. Set NEO4J_CONNECTION_TYPE=cypher-shell as a workaround\n` +
         `if cypher-shell is installed.\n`
@@ -572,9 +573,9 @@ async function pushInterviewGraph(projectRoot) {
         errMsg.includes("ServiceUnavailable") ||
         errMsg.includes("Security error") ||
         !driverAvailable) {
-      console.error("push-interview-graph.mjs: Retrying via cypher-shell fallback...");
-      pushInterviewGraphViaCypherShell(neo4jConfig, graphData);
-      return; // pushInterviewGraphViaCypherShell calls process.exit internally
+      console.error("push-concept-graph.mjs: Retrying via cypher-shell fallback...");
+      pushConceptGraphViaCypherShell(neo4jConfig, graphData);
+      return; // pushConceptGraphViaCypherShell calls process.exit internally
     }
     process.exit(1);
   } finally {
@@ -585,11 +586,11 @@ async function pushInterviewGraph(projectRoot) {
 const projectRoot = process.argv[2];
 
 if (!projectRoot) {
-  console.error("Usage: node push-interview-graph.mjs <project-root>");
+  console.error("Usage: node push-concept-graph.mjs <project-root>");
   process.exit(1);
 }
 
-pushInterviewGraph(projectRoot).catch((err) => {
-  console.error(`push-interview-graph.mjs: Unexpected error: ${err.message}`);
+pushConceptGraph(projectRoot).catch((err) => {
+  console.error(`push-concept-graph.mjs: Unexpected error: ${err.message}`);
   process.exit(1);
 });

@@ -20,7 +20,7 @@ The core idea is a **two-graph system**:
 
 - **Knowledge graph** — domain and product knowledge: business features, actors, operations,
   business rules, decisions, and constraints. Populated by `/grasp-domain` (from code) and
-  `/grasp-interview` (from the Product Specialist).
+  `/grasp-concept` (from the Product Specialist).
 
 The knowledge graph stores two kinds of knowledge:
 - **Implemented** — what the codebase currently does
@@ -31,17 +31,17 @@ The knowledge graph stores two kinds of knowledge:
 ```
 1. /grasp           → analyze the codebase, build the structural graph
 2. /grasp-domain    → mine domain and feature knowledge from the code
-3. /grasp-interview        → interview the Product Owner, extract planned feature knowledge
+3. /grasp-concept   → plan a concept with the specialist, extract planned feature knowledge
 4. Use the graph    → create tasks, implementation plans, test cases, and drive implementation
 ```
 
-The `/grasp-interview` interview is relentless and structured: questions go one at a time,
-each aspect of the feature is explored in depth (actors, operations, entities, business rules,
-decisions, risks, integrations), and a gap-analysis loop runs after the initial interview to
-surface contradictions, undefined terms, and unmitigated risks before anything is written as
-final. The result is a structured knowledge graph of `Feature`, `Actor`, `Operation`, `Entity`,
-`BusinessRule`, `Decision`, `Constraint`, `Concept`, `Claim`, and `Risk` nodes — each tagged
-with `source: "interview"` to distinguish specialist intent from code-mined facts.
+The `/grasp-concept` skill is relentless and structured: the specialist is engaged one aspect
+at a time, each aspect of the feature is explored in depth (actors, operations, entities,
+business rules, decisions, risks, integrations), and a gap-analysis loop runs after the initial
+planning to surface contradictions, undefined terms, and unmitigated risks before anything is
+written as final. The result is a structured knowledge graph of `Feature`, `Actor`, `Operation`,
+`Entity`, `BusinessRule`, `Decision`, `Constraint`, `Concept`, `Claim`, and `Risk` nodes — each
+tagged with `source: "concept"` to distinguish specialist intent from code-mined facts.
 
 ### Why This Matters
 
@@ -76,13 +76,13 @@ graph in Neo4j.
 
 Derives business domains, features, and flows from the codebase graph.
 
-### 4. Interview the Product Owner
+### 4. Plan a concept with the Product Specialist
 
 ```bash
-/grasp-interview "new feature area"
+/grasp-concept "new feature area"
 ```
 
-Conducts a structured interview to extract planned knowledge — what the Product Specialist wants, what rules apply,
+Engages the specialist in a structured concept plan to extract planned knowledge — what the Product Specialist wants, what rules apply,
 who the actors are, what the constraints are. Stores everything in the knowledge graph.
 
 ### 5. Search and explore
@@ -120,7 +120,7 @@ curl -fsSL https://raw.githubusercontent.com/akimkelar/Grasp-It/main/install.sh 
 ```
 /grasp-domain     # understand business domains and features
 /grasp-search How does authentication work?   # query the graph
-/grasp-interview "payments"    # capture product requirements
+/grasp-concept "payments"      # capture product requirements
 ```
 
 **First-time setup:** When `/grasp` runs for the first time, it will ask you a few questions to configure your Neo4j connection (URI, database, username, password). Your credentials are stored locally in a `.env` file and never shared.
@@ -153,7 +153,7 @@ The installer will detect if Claude Code is installed and copy the plugin to the
 |-------|---------|--------|
 | `/grasp` | Full codebase analysis | Neo4j codebase graph |
 | `/grasp-domain` | Extract business domains and features from code | Knowledge graph (implemented) |
-| `/grasp-interview` | Interview Product Specialist, extract planned knowledge | Knowledge graph (planned) |
+| `/grasp-concept` | Plan concepts with the Product Specialist, extract planned knowledge | Knowledge graph (planned) |
 | `/grasp-search` | Query the graph before coding | Architecture understanding |
 | `/grasp-diff` | Analyze change impact | Affected components |
 | `/grasp-explain` | Deep-dive into a specific file or function | Plain-English explanation |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The graph is **derived knowledge** — it is produced by analysis scripts and LLM agents from source code and PO interviews. When the sources change, the graph can become stale. Staleness must be controlled and visible.
+The graph is **derived knowledge** — it is produced by analysis scripts and LLM agents from source code and concept plan sessions. When the sources change, the graph can become stale. Staleness must be controlled and visible.
 
 ## How "New" Code Is Determined
 
@@ -150,7 +150,7 @@ The property is populated on these knowledge node types when `source: "code_anal
 - `Risk`
 - `Constraint`
 
-Nodes with `source: "user_input"` or `source: "llm_generated"` typically do not have `sourceFiles` since they are derived from PO interviews or LLM inference rather than direct code analysis.
+Nodes with `source: "user_input"` or `source: "llm_generated"` typically do not have `sourceFiles` since they are derived from concept plans or LLM inference rather than direct code analysis.
 
 ### What it tracks
 
@@ -259,11 +259,11 @@ In single-user setups, both checks often agree. In multi-user setups, they can d
 |-----------|------------|
 | `implemented` feature has no `IMPLEMENTED_BY` edges | Re-run `/grasp-domain` to re-link to code |
 | Feature has only `legacy` edges | Re-run `/grasp-domain` — code was refactored, new edges expected |
-| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-interview` to update status, or manually update |
+| `planned` feature became `implemented` but old entry remains | Re-run `/grasp-concept` to update status, or manually update |
 | Actor/BusinessRule/Entity has no relationships | Review with PO — node may be incorrect or deprecated |
 | Decision is `deprecated` | Archive or delete; review if any constraints depend on it |
 | `IMPLEMENTED_BY` edge to file with stale `analyzedAtCommit` | Re-run `/grasp` to re-analyze the file; re-run `/grasp-domain` to refresh knowledge links |
-| Knowledge node with stale `sourceCommit` | Re-run the originating skill (`/grasp-domain` for code-analysis nodes, `/grasp-interview` for interview nodes) to re-derive the node at current HEAD; update `generatedAt` and `sourceCommit` |
+| Knowledge node with stale `sourceCommit` | Re-run the originating skill (`/grasp-domain` for code-analysis nodes, `/grasp-concept` for concept nodes) to re-derive the node at current HEAD; update `generatedAt` and `sourceCommit` |
 | Knowledge node has `sourceFiles` referencing deleted files | Review the node — if the underlying concept no longer exists, archive or delete the node; if files were renamed, update `sourceFiles` and re-run analysis |
 | `IMPLEMENTED_BY` edge to deleted file | Re-run `/grasp-domain` to re-derive knowledge from remaining code; orphan check may reveal nodes that need manual cleanup |
 
@@ -362,6 +362,6 @@ When a file is deleted:
 
 Both approaches are needed because `sourceFiles` and `IMPLEMENTED_BY` can diverge:
 - A `Feature` may have `sourceFiles: ["src/auth/old.ts"]` but `IMPLEMENTED_BY` to a different file that still exists (the feature was re-implemented elsewhere)
-- A `Feature` may have `IMPLEMENTED_BY` to a deleted file but no `sourceFiles` (it was created from a PO interview, not code analysis)
+- A `Feature` may have `IMPLEMENTED_BY` to a deleted file but no `sourceFiles` (it was created from a concept plan, not code analysis)
 
 The resolution workflow should check both: first identify nodes via `sourceFiles`, then via `IMPLEMENTED_BY` to deleted files, then merge the results and review each for archive or re-derivation.

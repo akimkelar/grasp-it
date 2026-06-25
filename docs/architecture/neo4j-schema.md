@@ -11,15 +11,15 @@ Grasp-It builds two complementary knowledge graphs stored in a **single Neo4j da
 - **Knowledge subgraph** — product and domain knowledge: business domains, features, operations,
   actors, business rules, decisions, and constraints. Populated by:
   - `/grasp-domain` — mines domain and feature knowledge from the codebase
-  - `/grasp-interview` — interviews the Product Owner to distil planned feature knowledge
+  - `/grasp-concept` — plans a concept with the specialist to distil planned feature knowledge
 
 The knowledge subgraph stores knowledge of two kinds:
 - **Implemented** — what the codebase currently does, extracted by analysis
-- **Planned** — what the PO envisions for a new or changed feature, extracted from interviews
+- **Planned** — what the specialist envisions for a new or changed feature, extracted from concept plan sessions
 
 Knowledge nodes carry a `source` property that records where the knowledge came from:
 - `"code-analysis"` — mined from the codebase by `/grasp-domain`
-- `"interview"` — extracted from a specialist/PO conversation by `/grasp-interview`
+- `"concept"` — extracted from a concept plan session with the specialist by `/grasp-concept`
 - `"wiki"` — ingested from documentation by `/grasp-knowledge` (future)
 
 The same node type can appear from either source. The `source` property tells them apart — use it to distinguish implemented facts from specialist-described intent.
@@ -60,7 +60,7 @@ Node labels are Neo4j-friendly PascalCase strings (e.g. `File`, `BusinessRule`).
 Relationship types are UPPER_SNAKE_CASE (e.g. `:CONTAINS`, `:IMPLEMENTED_BY`).
 
 Each node's subgraph origin is tracked by the `kind` property (`"codebase"` or `"knowledge"`).
-Knowledge nodes additionally carry a `source` property (`"code-analysis"` | `"interview"` | `"wiki"`)
+Knowledge nodes additionally carry a `source` property (`"code-analysis"` | `"concept"` | `"wiki"`)
 that records which skill produced them — enabling queries that distinguish implemented facts from
 specialist-described intent.
 
@@ -117,13 +117,13 @@ All codebase nodes use the `Codebase:` grouping label with a secondary type labe
 
 ### Knowledge Nodes
 
-Business concepts, domain models, and LLM-facts extracted from wikis and interviews. These are the domain-model nodes created by the knowledge-layer skills.
+Business concepts, domain models, and LLM-facts extracted from wikis and concept plan sessions. These are the domain-model nodes created by the knowledge-layer skills.
 
 All knowledge nodes use the `Knowledge:` grouping label with a secondary type label (e.g., `Knowledge:Domain`).
 
 #### All Knowledge Nodes
 
-All knowledge nodes carry `generatedAt` (ISO 8601 timestamp). Code-analysis nodes additionally carry `sourceCommit` and `sourceFiles[]`; interview nodes do not.
+All knowledge nodes carry `generatedAt` (ISO 8601 timestamp). Code-analysis nodes additionally carry `sourceCommit` and `sourceFiles[]`; concept nodes do not.
 
 | Label | Description | Properties |
 |-------|-------------|------------|
@@ -132,39 +132,39 @@ All knowledge nodes carry `generatedAt` (ISO 8601 timestamp). Code-analysis node
 | `Actor` | User role or system agent | `id`, `name`, `summary`, `permissions[]`, `restrictions[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
 | `BusinessRule` | High-level business policy | `id`, `name`, `summary`, `ruleText`, `status`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
 | `Operation` | A meaningful action within a feature | `id`, `name`, `summary`, `status`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
-| `Entity` | Named business object (e.g. Invoice, Interview) | `id`, `name`, `summary`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
+| `Entity` | Named business object (e.g. Invoice, Session) | `id`, `name`, `summary`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
 | `Risk` | Potential negative outcome: implementation hazard, calculation pitfall, external dependency failure | `id`, `name`, `summary`, `severity`, `probability`, `mitigation`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
 | `Constraint` | Technical invariant or access condition enforced by the codebase or stated by a specialist | `id`, `name`, `condition`, `invariant`, `scope[]`, `source`, `tags[]`, `generatedAt`, `sourceCommit?`, `sourceFiles[]?`, `author?` |
 | `Decision` | Commitment or resolved question | `id`, `name`, `summary`, `rationale`, `status`, `scope[]`, `tags[]`, `generatedAt`, `author?` |
 | `Concept` | Key abstraction or topic area named by the specialist | `id`, `name`, `summary`, `subConcepts[]`, `tags[]`, `generatedAt`, `author?` |
-| `Claim` | An assertion made during the interview | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]`, `generatedAt`, `author?` |
+| `Claim` | An assertion made during the concept plan | `id`, `name`, `summary`, `rationale`, `confidence`, `tags[]`, `generatedAt`, `author?` |
 
 `sourceCommit?` and `sourceFiles[]?` are present only on `source: "code-analysis"` nodes.
-`author?` is present only on `source: "interview"` nodes — the name or role of the specialist who provided the knowledge.
+`author?` is present only on `source: "concept"` nodes — the name or role of the specialist who provided the knowledge.
 
 `sourceCommit?` and `sourceFiles[]?` are present only on `source: "code-analysis"` nodes.
 
 **`Claim.confidence`:** `"tentative"` | `"agreed"`
 
-#### Node Reuse Guidelines for Interviews
+#### Node Reuse Guidelines for Concept Plans
 
-During an interview, the skill must check the graph before creating new nodes. The same node types can appear from either source — only the `source` property differs.
+During a concept plan, the skill must check the graph before creating new nodes. The same node types can appear from either source — only the `source` property differs.
 
-| Node type | Behavior in interview |
-|-----------|----------------------|
-| `Domain` | **Reuse existing.** In 95%+ of interviews the domain already exists. Find it in the graph and attach the feature to it directly (new feature) or indirectly (via an existing feature). Create a new domain only in extreme cases. |
-| `Feature` | **Reuse existing or create new.** If the interview is about a new feature, create it. If about an existing feature, find and extend it. |
-| `Operation` | **Check existing.** If the interviewed user mentions an operation concept already in the graph, reuse it. Otherwise create a new one. |
+| Node type | Behavior in concept plan |
+|-----------|--------------------------|
+| `Domain` | **Reuse existing.** In 95%+ of concept plans the domain already exists. Find it in the graph and attach the feature to it directly (new feature) or indirectly (via an existing feature). Create a new domain only in extreme cases. |
+| `Feature` | **Reuse existing or create new.** If the concept plan is about a new feature, create it. If about an existing feature, find and extend it. |
+| `Operation` | **Check existing.** If the specialist mentions an operation concept already in the graph, reuse it. Otherwise create a new one. |
 | `Actor` | **Check existing.** Reuse known actors from the graph. Create new actors only if genuinely new roles are discovered. |
 | `BusinessRule` | **Can be created.** One of the most important nodes for business logic. |
 | `Entity` | **Check existing.** Ambiguous, duplicate, or synonym entities should be avoided. Check the graph for similar entities and ask the user if it's the same or different. |
 | `Risk` | **Can be created.** Both code-visible and specialist-identified risks are stored the same way. |
-| `Constraint` | **Can be created.** Technical invariants or access conditions stated during interview. |
-| `Decision` | **Interview-specific.** Created only during interviews. Resolved questions and commitments. |
-| `Concept` | **Interview-specific.** Key abstractions named by the specialist. |
-| `Claim` | **Interview-specific.** Assertions from the interview. |
+| `Constraint` | **Can be created.** Technical invariants or access conditions stated during concept planning. |
+| `Decision` | **Concept-specific.** Created only during concept planning. Resolved questions and commitments. |
+| `Concept` | **Concept-specific.** Key abstractions named by the specialist. |
+| `Claim` | **Concept-specific.** Assertions from the concept plan. |
 
-**Interview-specific nodes** (only from `/grasp-interview`): `Decision`, `Concept`, `Claim`.
+**Concept-specific nodes** (only from `/grasp-concept`): `Decision`, `Concept`, `Claim`.
 
 **Critical nodes for graph connectivity**: `Domain` and `Feature` must always be connected — they form the backbone of the graph structure.
 
@@ -201,7 +201,7 @@ All use the `Codebase:` grouping label with their secondary type label.
 ### Knowledge Provenance Nodes (future — `/grasp-knowledge` only)
 
 These nodes are produced exclusively by the `/grasp-knowledge` skill from wikis, Confluence, or
-external knowledge-base sources. They are **not** extracted from codebases or PO interviews.
+external knowledge-base sources. They are **not** extracted from codebases or concept plan sessions.
 
 | Label | Description | Source | ID pattern |
 |-------|-------------|--------|------------|
@@ -209,13 +209,13 @@ external knowledge-base sources. They are **not** extracted from codebases or PO
 | `Topic` | Topic or category node | `/grasp-knowledge` | `topic:<slug>` |
 | `Source` | Reference or citation | `/grasp-knowledge` | `source:<slug>` |
 
-> **Note:** `Claim` was previously reserved for `/grasp-knowledge`. It is now a first-class PO
-> Interview Layer node — see above. Claims produced by `/grasp-interview` carry `source: "interview"`;
+> **Note:** `Claim` was previously reserved for `/grasp-knowledge`. It is now a first-class Concept
+> Plan Layer node — see above. Claims produced by `/grasp-concept` carry `source: "concept"`;
 > claims produced by `/grasp-knowledge` carry `source: "wiki"`.
 
 ### Deferred Node Types
 
-Previously deferred `Concept`, `Claim`, and `Risk` have been promoted to the PO Interview Layer.
+Previously deferred `Concept`, `Claim`, and `Risk` have been promoted to the Concept Plan Layer.
 See that section above.
 
 Remaining deferred types (no clear use case or script signal):
@@ -241,11 +241,11 @@ Remaining deferred types (no clear use case or script signal):
 ### Shared Node Properties
 
 Every node carries:
-- `id: string` — unique identifier (e.g. `feature:interview-scheduling`, `file:src/utils.ts`)
+- `id: string` — unique identifier (e.g. `feature:session-scheduling`, `file:src/utils.ts`)
 - `name: string` — human-readable label
 - `type: string` — internal node category in lowercase/kebab-case (e.g. `"function"`, `"business-rule"`, `"domain"`)
 - `kind: string` — subgraph origin: `"codebase"` or `"knowledge"`
-- `source: string` — knowledge origin (knowledge nodes only): `"code-analysis"` | `"interview"` | `"wiki"`. Not set on codebase nodes.
+- `source: string` — knowledge origin (knowledge nodes only): `"code-analysis"` | `"concept"` | `"wiki"`. Not set on codebase nodes.
 - `summary: string` — LLM-generated description
 - `tags: string[]` — arbitrary tags
 - `complexity: "simple" | "moderate" | "complex"` — optional
@@ -256,10 +256,10 @@ Every node carries:
 - `sourceCommit: string` — git commit hash at which this node was derived from code; present only on code-analysis nodes (`source: "code-analysis"`)
 - `sourceFiles: string[]` — array of file paths analyzed to derive this node; present only on code-analysis nodes (`source: "code-analysis"`)
 
-Interview nodes (`source: "interview"`) carry `generatedAt` but not `sourceCommit` or `sourceFiles`.
+Concept nodes (`source: "concept"`) carry `generatedAt` but not `sourceCommit` or `sourceFiles`.
 
 The `source` property is the primary way to distinguish implemented knowledge (mined from code by
-`/grasp-domain`) from specialist-described intent (captured by `/grasp-interview`). The same
+`/grasp-domain`) from specialist-described intent (captured by `/grasp-concept`). The same
 `Feature` or `BusinessRule` can appear from both sources — use `source` to tell them apart, and
 `status` to understand how far implementation has progressed.
 
@@ -334,7 +334,7 @@ Relationships used by non-source-code file types (`Document`, `Service`, `Pipeli
 | `:GOVERNS` | `BusinessRule` | `Feature` / `Operation` | Rule governs feature or operation | `weight: float` |
 | `:USES_ENTITY` | `Feature` / `Operation` | `Entity` | Feature/operation works with an entity | `weight: float` |
 
-### PO Interview Relationships (knowledge)
+### Concept Plan Relationships (knowledge)
 
 | Type | From | To | Description | Properties |
 |------|------|----|-------------|------------|
@@ -363,16 +363,16 @@ Relationships used by non-source-code file types (`Document`, `Service`, `Pipeli
 graph TD
     subgraph knowledge["Knowledge subgraph (kind: knowledge)"]
         D["Domain"]
-        F["Feature\nstatus: planned|partial|implemented\nsource: code-analysis|interview"]
-        O["Operation\nstatus: planned|partial|implemented\nsource: code-analysis|interview"]
+        F["Feature\nstatus: planned|partial|implemented\nsource: code-analysis|concept"]
+        O["Operation\nstatus: planned|partial|implemented\nsource: code-analysis|concept"]
         A["Actor"]
         E["Entity"]
-        BR["BusinessRule\nsource: code-analysis|interview"]
-        DC["Decision\nsource: interview"]
-        CO["Concept\nsource: interview"]
-        CL["Claim\nconfidence: tentative|agreed\nsource: interview"]
-        RK["Risk\nsource: code-analysis|interview"]
-        CN["Constraint\nsource: code-analysis|interview"]
+        BR["BusinessRule\nsource: code-analysis|concept"]
+        DC["Decision\nsource: concept"]
+        CO["Concept\nsource: concept"]
+        CL["Claim\nconfidence: tentative|agreed\nsource: concept"]
+        RK["Risk\nsource: code-analysis|concept"]
+        CN["Constraint\nsource: code-analysis|concept"]
 
         D -->|HAS_FEATURE| F
         F -->|HAS_OPERATION| O
@@ -502,7 +502,7 @@ RETURN r.name, r.severity, r.probability, r.summary,
 ORDER BY r.severity DESC
 ```
 
-### Risk and Constraint nodes from code analysis (not from interviews)
+### Risk and Constraint nodes from code analysis (not from concept plans)
 
 ```cypher
 MATCH (n) WHERE n.kind = "knowledge" AND n.source = "code-analysis"
@@ -511,7 +511,7 @@ RETURN labels(n)[1] AS type, n.name, n.summary
 ORDER BY type, n.name
 ```
 
-### Knowledge by source (code-derived vs interview-derived)
+### Knowledge by source (code-derived vs concept-derived)
 
 ```cypher
 MATCH (n) WHERE n.kind = "knowledge"
@@ -570,7 +570,7 @@ CREATE INDEX knowledge_name FOR (n) WHERE n.kind = "knowledge" ON (n.name);
 CREATE INDEX feature_status FOR (n:Feature) ON (n.status);
 CREATE INDEX operation_status FOR (n:Operation) ON (n.status);
 
--- Source filtering (code-analysis vs interview)
+-- Source filtering (code-analysis vs concept)
 CREATE INDEX knowledge_source FOR (n) WHERE n.kind = "knowledge" ON (n.source);
 
 -- Risk filtering
@@ -627,7 +627,7 @@ Internal `type` values (JSON / schema.ts) are lowercase or kebab-case. Neo4j lab
 | `Class` | `class` | `class:<path>:<name>` | `class:src/auth/AuthService.ts:AuthService` |
 | `Module` | `module` | `module:<name>` | `module:auth` |
 | `Config` | `config` | `config:<relative-path>` | `config:.env.example` |
-| `Endpoint` | `endpoint` | `endpoint:<method>:<path>` | `endpoint:POST:/api/interviews` |
+| `Endpoint` | `endpoint` | `endpoint:<method>:<path>` | `endpoint:POST:/api/sessions` |
 | `Table` | `table` | `table:<name>` | `table:users` |
 | `Document` | `document` | `document:<relative-path>` | `document:docs/README.md` |
 | `Service` | `service` | `service:<name>` | `service:api` |
@@ -635,11 +635,11 @@ Internal `type` values (JSON / schema.ts) are lowercase or kebab-case. Neo4j lab
 | `Schema` | `schema` | `schema:<relative-path>` | `schema:openapi.yaml` |
 | `Resource` | `resource` | `resource:<name>` | `resource:aws_s3_bucket.uploads` |
 | `Domain` | `domain` | `domain:<kebab-name>` | `domain:auth` |
-| `Feature` | `feature` | `feature:<kebab-name>` | `feature:interview-scheduling` |
+| `Feature` | `feature` | `feature:<kebab-name>` | `feature:session-scheduling` |
 | `Operation` | `operation` | `operation:<kebab-name>` | `operation:send-invitation` |
 | `Actor` | `actor` | `actor:<kebab-name>` | `actor:agency-user` |
 | `BusinessRule` | `business-rule` ¹ | `business-rule:<kebab-name>` | `business-rule:manager-approval-only` |
-| `Entity` | `entity` | `entity:<kebab-name>` | `entity:interview` |
+| `Entity` | `entity` | `entity:<kebab-name>` | `entity:session` |
 | `Decision` | `decision` | `decision:<kebab-name>` | `decision:jwt-memory-only` |
 | `Constraint` | `constraint` | `constraint:<kebab-name>` | `constraint:no-localstorage` |
 | `Concept` | `concept` | `concept:<kebab-name>` | `concept:invoice-assignment` |

@@ -420,7 +420,7 @@ describe("knowledge node types", () => {
         id: "risk:invoice-rounding",
         type: "risk" as NodeType,
         kind: "knowledge",
-        source: "interview",
+        source: "concept",
         name: "Invoice rounding inconsistency",
         summary: "Rounding applied per-line vs total produces different results",
         complexity: "complex",
@@ -435,14 +435,14 @@ describe("knowledge node types", () => {
 
     it("accepts risk severity enum values", () => {
       for (const severity of ["low", "medium", "high", "critical"] as const) {
-        const node = { id: `risk:test-${severity}`, type: "risk" as NodeType, kind: "knowledge", source: "interview", name: "Test", summary: "Test", complexity: "simple" as const, severity, tags: [] };
+        const node = { id: `risk:test-${severity}`, type: "risk" as NodeType, kind: "knowledge", source: "concept", name: "Test", summary: "Test", complexity: "simple" as const, severity, tags: [] };
         expect(GraphNodeSchema.parse(node)).toBeDefined();
       }
     });
 
     it("accepts risk probability enum values", () => {
       for (const probability of ["low", "medium", "high"] as const) {
-        const node = { id: `risk:test-${probability}`, type: "risk" as NodeType, kind: "knowledge", source: "interview", name: "Test", summary: "Test", complexity: "simple" as const, probability, tags: [] };
+        const node = { id: `risk:test-${probability}`, type: "risk" as NodeType, kind: "knowledge", source: "concept", name: "Test", summary: "Test", complexity: "simple" as const, probability, tags: [] };
         expect(GraphNodeSchema.parse(node)).toBeDefined();
       }
     });

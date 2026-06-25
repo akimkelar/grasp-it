@@ -71,7 +71,7 @@ export interface GraphNode {
   analyzedAtCommit?: string;                      // File (git commit hash at which file was last analyzed)
   // Shared node properties
   kind?: "codebase" | "knowledge" | "project";
-  source?: "code-analysis" | "interview" | "wiki";
+  source?: "code-analysis" | "concept" | "wiki";
   // Risk node properties
   severity?: "low" | "medium" | "high" | "critical";
   probability?: "low" | "medium" | "high";

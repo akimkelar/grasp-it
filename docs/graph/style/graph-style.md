@@ -50,13 +50,13 @@ Domain is violet, gradient deepens toward blue as importance decreases. **Border
 
 `Domain` (KA-1, violet) → `Feature` (KA-2, blue-violet) → `BusinessRule` (KA-3, cornflower blue) → `Actor` (KA-4) → `Operation` (KA-5) → `Entity` (KA-6) → `Risk` (KA-7, danger) → `Constraint` (KA-8, danger)
 
-**Knowledge Interview Layer** — rose to pink (hue 328° → 348°)
-Interview-derived nodes use rose-pink tones. **Border: lighter pink** (`#E890B0` family) distinguishes interview source. Note: Decision, Concept, Claim appear ONLY from interviews.
+**Knowledge Concept Layer** — rose to pink (hue 328° → 348°)
+Concept-derived nodes use rose-pink tones. **Border: lighter pink** (`#E890B0` family) distinguishes concept source. Note: Decision, Concept, Claim appear ONLY from concept plans.
 
 `Decision` (KI-1, rose) → `Concept` (KI-2) → `Claim` (KI-3)
 
 **Danger nodes** — rose-pink to amber (hue 328° → 46°)
-Risk and Constraint nodes appear in both code-analysis and interview layers but maintain their danger spectrum colors for immediate recognition.
+Risk and Constraint nodes appear in both code-analysis and concept layers but maintain their danger spectrum colors for immediate recognition.
 
 `Risk` (DA-1, rose-pink) → `Constraint` (DA-2, orange-red)
 
@@ -68,7 +68,7 @@ Risk and Constraint nodes appear in both code-analysis and interview layers but 
 | **Codebase** | `CONTAINS`, `IMPORTS`, `EXPORTS`, `INHERITS`, `IMPLEMENTS`, `CALLS`, `READS_FROM`, `WRITES_TO`, `CONFIGURES`, `TESTED_BY` | `#3A9E6A` | 1px |
 | **Knowledge** | `SEQUENCE`, `PERFORMED_BY`, `RESTRICTED_FOR`, `GOVERNS`, `USES_ENTITY`, `DECIDES`, `SUB_CONCEPT_OF`, `IMPLEMENTS`, `SUPPORTS`, `APPLIES_IN`, `HAS_RISK`, `MITIGATED_BY` | `#4A7AAE` | 1px |
 | **Bridge** | `IMPLEMENTED_BY` | `#9A6AC8` | 2px |
-| **Interview** | `CONSTRAINED_BY` | `#C87098` | 1px |
+| **Concept** | `CONSTRAINED_BY` | `#C87098` | 1px |
 
 ---
 
@@ -83,7 +83,7 @@ Risk and Constraint nodes appear in both code-analysis and interview layers but 
 | Muted label text | `#94A3B8` |
 | Node label text (codebase — green) | `#E8F8E8` |
 | Node label text (knowledge — blue) | `#E8EEFF` |
-| Node label text (interview — pink) | `#FFE8F2` |
+| Node label text (concept — pink) | `#FFE8F2` |
 | Node label text (danger) | `#FFE8F2` |
 
 ### Nodes
@@ -115,13 +115,13 @@ Hue decreases with size: larger aggregate nodes (Module) are blue-green/teal; sm
 | KA-7 | `Risk` | `#C4426E` | `#E898B4` | Rose-pink — danger node |
 | KA-8 | `Constraint` | `#D04E3A` | `#F09880` | Orange-red — danger node |
 
-#### Knowledge Interview Layer — rose (hue 328° → 348°), lighter pink border
+#### Knowledge Concept Layer — rose (hue 328° → 348°), lighter pink border
 
 | ID | Node | Fill | Stroke | Description |
 |----|------|------|--------|-------------|
 | KI-1 | `Decision` | `#C44878` | `#E890B0` | Rose — resolved question |
 | KI-2 | `Concept` | `#C04070` | `#E080A0` | Pink-rose — specialist abstraction |
-| KI-3 | `Claim` | `#BC3868` | `#D87090` | Rose — interview assertion |
+| KI-3 | `Claim` | `#BC3868` | `#D87090` | Rose — concept assertion |
 
 #### Infrastructure Layer — slate-blue (hue 200° → 210°), lighter blue-gray border
 
@@ -145,4 +145,4 @@ Hue decreases with size: larger aggregate nodes (Module) are blue-green/teal; sm
 | `SEQUENCE`, `PERFORMED_BY`, `RESTRICTED_FOR`, `GOVERNS`, `USES_ENTITY` | `#4A7AAE` | 1px | Knowledge |
 | `DECIDES`, `SUB_CONCEPT_OF`, `IMPLEMENTS`, `SUPPORTS`, `APPLIES_IN`, `HAS_RISK`, `MITIGATED_BY` | `#4A7AAE` | 1px | Knowledge |
 | `IMPLEMENTED_BY` | `#9A6AC8` | 2px | Bridge |
-| `CONSTRAINED_BY` | `#C87098` | 1px | Interview |
+| `CONSTRAINED_BY` | `#C87098` | 1px | Concept |

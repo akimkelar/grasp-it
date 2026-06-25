@@ -36,7 +36,7 @@ Typical inputs:
 - product specs
 - Jira and Confluence content
 - ADRs
-- interviews or curated summaries
+- concept plans or curated summaries
 
 Typical core nodes:
 

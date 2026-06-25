@@ -5,7 +5,7 @@
 The primary purpose of Grasp-It has shifted. The most important workflow is now:
 
 1. **`/grasp-domain`** — mine business domain and feature knowledge from the codebase
-2. **`/grasp-interview`** — interview the Product Owner to extract planned feature knowledge (business rules,
+2. **`/grasp-concept`** — plan a concept with the specialist to extract planned feature knowledge (business rules,
    decisions, constraints, actors, operations)
 
 The resulting graphs are then used to create tasks, build implementation plans, design test cases,
@@ -55,20 +55,20 @@ until a concrete use case justifies them:
 `Process`, `RuleAssessment`, `SubFeature`
 
 The following nodes exist in `schema.ts` for future use by `/grasp-knowledge` (wiki ingestion)
-but must **not** be created by codebase analysis or PO interview agents:
+but must **not** be created by codebase analysis or concept plan agents:
 
 `Article`, `Topic`, `Source`
 
-### PO Interview nodes (promoted from deferred)
+### Concept Plan nodes (promoted from deferred)
 
-`Concept`, `Claim`, and `Risk` have been promoted from deferred status to first-class PO Interview
-Layer nodes. They are created only by `/grasp-interview` during a specialist interview and carry
-`source: "interview"`.
+`Concept`, `Claim`, and `Risk` have been promoted from deferred status to first-class Concept
+Plan Layer nodes. They are created only by `/grasp-concept` during a concept plan session and carry
+`source: "concept"`.
 
 - **`Concept`** — a key abstraction or topic area named by the specialist. Replaces the vague
-  "optional catch-all" role with a structured node used to track what the interview covers.
-- **`Claim`** — an assertion made during the interview. Was reserved for `/grasp-knowledge` wiki
-  ingestion, but interview knowledge also consists of claims (tentative or agreed).
+  "optional catch-all" role with a structured node used to track what the concept plan covers.
+- **`Claim`** — an assertion made during the concept plan. Was reserved for `/grasp-knowledge` wiki
+  ingestion, but concept plan knowledge also consists of claims (tentative or agreed).
 - **`Risk`** — a potential negative outcome: implementation hazard, business exposure, logic pitfall,
   edge-case in calculation logic, data-loss scenario during migration. This is what specialists
   warn about; `BusinessRule` (policy) and `Constraint` (invariant) don't capture it.
@@ -77,21 +77,21 @@ Layer nodes. They are created only by `/grasp-interview` during a specialist int
 
 A `source` property has been added to all knowledge nodes:
 - `source: "code-analysis"` — nodes produced by `/grasp-domain` from codebase mining
-- `source: "interview"` — nodes produced by `/grasp-interview` from specialist interviews
+- `source: "concept"` — nodes produced by `/grasp-concept` from specialist concept plan sessions
 - `source: "wiki"` — nodes produced by `/grasp-knowledge` from wiki/Confluence ingestion (future)
 
 This separates implemented facts from specialist-described intent at the property level, enabling
-queries that distinguish what the code does from what the PO envisions.
+queries that distinguish what the code does from what the specialist envisions.
 
 ### Final node set
 
 **Codebase (scripts + LLM summaries):** `File`, `Function`, `Class`, `Module`, `Config`,
 `Table`, `Endpoint`
 
-**Knowledge — Business Layer (LLM-produced, source: code-analysis or interview):**
+**Knowledge — Business Layer (LLM-produced, source: code-analysis or concept):**
 `Domain`, `Feature`, `Operation`, `Actor`, `Entity`, `BusinessRule`, `Risk`, `Constraint`
 
-**Knowledge — PO Interview Layer (source: interview only):**
+**Knowledge — Concept Plan Layer (source: concept only):**
 `Decision`, `Concept`, `Claim`, `Risk`, `Constraint`
 
 **Bridge:** `IMPLEMENTED_BY` (`Feature / Operation / BusinessRule` → `File / Function / Class /
@@ -99,7 +99,7 @@ Endpoint`) with `{status, confidence}` — native relationship, single DB.
 
 The current schema serves code analysis well. It is missing the **product knowledge layer** needed
 to represent features, actors, business rules, and operations — the vocabulary that comes out of
-a PO interview and that bridges intent to implementation.
+a concept plan and that bridges intent to implementation.
 
 ---
 
@@ -186,7 +186,7 @@ Properties:
 **Extraction source:** LLM domain-analyzer agent, from script-produced entry points + file
 signatures + directory structure. No additional script work required.
 
-Why: `Domain` → `Feature` is the top-level navigation entry point that PO interviews and
+Why: `Domain` → `Feature` is the top-level navigation entry point that concept plans and
 `/grasp-domain` both produce naturally. `Feature` anchors everything — flows, rules, actors,
 operations, and code.
 
@@ -204,12 +204,12 @@ Properties:
 - `restrictions: string[]` — what they cannot do
 - `tags: string[]`
 
-**Extraction source:** `/grasp-interview` PO interview only. Scripts produce no actor signals.
+**Extraction source:** `/grasp-concept` concept plan only. Scripts produce no actor signals.
 Code may hint at roles (guard names, permission constants), but business-level actor
-definition requires the PO. Trying to infer actors from code alone would produce
+definition requires the specialist. Trying to infer actors from code alone would produce
 technical roles (e.g. "AdminUser", "AuthGuard") rather than business roles.
 
-Why: PO interviews explicitly produce "who can do X, who is restricted from Y". Without `Actor`,
+Why: concept plans explicitly produce "who can do X, who is restricted from Y". Without `Actor`,
 this knowledge is buried in constraint text and lost for queries.
 
 #### `BusinessRule`
@@ -228,11 +228,11 @@ Properties:
 - `scope: string[]`
 - `tags: string[]`
 
-**Extraction source:** Primarily `/grasp-interview` PO interview. Partially inferrable by the
+**Extraction source:** Primarily `/grasp-concept` concept plan. Partially inferrable by the
 domain-analyzer LLM from guard/middleware names and permission-checking code patterns
 (e.g. `@Roles('MANAGER')`, `if (!user.isAdmin) throw Forbidden`), but semantic intent
-requires PO confirmation. Domain-analyzer can produce draft `BusinessRule` nodes; PO
-interview promotes them to accepted.
+requires specialist confirmation. Domain-analyzer can produce draft `BusinessRule` nodes; the
+concept plan promotes them to accepted.
 
 Why: The current schema has `Constraint` (technical invariant with `condition`/`invariant`) and
 `Decision` (resolved question with `rationale`). Neither captures high-level business policies well.
@@ -253,13 +253,13 @@ Properties:
 - `tags: string[]`
 
 **Extraction source:** Both the domain-analyzer LLM (from entry points + exported function
-names in the script output) and `/grasp-interview` PO interview. The scripts surface raw operation
+names in the script output) and `/grasp-concept` concept plan. The scripts surface raw operation
 signals deterministically — HTTP endpoints, exported handler names, event handler names —
-which the LLM maps to named operations. PO interview adds operations not yet implemented and
+which the LLM maps to named operations. The concept plan adds operations not yet implemented and
 clarifies sequencing / constraints. This is the node type with the highest script-to-LLM
 signal ratio: a `POST /api/interviews/:id/invite` is already a near-complete operation signal.
 
-Why: The PO interview naturally produces operation sequences — "first this happens, then that,
+Why: The concept plan naturally produces operation sequences — "first this happens, then that,
 and only if condition X". `Operation` lets the graph represent ordering, branching, and
 parallelism explicitly. It also becomes the bridge from business intent to code implementation.
 
@@ -301,7 +301,7 @@ must be maintained at the application layer as a `codebaseIds: string[]` propert
 nodes, and resolved via application-level joins.
 
 This allows queries like:
-- "Which files implement the interview invitation feature?"
+- "Which files implement the invitation feature?"
 - "Is this operation still legacy-only or is there a target implementation?"
 
 ---
@@ -309,22 +309,22 @@ This allows queries like:
 ## What to Keep Unchanged
 
 - `Domain` — top-level domain node; unchanged
-- `Decision`, `Constraint` — PO interview output; unchanged and still useful
+- `Decision`, `Constraint` — concept plan output; unchanged and still useful
 - All codebase nodes (`File`, `Function`, `Class`, `Module`, `Config`, `Table`, `Endpoint`,
   `Document`, `Service`, `Pipeline`, `Schema`, `Resource`) — completely unchanged
 - All existing codebase relationships — unchanged
 
 **Note:** `Flow` and `Step` are **dropped** (see "Drop `Flow` and `Step`" in Final Decisions above).
-`Claim` is deferred to the knowledge provenance layer (`/grasp-knowledge`); it is not a PO interview
+`Claim` is deferred to the knowledge provenance layer (`/grasp-knowledge`); it is not a concept plan
 output in the current schema. `Concept` is deferred/optional.
 
 ---
 
 ## Rationale for the Distinction: BusinessRule vs Constraint
 
-These are two different vocabularies that show up at different levels of the interview:
+These are two different vocabularies that show up at different levels of the concept plan:
 
-- **PO level**: "Managers must approve" — this is a `BusinessRule`, stated as policy
+- **Concept plan level**: "Managers must approve" — this is a `BusinessRule`, stated as policy
 - **Technical level**: "when `approvalRequired` is true, `status` must not advance without
   `approvedBy` being set" — this is a `Constraint`, stated as an invariant
 
@@ -336,12 +336,12 @@ at the business level. Keeping them separate means the graph can answer both
 
 ## Rationale for Actor
 
-The entire premise of the PO interview in `/grasp-interview` is to extract "who can do what, who is
+The entire premise of the concept plan in `/grasp-concept` is to extract "who can do what, who is
 restricted from what, what processes run in which context to achieve which goal." Without `Actor`
 as a first-class node, the answer to "who" is scattered across constraint text and summaries,
 and is not queryable.
 
-`Actor` also enables the most common PO-interview patterns:
+`Actor` also enables the most common concept plan patterns:
 - "Only [actor] can perform [operation]" → `PERFORMED_BY`
 - "[actor] may not see/do [operation]" → `RESTRICTED_FOR`
 - "When [actor] does X, rule R applies" → `Actor` + `BusinessRule` + `GOVERNS`
@@ -354,7 +354,7 @@ Currently `Domain` connects directly to `Flow`. This works for process documenta
 the product concept of a "feature" — a named, versioned, deliverable slice of product behavior.
 
 `Feature` is the correct anchor because:
-- It is what PO interviews produce ("we are adding the Interview Scheduling feature")
+- It is what concept plans produce ("we are adding the Session Scheduling feature")
 - It is what tickets and tasks reference
 - It connects to flows (process), operations (actions), rules (governance), and code (implementation)
 - It carries `status: planned | implemented | partial` — the key split between what the PO
@@ -367,14 +367,14 @@ the product concept of a "feature" — a named, versioned, deliverable slice of 
 | Node | Script provides | LLM required | Skill that creates it |
 |------|----------------|--------------|----------------------|
 | `Feature` | URL paths, dir names, controller names | Yes — semantic grouping | `/grasp-domain` (domain-analyzer) |
-| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-interview` only |
-| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + PO confirmation | `/grasp-domain` draft, `/grasp-interview` accepted |
-| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-interview` |
+| `Actor` | Nothing reliable | Yes — business role definition | `/grasp-concept` only |
+| `BusinessRule` | Guard/permission patterns (draft) | Yes — semantic intent + specialist confirmation | `/grasp-domain` draft, `/grasp-concept` accepted |
+| `Operation` | HTTP endpoints, exported handler names | Yes — business naming + sequencing | `/grasp-domain` + `/grasp-concept` |
 | `Domain` | Entry point groupings (existing) | Yes (existing) | `/grasp-domain` (existing) |
-| `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-interview` (existing) |
-| `Concept` | Nothing | Yes — specialist names the abstraction | `/grasp-interview` only |
-| `Claim` | Nothing | Yes — assertions from interview | `/grasp-interview` only |
-| `Risk` | Nothing | Yes — hazards, pitfalls, edge cases from specialist | `/grasp-interview` only |
+| `Decision` / `Constraint` | Nothing | Yes (existing) | `/grasp-concept` (existing) |
+| `Concept` | Nothing | Yes — specialist names the abstraction | `/grasp-concept` only |
+| `Claim` | Nothing | Yes — assertions from concept plan | `/grasp-concept` only |
+| `Risk` | Nothing | Yes — hazards, pitfalls, edge cases from specialist | `/grasp-concept` only |
 | `File`, `Function`, `Class` | Full structural facts | Yes — summaries only | `/grasp` (existing) |
 | `Document`, `Service`, `Pipeline`, `Schema`, `Resource` | Non-code file parsers (zero LLM cost) | No — structure only | `/grasp` (existing) |
 | `Article`, `Topic`, `Claim`, `Source` | Nothing from codebase | Yes — wiki/knowledge-base extraction | `/grasp-knowledge` (future) |
@@ -627,9 +627,9 @@ tree-sitter-groovy   (ships tree-sitter-groovy.wasm — confirmed)
 | Drop `CONTAINS_FLOW`, `FLOW_STEP`, `CROSS_DOMAIN` | Removed with Flow/Step | ✅ Final |
 | Single database, `kind` property separation | Architecture decision | ✅ Final |
 | Add `source` property to all knowledge nodes | Schema property | ✅ Final |
-| Add `Concept` node (PO Interview Layer) | New knowledge node | ✅ Final |
-| Add `Claim` node (PO Interview Layer, also available to `/grasp-interview`) | Node reclassification | ✅ Final |
-| Add `Risk` node (PO Interview Layer) | New knowledge node | ✅ Final |
+| Add `Concept` node (Concept Plan Layer) | New knowledge node | ✅ Final |
+| Add `Claim` node (Concept Plan Layer, also available to `/grasp-concept`) | Node reclassification | ✅ Final |
+| Add `Risk` node (Concept Plan Layer) | New knowledge node | ✅ Final |
 | Add `SUB_CONCEPT_OF` | New relationship | ✅ Final |
 | Add `IMPLEMENTS` (Decision → Concept) | New relationship | ✅ Final |
 | Add `SUPPORTS` (Claim → Claim/Decision) | New relationship | ✅ Final |

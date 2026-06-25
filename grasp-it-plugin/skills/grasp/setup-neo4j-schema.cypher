@@ -47,7 +47,7 @@ CREATE INDEX operation_status IF NOT EXISTS FOR (n:Operation) ON (n.status);
 
 // =============================================================================
 // SOURCE FILTERING INDEX
-// Enables efficient queries like "all nodes produced from interviews" vs "all nodes mined from code"
+// Enables efficient queries like "all nodes produced from concept plans" vs "all nodes mined from code"
 // =============================================================================
 
 CREATE INDEX knowledge_source IF NOT EXISTS FOR (n:Knowledge) ON (n.source);

@@ -156,14 +156,14 @@ describe("saveDomainGraphToNeo4j", () => {
       run: vi.fn(async () => ({ records: [] })),
     };
 
-    const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain", source: "interview" })]);
+    const graph = makeDomainGraph([makeDomainNode({ id: "domain:test", name: "Test", type: "domain", source: "concept" })]);
 
     await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
     const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];
     const params = createCall[1]!;
 
-    expect(params.source).toBe("interview");
+    expect(params.source).toBe("concept");
   });
 
   it("updates Project singleton with domainAnalyzedAt and domainCommit", async () => {

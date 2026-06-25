@@ -1,9 +1,9 @@
 /**
- * Tests for cypher-shell path bugs in push-interview-graph.mjs
+ * Tests for cypher-shell path bugs in push-concept-graph.mjs
  *
  * Bug A: buildNodesCypher used `n.key = value` syntax inside a map literal.
  *        Valid Cypher requires bare key names with `:` separator: `key: value`.
- *        (push-interview-graph already used `:` but this test documents it)
+ *        (push-concept-graph already used `:` but this test documents it)
  * Bug B: Arrays were stored as JSON strings '["auth","api"]' instead of
  *        Cypher list literals ['auth', 'api'].
  * Bug D: URI conversion regex `neo4j\+?://` did not handle `neo4j+s://`.
@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from 'node:os';
 import { join } from "node:path";
 import { spawnSync } from 'node:child_process';
@@ -21,9 +21,9 @@ import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const SCRIPT_PATH = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-interview/push-interview-graph.mjs');
+const SCRIPT_PATH = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
 
-function runPushInterviewGraph(projectRoot, extraEnv = {}) {
+function runPushConceptGraph(projectRoot, extraEnv = {}) {
   const env = { ...process.env };
   for (const [key, val] of Object.entries(extraEnv)) {
     if (val === undefined) {
@@ -32,20 +32,29 @@ function runPushInterviewGraph(projectRoot, extraEnv = {}) {
       env[key] = val;
     }
   }
+  // Strip cypher-shell from PATH so the cypher-shell fallback in push-concept-graph.mjs
+  // fails fast (ENOENT) instead of hanging on an unreachable port. This makes the tests
+  // independent of whether cypher-shell is installed in the test environment.
+  if (env.PATH && !extraEnv.PATH) {
+    env.PATH = env.PATH
+      .split(':')
+      .filter(p => !existsSync(join(p, 'cypher-shell')))
+      .join(':');
+  }
   return spawnSync('node', [SCRIPT_PATH, projectRoot], {
     encoding: 'utf-8',
     env,
-    timeout: 30_000,
+    timeout: 25_000,
   });
 }
 
 // ── Test suite ───────────────────────────────────────────────────────────────
 
-describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
+describe('push-concept-graph.mjs — cypher-shell path bugs', () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'push-interview-graph-bug-'));
+    root = mkdtempSync(join(tmpdir(), 'push-concept-graph-bug-'));
     mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
   });
 
@@ -74,7 +83,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
 
       // NEO4J_TEST_MOCK=1 makes the driver fail fast so the cypher-shell fallback is entered.
       // PATH without cypher-shell means the fallback fails with our friendly ENOENT message.
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -92,7 +101,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { id: 'feature:auth', name: 'Auth Feature', summary: 'Auth', type: 'feature', tags: ['auth'] },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -113,7 +122,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { id: 'feature:auth', name: 'Auth Feature', summary: 'Auth', type: 'feature', tags: ['auth', 'api', 'v2'] },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -141,7 +150,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -170,7 +179,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\necho "$@" >&2\nexit 1\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -193,7 +202,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\necho "$@" >&2\nexit 1\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j+s://myhost.example.com:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -216,7 +225,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\necho "$@" >&2\nexit 1\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'bolt://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -241,7 +250,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
 
       // NEO4J_TEST_MOCK=1 makes driver fail fast, then the fallback tries cypher-shell
       // which is not in PATH, triggering the ENOENT friendly error message.
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -264,7 +273,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { id: 'domain:billing', name: 'Billing', summary: 'The billing domain', type: 'domain' },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -289,7 +298,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -315,7 +324,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { id: 'feature:good', name: 'Good', summary: 'Valid type', type: 'feature' },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -335,7 +344,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { id: 'notype:a', name: 'A', summary: 'Bad', type: 'notype' },
       ]);
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:9999',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -372,7 +381,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -404,7 +413,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
       const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-'));
       writeFileSync(join(mockDir, 'cypher-shell'), `#!/bin/sh\ncat >&2\nexit 0\n`, { mode: 0o755 });
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
@@ -438,7 +447,7 @@ describe('push-interview-graph.mjs — cypher-shell path bugs', () => {
         { mode: 0o755 },
       );
 
-      const result = runPushInterviewGraph(root, {
+      const result = runPushConceptGraph(root, {
         NEO4J_URI: 'neo4j://localhost:7687',
         NEO4J_USERNAME: 'neo4j',
         NEO4J_PASSWORD: 'password',
