@@ -139,9 +139,11 @@ describe('push-concept-graph.mjs', () => {
       expect(result.stderr).not.toContain('Unknown node type');
     });
 
-    it('skips unknown node type with a warning but does NOT abort the push', () => {
-      // Fix: unknown node types are now filtered out with a warning rather than
-      // calling process.exit(1), so valid nodes in the same batch still get pushed.
+    it('aborts with non-zero exit when any node has unknown type (atomic push)', () => {
+      // Fix: unknown node types now abort the entire push atomically rather than
+      // being silently filtered out, so partial graph writes never happen. The
+      // specific error message tells the LLM which form to use (kebab-case JSON
+      // `type`, not PascalCase Neo4j label).
       const nodesData = {
         nodes: [
           { id: 'node1', name: 'Test', summary: 'Test', type: 'unknown-type' },
@@ -158,19 +160,18 @@ describe('push-concept-graph.mjs', () => {
         NEO4J_TEST_MOCK: '1',
       });
 
-      // The warning message is printed but the script proceeds past the validation phase
+      // The specific error message is printed
       expect(result.stderr).toContain("Unknown node type 'unknown-type'");
-      // It should NOT exit early with "Nodes file not found" or similar pre-flight errors
-      expect(result.stderr).not.toContain('Nodes file not found');
-      // It reaches the driver/cypher-shell phase (not a pre-flight validation abort).
-      // With NEO4J_TEST_MOCK=1 and no cypher-shell in the default PATH, the script may
-      // exit 0 (cypher-shell fallback with no data to push) or 1 (connection error).
-      expect([0, 1]).toContain(result.status);
+      // The summary line confirms push was aborted (no partial writes)
+      expect(result.stderr).toMatch(/push aborted/i);
+      // Non-zero exit (BUG-02)
+      expect(result.status).not.toBe(0);
     });
 
-    it('skips unknown node type but still pushes valid nodes in same batch', () => {
-      // When a batch contains both valid and unknown-typed nodes, unknown ones are
-      // skipped (warned) and the rest of the batch continues to the push phase.
+    it('rejects entire batch atomically when any node has unknown type (no partial writes)', () => {
+      // When a batch contains both valid and unknown-typed nodes, the unknown
+      // node aborts the whole push — valid siblings are NOT written. This
+      // prevents inconsistent graph state from partial writes.
       const nodesData = {
         nodes: [
           { id: 'foobar:bad-node', name: 'Bad Node', summary: 'Has unknown type', type: 'foobar' },
@@ -188,11 +189,14 @@ describe('push-concept-graph.mjs', () => {
         NEO4J_TEST_MOCK: '1',
       });
 
-      // Warning about the bad node is emitted
+      // The bad node's specific error appears
       expect(result.stderr).toContain("Unknown node type 'foobar'");
-      // Script proceeds to the connection phase rather than aborting early
-      expect(result.stderr).toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED|neo4j-driver not available|cypher-shell/i);
-      expect(result.status).toBe(1);
+      // The summary mentions aborted push
+      expect(result.stderr).toMatch(/push aborted/i);
+      // Script does NOT reach the driver/cypher-shell phase
+      expect(result.stderr).not.toMatch(/Failed to push concept graph|Connection refused|ECONNREFUSED|neo4j-driver not available|cypher-shell/i);
+      // Non-zero exit
+      expect(result.status).not.toBe(0);
     });
   });
 

@@ -2,22 +2,26 @@
  * Tests for BUGS reported in
  *   ~/.grasp-it/bug-reports/2026-06-24_10-58_grasp-interview-report.md
  *
- * BUG-01 (script-side): PascalCase "BusinessRule" in `type` field of
- *         pr-nodes.json should be normalised to "business-rule" rather
- *         than silently skipped (defence in depth against LLM mistakes).
- * BUG-01 (SKILL.md):    Narrative instructions that tell the LLM to create
- *         BusinessRule nodes must use the kebab-case "business-rule" form,
- *         matching the type table and ID prefix convention.
- * BUG-02:               push-concept-graph.mjs must exit non-zero when
- *         any node was skipped (currently exits 0 even with skipped nodes,
- *         masking data loss).
- * BUG-03:               SKILL.md must define a fallback trigger for topic-
- *         driven concept plan sessions (the LLM should write to the graph
- *         after a bounded number of substantive answers even without a
- *         formal aspect paraphrase-check).
- * BUG-04:               SKILL.md must include a mandatory cross-aspect
- *         checklist that scans for Operations, Constraints, Claims, and
- *         Actors — the per-aspect lists alone produce sparse graphs.
+ * BUG-01 (post-fix, script-side): PascalCase "BusinessRule" in the `type`
+ *         field of pr-nodes.json must be REJECTED with a specific error
+ *         message that points to the kebab-case form and SKILL.md. The
+ *         previous defence-in-depth `normaliseNodeType()` mask hid LLM
+ *         confusion about which form to use; the safety net is gone.
+ * BUG-01 (SKILL.md):              Narrative instructions that tell the LLM
+ *         to create BusinessRule nodes must use the kebab-case
+ *         "business-rule" form, matching the type table and ID prefix
+ *         convention.
+ * BUG-02:                         push-concept-graph.mjs must exit non-zero
+ *         when any node is rejected (currently exits 0 even with skipped
+ *         nodes, masking data loss).
+ * BUG-03:                         SKILL.md must define a fallback trigger
+ *         for topic-driven concept plan sessions (the LLM should write to
+ *         the graph after a bounded number of substantive answers even
+ *         without a formal aspect paraphrase-check).
+ * BUG-04:                         SKILL.md must include a mandatory
+ *         cross-aspect checklist that scans for Operations, Constraints,
+ *         Claims, and Actors — the per-aspect lists alone produce sparse
+ *         graphs.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -73,11 +77,11 @@ function runPushConceptGraph(projectRoot, extraEnv = {}) {
 
 // ── Test suite ───────────────────────────────────────────────────────────────
 
-describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
+describe("BUG-01 (post-fix): PascalCase 'BusinessRule' is rejected with a specific error", () => {
   let root;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "concept-bug1-"));
+    root = mkdtempSync(join(tmpdir(), "concept-bug1-fix-"));
     mkdirSync(join(root, ".grasp-it", "intermediate"), { recursive: true });
   });
 
@@ -96,103 +100,114 @@ describe("BUG-01: PascalCase 'BusinessRule' type is normalised", () => {
     );
   }
 
-  function makeEchoingCypherShell() {
-    const mockDir = mkdtempSync(join(tmpdir(), "mock-cypher-"));
-    writeFileSync(
-      join(mockDir, "cypher-shell"),
-      `#!/bin/sh\ncat >&2\nexit 0\n`,
-      { mode: 0o755 },
-    );
-    return mockDir;
-  }
-
-  it("does NOT skip a node whose type is the PascalCase 'BusinessRule'", () => {
+  it("rejects a PascalCase 'BusinessRule' type with a specific error", () => {
     writeGraph([
       {
         id: "business-rule:foo",
         name: "Foo Rule",
         summary: "Test rule",
-        type: "BusinessRule",
-      },
-    ]);
-
-    const mockDir = makeEchoingCypherShell();
-    const result = runPushConceptGraph(root, {
-      NEO4J_URI: "neo4j://localhost:7687",
-      NEO4J_USERNAME: "neo4j",
-      NEO4J_PASSWORD: "password",
-      NEO4J_DATABASE: "grasp",
-      NEO4J_CONNECTION_TYPE: "cypher-shell",
-      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
-    });
-    rmSync(mockDir, { recursive: true, force: true });
-
-    // The PascalCase type must NOT trigger the unknown-type warning
-    expect(result.stderr).not.toContain("Unknown node type 'BusinessRule'");
-    // The MERGE for the rule must appear in the generated Cypher
-    expect(result.stderr).toContain("business-rule:foo");
-    expect(result.stderr).toContain("MERGE (n:Knowledge");
-  });
-
-  it("maps normalised PascalCase 'BusinessRule' to the PascalCase Neo4j label 'BusinessRule'", () => {
-    writeGraph([
-      {
-        id: "business-rule:surcharge-must-reference-settings",
-        name: "Surcharge Must Reference Settings",
-        summary: "Surcharge rules must reference settings",
-        type: "BusinessRule",
-      },
-    ]);
-
-    const mockDir = makeEchoingCypherShell();
-    const result = runPushConceptGraph(root, {
-      NEO4J_URI: "neo4j://localhost:7687",
-      NEO4J_USERNAME: "neo4j",
-      NEO4J_PASSWORD: "password",
-      NEO4J_DATABASE: "grasp",
-      NEO4J_CONNECTION_TYPE: "cypher-shell",
-      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
-    });
-    rmSync(mockDir, { recursive: true, force: true });
-
-    // The Cypher must set the PascalCase Neo4j label after MERGE
-    expect(result.stderr).toMatch(/SET n:`BusinessRule`/);
-    // The internal `type` property should be stored as kebab-case
-    expect(result.stderr).toMatch(/type:\s*'business-rule'/);
-  });
-
-  it("handles PascalCase 'BusinessRule' alongside kebab-case siblings without skipping any", () => {
-    writeGraph([
-      {
-        id: "business-rule:foo",
-        name: "Foo",
-        summary: "Foo rule",
         type: "BusinessRule", // PascalCase — the bug case
       },
-      {
-        id: "feature:bar",
-        name: "Bar",
-        summary: "Bar feature",
-        type: "feature", // already kebab/lowercase
-      },
     ]);
 
-    const mockDir = makeEchoingCypherShell();
     const result = runPushConceptGraph(root, {
       NEO4J_URI: "neo4j://localhost:7687",
       NEO4J_USERNAME: "neo4j",
       NEO4J_PASSWORD: "password",
       NEO4J_DATABASE: "grasp",
-      NEO4J_CONNECTION_TYPE: "cypher-shell",
-      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+      // No mock — validation must reject before driver/cypher-shell is invoked.
     });
-    rmSync(mockDir, { recursive: true, force: true });
 
-    // No unknown-type warnings
-    expect(result.stderr).not.toMatch(/Unknown node type/);
-    // Both nodes appear in the generated Cypher
-    expect(result.stderr).toContain("business-rule:foo");
-    expect(result.stderr).toContain("feature:bar");
+    // Specific error for the PascalCase input
+    expect(result.stderr).toContain("Unknown node type 'BusinessRule'");
+    // Error must suggest the kebab-case form
+    expect(result.stderr).toContain("'business-rule'");
+    // Error must reference SKILL.md so the LLM knows where to look
+    expect(result.stderr).toMatch(/SKILL\.md/);
+    // Hard fail: no MERGE generated for the bad node
+    expect(result.stderr).not.toMatch(/MERGE \(n:Knowledge.*business-rule:foo/);
+    // Hard fail: non-zero exit code
+    expect(result.status).not.toBe(0);
+  });
+
+  it("rejects PascalCase for other node types (Feature, Domain) with the same helpful error", () => {
+    writeGraph([
+      { id: "feature:foo", name: "Foo", summary: "Foo", type: "Feature" },
+      { id: "domain:bar", name: "Bar", summary: "Bar", type: "Domain" },
+    ]);
+
+    const result = runPushConceptGraph(root, {
+      NEO4J_URI: "neo4j://localhost:7687",
+      NEO4J_USERNAME: "neo4j",
+      NEO4J_PASSWORD: "password",
+      NEO4J_DATABASE: "grasp",
+    });
+
+    expect(result.stderr).toContain("Unknown node type 'Feature'");
+    expect(result.stderr).toContain("Unknown node type 'Domain'");
+    // Both should suggest the kebab-case form
+    expect(result.stderr).toMatch(/use 'feature' instead of 'Feature'/);
+    expect(result.stderr).toMatch(/use 'domain' instead of 'Domain'/);
+    expect(result.status).not.toBe(0);
+  });
+
+  it("rejects PascalCase plural 'BusinessRules' (no trailing-s safety net)", () => {
+    // Previously normalised via `replace(/s$/, "")` in `normaliseNodeType()`.
+    // With the safety-net removed, this must now fail loudly so the LLM
+    // sees and fixes the typo instead of having it silently mangled.
+    writeGraph([
+      { id: "business-rule:foo", name: "Foo", summary: "Foo", type: "BusinessRules" },
+    ]);
+
+    const result = runPushConceptGraph(root, {
+      NEO4J_URI: "neo4j://localhost:7687",
+      NEO4J_USERNAME: "neo4j",
+      NEO4J_PASSWORD: "password",
+      NEO4J_DATABASE: "grasp",
+    });
+
+    expect(result.stderr).toContain("Unknown node type 'BusinessRules'");
+    expect(result.status).not.toBe(0);
+  });
+
+  it("rejects a mixed batch (PascalCase + kebab-case) without writing any nodes", () => {
+    writeGraph([
+      { id: "business-rule:bad", name: "Bad", summary: "Bad", type: "BusinessRule" },
+      { id: "feature:good", name: "Good", summary: "Good", type: "feature" },
+    ]);
+
+    const result = runPushConceptGraph(root, {
+      NEO4J_URI: "neo4j://localhost:7687",
+      NEO4J_USERNAME: "neo4j",
+      NEO4J_PASSWORD: "password",
+      NEO4J_DATABASE: "grasp",
+    });
+
+    // The bad node's error must appear
+    expect(result.stderr).toContain("Unknown node type 'BusinessRule'");
+    // The good node must NOT have been written (no MERGE for it) — atomic push
+    expect(result.stderr).not.toMatch(/MERGE \(n:Knowledge.*feature:good/);
+    expect(result.status).not.toBe(0);
+  });
+
+  it("rejects a genuinely unknown type and lists the known types", () => {
+    writeGraph([
+      { id: "foobar:bad", name: "Bad", summary: "Bad", type: "foobar" },
+    ]);
+
+    const result = runPushConceptGraph(root, {
+      NEO4J_URI: "neo4j://localhost:7687",
+      NEO4J_USERNAME: "neo4j",
+      NEO4J_PASSWORD: "password",
+      NEO4J_DATABASE: "grasp",
+    });
+
+    expect(result.stderr).toContain("Unknown node type 'foobar'");
+    // Error must list the canonical kebab-case types
+    expect(result.stderr).toContain("business-rule");
+    expect(result.stderr).toContain("feature");
+    expect(result.stderr).toMatch(/SKILL\.md/);
+    expect(result.status).not.toBe(0);
   });
 });
 
@@ -281,7 +296,7 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
     expect(result.status).not.toBe(0);
   });
 
-  it("success message reports how many nodes were written vs skipped", () => {
+  it("error message reports how many nodes were rejected due to unknown type", () => {
     writeGraph([
       { id: "feature:good", name: "Good", summary: "Valid", type: "feature" },
       { id: "foobar:bad", name: "Bad", summary: "Unknown", type: "foobar" },
@@ -296,12 +311,12 @@ describe("BUG-02: push script exits non-zero when nodes are skipped", () => {
       PATH: "/usr/local/bin:/usr/bin:/bin",
     });
 
-    // The output must include a "skipped" count so the LLM (or a human
-    // reading the transcript) can see at a glance that a node was dropped.
-    // With the fix, when 1+ nodes are skipped, the script prints a distinct
-    // error message containing the skipped count and exits non-zero.
+    // The output must report how many were rejected so the LLM can see
+    // at a glance that a node was dropped. With the atomic-rejection
+    // behavior, the error message includes both the rejected count
+    // and the batch total (e.g. "1 of 2 node(s) skipped").
     const combined = (result.stdout || "") + (result.stderr || "");
-    expect(combined).toMatch(/1\s*node.*skip/i);
+    expect(combined).toMatch(/1[\s\S]*node[\s\S]*skip/i);
     // The script must exit non-zero
     expect(result.status).not.toBe(0);
   });

@@ -58,7 +58,7 @@ During planning, check the graph before creating new nodes. The same node types 
 
 The table above lists the **internal `type` value** written to the JSON `pr-nodes.json` — these are lowercase / kebab-case strings (`feature`, `operation`, `actor`, `business-rule`, `entity`, `decision`, `constraint`, `concept`, `claim`, `risk`). The Neo4j label is derived from this value via `toNeo4jLabel` — single-word types become PascalCase directly (`feature` → `Feature`), while the only multi-word type (`business-rule`) becomes `BusinessRule`.
 
-**When writing JSON `type` fields, use the lowercase / kebab-case form from the table above.** Do not use the Neo4j label name (`Feature`, `BusinessRule`) as the `type` value — even though the Neo4j label for `business-rule` happens to be `BusinessRule`, the internal representation in `pr-nodes.json` is always kebab-case. The push script normalises PascalCase labels back to kebab-case as a safety net, but the canonical form is lowercase / kebab-case.
+**When writing JSON `type` fields, use the lowercase / kebab-case form from the table above.** Do not use the Neo4j label name (`Feature`, `BusinessRule`) as the `type` value — even though the Neo4j label for `business-rule` happens to be `BusinessRule`, the internal representation in `pr-nodes.json` is always kebab-case. The push script will reject PascalCase inputs with a specific error pointing to the canonical kebab-case form; it does not silently normalise.
 
 ### Key Relationship Types (UPPER_SNAKE_CASE in Neo4j)
 

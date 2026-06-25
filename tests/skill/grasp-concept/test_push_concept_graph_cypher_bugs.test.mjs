@@ -315,10 +315,10 @@ describe('push-concept-graph.mjs — cypher-shell path bugs', () => {
     });
   });
 
-  // ── Fix 2: unknown node type is filtered (warns + skips) not fatal ────────────
+  // ── Fix 2: unknown node type aborts the push atomically (no partial writes) ────
 
-  describe('FIX-2: unknown node type is filtered out with a warning, not fatal', () => {
-    it('unknown type emits warning but does not abort (only valid nodes remain)', () => {
+  describe('FIX-2: unknown node type aborts the push atomically', () => {
+    it('rejects the entire batch when any node has unknown type', () => {
       writeGraph([
         { id: 'foobar:bad', name: 'Bad', summary: 'Unknown type', type: 'foobar' },
         { id: 'feature:good', name: 'Good', summary: 'Valid type', type: 'feature' },
@@ -333,13 +333,17 @@ describe('push-concept-graph.mjs — cypher-shell path bugs', () => {
         PATH: '/usr/local/bin:/usr/bin:/bin',
       });
 
-      // Warning is emitted for the bad node
+      // The bad node's specific error is emitted
       expect(result.stderr).toContain("Unknown node type 'foobar'");
-      // Script does NOT abort before reaching Neo4j push — it reaches driver/cypher-shell phase
-      expect(result.stderr).toMatch(/neo4j-driver not available|cypher-shell|failed|install/i);
+      // The summary confirms atomic rejection — push aborted before Neo4j
+      expect(result.stderr).toMatch(/push aborted/i);
+      // Script does NOT reach the driver/cypher-shell phase
+      expect(result.stderr).not.toMatch(/neo4j-driver not available|cypher-shell|failed|install/i);
+      // Non-zero exit (BUG-02)
+      expect(result.status).not.toBe(0);
     });
 
-    it('all-unknown batch: warning emitted but script still proceeds to connection phase', () => {
+    it('all-unknown batch: still exits with specific error, no spurious "file not found" message', () => {
       writeGraph([
         { id: 'notype:a', name: 'A', summary: 'Bad', type: 'notype' },
       ]);
@@ -353,11 +357,14 @@ describe('push-concept-graph.mjs — cypher-shell path bugs', () => {
         PATH: '/usr/local/bin:/usr/bin:/bin',
       });
 
+      // Specific error for the unknown type
       expect(result.stderr).toContain("Unknown node type 'notype'");
-      // Even with zero valid nodes remaining the script proceeds to the push phase
-      // (no early exit just because of unknown types)
+      // No spurious pre-flight errors — the script reached validation phase
       expect(result.stderr).not.toContain('Nodes file not found');
       expect(result.stderr).not.toContain('Edges file not found');
+      // Atomic rejection — push aborted
+      expect(result.stderr).toMatch(/push aborted/i);
+      expect(result.status).not.toBe(0);
     });
   });
 

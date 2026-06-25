@@ -48,44 +48,22 @@ const TYPE_TO_LABEL = {
   risk: "Risk",
 };
 
-// Defence-in-depth: if the LLM writes a PascalCase Neo4j label into the
-// `type` field of pr-nodes.json (e.g. "BusinessRule" instead of the
-// canonical "business-rule"), normalise it before the lookup. The schema
-// uses lowercase/kebab-case for the internal `type` value; the Neo4j label
-// is derived via toNeo4jLabel. Silently skipping these nodes was the root
-// cause of BUG-01 in 2026-06-24_10-58_grasp-concept-report.md.
-const TYPE_ALIASES = {
-  BusinessRule: "business-rule",
-  BusinessRules: "business-rule",
-  Domain: "domain",
-  Feature: "feature",
-  Operation: "operation",
-  Actor: "actor",
-  Entity: "entity",
-  Decision: "decision",
-  Constraint: "constraint",
-  Concept: "concept",
-  Claim: "claim",
-  Risk: "risk",
-};
-
-function normaliseNodeType(rawType) {
-  if (rawType == null) return rawType;
-  if (TYPE_TO_LABEL[rawType]) return rawType;
-  if (TYPE_ALIASES[rawType]) return TYPE_ALIASES[rawType];
-  // "BusinessRules" or other near-misses: derive kebab-case from PascalCase
-  if (/^[A-Z][A-Za-z]+$/.test(rawType)) {
-    const kebab = rawType
-      .replace(/s$/, "")
-      .replace(/([a-z])([A-Z])/g, "$1-$2")
-      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
-      .toLowerCase();
-    if (TYPE_TO_LABEL[kebab]) return kebab;
-  }
-  return rawType;
-}
-
 const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
+
+/**
+ * Suggest the canonical kebab-case `type` value for a PascalCase Neo4j
+ * label. Used only to produce a helpful error message — the value is
+ * never written back to the graph.
+ *
+ * @example suggestKebabCase("BusinessRule") // "business-rule"
+ * @example suggestKebabCase("Feature")      // "feature"
+ */
+function suggestKebabCase(pascalCase) {
+  return String(pascalCase)
+    .replace(/([a-z])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1-$2")
+    .toLowerCase();
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -139,13 +117,8 @@ function buildNodesCypher(graphData, neo4jConfig) {
   const lines = [];
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
     for (const node of graphData.nodes) {
-      const normalisedType = normaliseNodeType(node.type);
-      const secondaryLabel = TYPE_TO_LABEL[normalisedType];
-      if (!secondaryLabel) {
-        console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
-        continue;
-      }
-      node.type = normalisedType;
+      // Upfront validation in pushConceptGraph() guarantees node.type is in TYPE_TO_LABEL.
+      const secondaryLabel = TYPE_TO_LABEL[node.type];
 
       const props = {
         id: node.id,
@@ -252,12 +225,9 @@ MERGE (l:Layer {id: 'layer:knowledge'}) SET l.nodeIds = nodeIds;`;
     // Other errors are silently ignored — orphan check is best-effort
   }
 
+  // Upfront validation in pushConceptGraph() guarantees all nodes have known types.
   const totalNodes = (graphData.nodes || []).length;
-  if (skippedCount > 0) {
-    console.error(`push-concept-graph.mjs: Concept plan graph push via cypher-shell completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
-    process.exit(2);
-  }
-  console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j via cypher-shell successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
+  console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j via cypher-shell successfully (${totalNodes} node${totalNodes === 1 ? '' : 's'} written, 0 nodes skipped).`);
   process.exit(0);
 }
 
@@ -343,27 +313,27 @@ async function pushConceptGraph(projectRoot) {
     edges: edgesData.edges || [],
   };
 
-  // Validate all nodes have a known type and map to a secondary label
-  // Unknown types are warned and skipped rather than aborting the entire push.
-  // The skip count is reported in the final summary so a silent data loss is
-  // visible to the LLM (BUG-02 in 2026-06-24_10-58_grasp-concept-report.md).
-  let skippedCount = 0;
-  let writtenCount = 0;
+  // Validate all node types up-front. Unknown types — including PascalCase
+  // Neo4j labels the LLM mistakenly copied into the JSON `type` field —
+  // abort the push atomically. Partial pushes produce inconsistent graph
+  // state and mask data loss (BUG-02). For PascalCase inputs the error
+  // message suggests the canonical kebab-case form so the LLM can fix
+  // the JSON without having to consult SKILL.md separately.
   if (graphData.nodes && Array.isArray(graphData.nodes)) {
-    graphData.nodes = graphData.nodes.filter((node) => {
-      const derivedType =
-        normaliseNodeType(node.type) ||
-        (node.id ? normaliseNodeType(node.id.split(":")[0]) : null);
-      if (!TYPE_TO_LABEL[derivedType]) {
-        console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}' — skipping. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}`);
-        skippedCount++;
-        return false;
+    const unknownNodes = graphData.nodes.filter((node) => !TYPE_TO_LABEL[node.type]);
+    if (unknownNodes.length > 0) {
+      for (const node of unknownNodes) {
+        const suggestion = suggestKebabCase(node.type);
+        const isPascalCaseHint = /^[A-Z][A-Za-z]*$/.test(node.type) && TYPE_TO_LABEL[suggestion];
+        if (isPascalCaseHint) {
+          console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. The JSON \`type\` field must be kebab-case — use '${suggestion}' instead of '${node.type}' (Neo4j label). See SKILL.md §type-table for canonical type names.`);
+        } else {
+          console.error(`push-concept-graph.mjs: Unknown node type '${node.type}' for node '${node.id}'. Known types: ${Object.keys(TYPE_TO_LABEL).join(", ")}. See SKILL.md §type-table for canonical type names.`);
+        }
       }
-      // Persist the normalised type so downstream code sees the canonical value
-      node.type = derivedType;
-      writtenCount++;
-      return true;
-    });
+      console.error(`push-concept-graph.mjs: ${unknownNodes.length} of ${graphData.nodes.length} node(s) skipped due to unknown type — push aborted.`);
+      process.exit(2);
+    }
   }
 
   const neo4jConfig = getNeo4jConfig(projectRoot);
@@ -457,13 +427,8 @@ async function pushConceptGraph(projectRoot) {
       // Push nodes with dual labels: Knowledge + specific type label
       if (graphData.nodes && Array.isArray(graphData.nodes)) {
         for (const node of graphData.nodes) {
-          const derivedType =
-            normaliseNodeType(node.type) ||
-            (node.id ? normaliseNodeType(node.id.split(":")[0]) : null);
-          const secondaryLabel = TYPE_TO_LABEL[derivedType];
-          if (!secondaryLabel) {
-            throw new Error(`Node ${node.id} has unknown type: ${derivedType}`);
-          }
+          // Upfront validation in pushConceptGraph() guarantees node.type is in TYPE_TO_LABEL.
+          const secondaryLabel = TYPE_TO_LABEL[node.type];
 
           const props = {
             id: node.id,
@@ -545,13 +510,9 @@ async function pushConceptGraph(projectRoot) {
 
   try {
     await withRetry(runDriverAttempt, { retries: 3, delayMs: retryDelayMs, label: "push-concept-graph.mjs" });
-    if (skippedCount > 0) {
-      const totalNodes = (graphData.nodes || []).length;
-      console.error(`push-concept-graph.mjs: Concept plan graph push completed with data loss: ${totalNodes} nodes attempted, ${skippedCount} skipped due to unknown type.`);
-      process.exit(2);
-    }
+    // Upfront validation in pushConceptGraph() guarantees all nodes have known types.
     const totalNodes = (graphData.nodes || []).length;
-    console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j successfully (${totalNodes} nodes written, ${skippedCount} nodes skipped).`);
+    console.log(`push-concept-graph.mjs: Concept plan graph pushed to Neo4j successfully (${totalNodes} node${totalNodes === 1 ? '' : 's'} written, 0 nodes skipped).`);
     process.exit(0);
   } catch (err) {
     console.error(`push-concept-graph.mjs: Failed to push concept plan graph: ${err.message}`);
