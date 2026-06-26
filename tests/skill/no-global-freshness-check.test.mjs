@@ -16,18 +16,25 @@
  *   - analyzedFiles  → count(:File)               (Cypher aggregate)
  *   - domainCommit / domainAnalyzedAt → per-Domain analyzedAtCommit
  *
+ * Task G (2026-06-26) structurally removed the Project singleton node
+ * itself. There is no longer any `:Project` node in the graph — nodes
+ * carry a `projectId` property instead of a `:PART_OF` edge to a
+ * `:Project` singleton. After Task G, NO skill should EVER query
+ * `MATCH (p:Project {id: ...})` for any purpose (not even as a
+ * "precondition" check or scope-check baseline).
+ *
  * This test asserts:
  *  1. The original "Project.gitCommitHash" freshness pattern does NOT
- *     appear in any skill SKILL.md (Phase 1 + Task F removed it from
- *     /grasp too — the new pattern queries File aggregates).
- *  2. /grasp-domain uses the per-Domain aggregate (not Project.domainCommit).
- *  3. /grasp uses the File aggregation pattern (max(File.analyzedAtCommit)).
- *  4. None of the seven files compares to `git rev-parse HEAD` for
- *     freshness purposes. /grasp-diff may still reference it for
- *     legitimate diff/base-resolution logic, but not for freshness.
- *     /grasp-freshness uses it to feed the staleness query, not as a
- *     freshness warning, so a targeted assertion documents the exception.
- *  5. No removed phase still references `$LAST_COMMIT` outside /grasp-domain
+ *     appear in any skill SKILL.md (absolute absence — no exceptions).
+ *  2. The "Project.domainCommit" / "SET p.domainAnalyzedAt" pattern
+ *     does NOT appear in any skill SKILL.md (absolute absence).
+ *  3. /grasp-domain uses the per-Domain aggregate (MATCH (d:Domain)).
+ *  4. /grasp uses the File aggregation pattern (max(File.analyzedAtCommit)).
+ *  5. None of the seven files compares to `git rev-parse HEAD` for
+ *     freshness purposes. /grasp-freshness uses it to feed the staleness
+ *     query, not as a freshness warning, so a targeted assertion documents
+ *     the exception.
+ *  6. No removed phase still references `$LAST_COMMIT` outside /grasp-domain
  *     (where it remains the baseline for the per-Domain staleness check).
  */
 
@@ -41,6 +48,7 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const SKILL_DIR = join(REPO_ROOT, 'grasp-it-plugin', 'skills');
 
 const FRESHNESS_PATTERN = "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash";
+const DOMAIN_COMMIT_PATTERN = "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit";
 
 // Task F replacement pattern: /grasp derives `lastCommitHash` from File aggregation
 const FILE_AGG_PATTERN = "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash";
@@ -66,6 +74,13 @@ describe('global freshness check removal', () => {
       expect(content).not.toContain(FRESHNESS_PATTERN);
     });
 
+    it(`${skillName}/SKILL.md no longer contains MATCH (p:Project ... RETURN p.* (Task G: singleton is gone)`, () => {
+      // After Task G, the :Project singleton does not exist. No skill should
+      // query for it for any purpose. Assert absolute absence.
+      const content = readSkill(skillName);
+      expect(content).not.toMatch(/MATCH\s+\(p:Project\s*\{id:\s*'project:singleton'\}\)/);
+    });
+
     it(`${skillName}/SKILL.md no longer compares to 'git rev-parse HEAD' for freshness`, () => {
       const content = readSkill(skillName);
       // The pattern appears in skill docs only when comparing the Project.gitCommitHash
@@ -85,7 +100,7 @@ describe('global freshness check removal', () => {
     const content = readSkill('grasp-domain');
     // Phase 2 staleness check should query Domain nodes, not the Project singleton
     expect(content).toContain('MATCH (d:Domain)');
-    expect(content).not.toContain("MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit");
+    expect(content).not.toContain(DOMAIN_COMMIT_PATTERN);
     expect(content).not.toContain("SET p.domainAnalyzedAt");
   });
 
@@ -144,3 +159,4 @@ describe('global freshness check removal', () => {
     expect(content).not.toContain(FRESHNESS_PATTERN);
   });
 });
+

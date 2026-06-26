@@ -131,9 +131,11 @@ describe('/grasp-diff Phase 1.5 scope check', () => {
       );
     });
 
-    it('retains the Project singleton existence check (precondition)', () => {
+    it('does not query the Project singleton at all (Task G: removed entirely)', () => {
+      // Task G removed the Project singleton. No skill should query it
+      // for any purpose (precondition check, baseline comparison, etc.).
       const content = readFileSync(SKILL_MD, 'utf-8');
-      expect(content).toMatch(/MATCH\s+\(p:Project\s+\{id:\s*'project:singleton'\}\)\s+RETURN\s+p/);
+      expect(content).not.toMatch(/MATCH\s+\(p:Project\s*\{id:\s*'project:singleton'\}\)/);
     });
   });
 

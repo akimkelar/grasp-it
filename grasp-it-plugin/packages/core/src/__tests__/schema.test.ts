@@ -104,14 +104,32 @@ describe("schema validation", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("accepts kind 'project' for Project singleton nodes", () => {
+  it("rejects kind 'project' on a node (Task G removed the Project singleton enum value)", () => {
     const graph = structuredClone(validGraph);
-    (graph as any).kind = "project";
+    // Add a second valid node so the graph doesn't go empty after the
+    // invalid node is dropped.
+    graph.nodes.push({
+      id: "node-2",
+      type: "function" as const,
+      name: "helper",
+      filePath: "src/helper.ts",
+      summary: "helper function",
+      tags: [],
+      complexity: "simple" as const,
+    });
+    // Set `kind: "project"` on the first node — this is what the Project
+    // singleton node used to carry. After Task G, "project" is no longer a
+    // valid `kind` enum value, so the node must be dropped from validation.
+    (graph.nodes[0] as any).kind = "project";
 
-    // Validation should pass — kind "project" is now a valid enum value
     const result = validateGraph(graph);
+    // Graph still validates (one valid node remains).
     expect(result.success).toBe(true);
-    expect(result.issues).toEqual([]);
+    // The invalid node is dropped, leaving 1 valid node.
+    expect(result.data!.nodes).toHaveLength(1);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ level: "dropped", category: "invalid-node" })
+    );
   });
 
   it("rejects graph with missing required fields", () => {

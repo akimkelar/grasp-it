@@ -32,15 +32,7 @@ These properties enable:
 
 ### Project Node (`kind: "project"`)
 
-A **singleton** node that holds project-level metadata. There is exactly one per Neo4j database. It is excluded from codebase wipes (the wipe query is scoped to `kind = "codebase"`) and therefore persists across all `/grasp` runs.
-
-| Label | Description | ID format |
-|-------|-------------|-----------|
-| `Project` | Project-level metadata singleton | `project:singleton` |
-
-Key properties: `gitCommitHash`, `lastAnalyzedAt`, `version`, `analyzedFiles`.
-
-This node is the shared, authoritative source of the last-analyzed commit hash in multi-user Neo4j setups. It replaces the local-only `.grasp-it/meta.json` as the canonical commit anchor.
+Removed in Task G. There is no longer any `:Project` node in the graph — project identity is carried by a `projectId` string property on each Codebase / Knowledge / Layer / TourStep node. The `Project` singleton was a structural anchor (no semantic content after Task F) and has been deleted entirely. There is no backwards-compat shim — clients must filter by `n.projectId = $projectId` (default: `'project:singleton'`).
 
 ### Codebase Nodes (`kind: "codebase"`)
 
@@ -495,15 +487,7 @@ Knowledge nodes (`kind: "knowledge"`) and the `Project` singleton (`kind: "proje
 
 **Preserving freshness metadata during rebuilds:** When a knowledge node is re-derived, its `generatedAt` is updated to the current timestamp and `sourceCommit` is set to the new HEAD commit. When a knowledge node is unchanged (not re-derived), its `generatedAt` and `sourceCommit` are preserved — they are never cleared by the rebuild.
 
-After each incremental update, the `Project` singleton is updated:
-
-```cypher
-MERGE (p:Project {id: "project:singleton"})
-SET p.gitCommitHash = $gitCommitHash,
-    p.lastAnalyzedAt = $lastAnalyzedAt,
-    p.analyzedFiles  = $analyzedFiles,
-    p.kind           = "project"
-```
+After each incremental update, each re-analyzed `File` node has its `analyzedAtCommit` and `analyzedAt` set to the current commit and timestamp. After Task G there is no longer a `Project` singleton to update — `gitCommitHash` and `lastAnalyzedAt` are derived at query time as `max(File.analyzedAtCommit)` and `max(File.analyzedAt)`.
 
 ## Key Query Patterns
 

@@ -4,11 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   saveFingerprints, loadFingerprints, saveConfig, loadConfig,
-  saveProjectMetaToNeo4j, loadProjectMetaFromNeo4j,
   saveDomainGraphToNeo4j, loadDomainGraphFromNeo4j,
   saveGraphToNeo4j, loadGraphFromNeo4j,
 } from "./index.js";
-import type { KnowledgeGraph, AnalysisMeta, GraphNode } from "../types.js";
+import type { KnowledgeGraph, GraphNode } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 
 describe("persistence", () => {
@@ -21,13 +20,6 @@ describe("persistence", () => {
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
   });
-
-  const sampleMeta: AnalysisMeta = {
-    lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
-    gitCommitHash: "abc123",
-    version: "1.0.0",
-    analyzedFiles: 42,
-  };
 
   // ─────────────────────────────────────────────────────────────────
 // saveFingerprints / loadFingerprints
@@ -210,7 +202,7 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(nodeCalls[1]![1]).toMatchObject({ id: "feature:create-order", name: "Create Order" });
   });
 
-  it("stamps Domain nodes with analyzedAtCommit per-Domain (replaces Project singleton domainCommit)", async () => {
+  it("stamps Domain nodes with analyzedAtCommit per-Domain", async () => {
     const sampleGraph: KnowledgeGraph = {
       version: "1.0.0",
       project: {
@@ -252,10 +244,6 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(domainCall![0]).toContain("analyzedAtCommit");
     expect(domainCall![0]).toContain("analyzedAt");
     expect(domainCall![1].analyzedAtCommit).toBe("def456");
-
-    // There should be NO separate Project SET p.domainAnalyzedAt / SET p.domainCommit call
-    const projectStampCall = calls.find(([q]) => q.includes("SET p.domainAnalyzedAt") || q.includes("SET p.domainCommit"));
-    expect(projectStampCall).toBeUndefined();
   });
 
   it("uses graph.project.gitCommitHash as analyzedAtCommit when commit not provided", async () => {
@@ -344,7 +332,7 @@ describe("saveDomainGraphToNeo4j", () => {
     await saveDomainGraphToNeo4j(mockSession as never, graphWithDomainNodes, "project:singleton", "abc123");
 
     // Verify domain node CREATE calls include kind = "knowledge"
-    const nodeCalls = calls.slice(1, 3); // After DELETE, before SET
+    const nodeCalls = calls.slice(1, 3); // After DELETE
     expect(nodeCalls[0]![0]).toContain("CREATE (d:Knowledge:Domain");
     expect(nodeCalls[0]![0]).toContain('kind: "knowledge"');
 
@@ -434,7 +422,7 @@ describe("loadDomainGraphFromNeo4j", () => {
 
     expect(result).toBeNull();
     expect(mockSession.run).toHaveBeenCalledWith(
-      expect.stringContaining("MATCH (d:Knowledge)-[:PART_OF]->(p:Project"),
+      expect.stringContaining("MATCH (d:Knowledge) WHERE d.projectId"),
       expect.objectContaining({ projectId: "project:singleton" }),
     );
   });
@@ -527,46 +515,6 @@ describe("loadDomainGraphFromNeo4j", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j
-// ─────────────────────────────────────────────────────────────────
-
-describe("saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j", () => {
-    it("should be a no-op (legacy fields no longer written to the Project singleton)", async () => {
-      // saveProjectMetaToNeo4j is deprecated: the four migrated fields
-      // (gitCommitHash, lastAnalyzedAt, version, analyzedFiles) no longer
-      // live on the Project singleton. The function should be a no-op.
-      const sampleMeta: AnalysisMeta = {
-        lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
-        gitCommitHash: "abc123def456",
-        version: "1.0.0",
-        analyzedFiles: 42,
-      };
-
-      let ranAny = false;
-      const mockSession = {
-        run: async (_query: string, _params: Record<string, unknown>) => {
-          ranAny = true;
-          return { records: [] };
-        },
-      };
-
-      await expect(saveProjectMetaToNeo4j(mockSession as never, sampleMeta)).resolves.toBeUndefined();
-      expect(ranAny).toBe(false);
-    });
-
-    it("loadProjectMetaFromNeo4j always returns null (legacy fields removed)", async () => {
-      const mockSession = {
-        run: async (_query: string, _params: Record<string, unknown>) => {
-          return { records: [] };
-        },
-      };
-
-      const result = await loadProjectMetaFromNeo4j(mockSession as never);
-      expect(result).toBeNull();
-    });
-  });
-});
-// ─────────────────────────────────────────────────────────────────
 // saveGraphToNeo4j
 // ─────────────────────────────────────────────────────────────────
 
@@ -636,7 +584,7 @@ describe("saveGraphToNeo4j", () => {
     expect(calls[1]![0]).toContain("DELETE");
   });
 
-  it("merges Project singleton with correct properties", async () => {
+  it("does not MERGE a Project singleton (Task G removed it)", async () => {
     const calls: Array<[string, Record<string, unknown>]> = [];
     const mockSession = {
       run: async (query: string, params: Record<string, unknown>) => {
@@ -647,20 +595,24 @@ describe("saveGraphToNeo4j", () => {
 
     await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
 
-    // Find the MERGE Project call (after DELETE calls)
+    // No MERGE :Project query should appear
     const projectCall = calls.find(([q]) => q.includes("MERGE (p:Project"));
-    expect(projectCall).toBeDefined();
-    // The Project singleton only carries structural + per-graph properties.
-    // The four migrated fields (gitCommitHash, lastAnalyzedAt, version,
-    // analyzedFiles) are derived elsewhere (File-node aggregation +
-    // .grasp-it/config.json).
-    expect(projectCall![1]).toMatchObject({
-      projectId: "project:singleton",
-      name: "test-project",
-    });
-    expect(projectCall![1]).not.toHaveProperty("gitCommitHash");
-    expect(projectCall![1]).not.toHaveProperty("version");
-    expect(projectCall![1]).not.toHaveProperty("analyzedAt");
+    expect(projectCall).toBeUndefined();
+  });
+
+  it("does not create :PART_OF edges (Task G replaced them with projectId property)", async () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const mockSession = {
+      run: async (query: string, params: Record<string, unknown>) => {
+        calls.push([query, params]);
+        return { records: [] };
+      },
+    };
+
+    await saveGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
+
+    const partOfCall = calls.find(([q]) => q.includes("[:PART_OF]"));
+    expect(partOfCall).toBeUndefined();
   });
 
   it("creates one Codebase:File node per file node in the graph", async () => {
@@ -677,7 +629,7 @@ describe("saveGraphToNeo4j", () => {
     // Count CREATE calls for Codebase:File nodes (not Layer or TourStep)
     const nodeCalls = calls.filter(([q]) => q.includes("CREATE (n:Codebase:File"));
     expect(nodeCalls).toHaveLength(1);
-    expect(nodeCalls[0]![1]).toMatchObject({ id: "node-1", name: "index.ts" });
+    expect(nodeCalls[0]![1]).toMatchObject({ id: "node-1", name: "index.ts", projectId: "project:singleton" });
   });
 
   it("creates RELATES edge for each edge in the graph", async () => {
@@ -713,7 +665,7 @@ describe("saveGraphToNeo4j", () => {
 
     const layerCalls = calls.filter(([q]) => q.includes("CREATE (l:Layer"));
     expect(layerCalls).toHaveLength(1);
-    expect(layerCalls[0]![1]).toMatchObject({ id: "layer-1", name: "Core" });
+    expect(layerCalls[0]![1]).toMatchObject({ id: "layer-1", name: "Core", projectId: "project:singleton" });
   });
 
   it("creates TourStep nodes for each tour step", async () => {
@@ -839,7 +791,7 @@ describe("saveGraphToNeo4j", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("loadGraphFromNeo4j", () => {
-  it("returns null when no Project singleton exists", async () => {
+  it("returns null when no Codebase nodes exist for the project (first run)", async () => {
     const mockSession = {
       run: vi.fn(async () => ({ records: [] })),
     };
@@ -849,22 +801,14 @@ describe("loadGraphFromNeo4j", () => {
     expect(result).toBeNull();
   });
 
-  it("returns KnowledgeGraph with project metadata when Project node exists", async () => {
+  it("returns KnowledgeGraph with empty project meta when Codebase nodes exist", async () => {
+    // First-run check returns hasGraph=true; subsequent queries return empty
+    // so the result has empty project meta and empty arrays for nodes/edges/layers/tour.
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test-project",
-                languages: ["typescript"],
-                frameworks: ["vitest"],
-                description: "A test project",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
-        // Return empty records for all other queries (nodes, edges, layers, tour)
         return { records: [] };
       }),
     };
@@ -872,32 +816,17 @@ describe("loadGraphFromNeo4j", () => {
     const result = await loadGraphFromNeo4j(mockSession as never);
 
     expect(result).not.toBeNull();
-    expect(result!.project.name).toBe("test-project");
-    // gitCommitHash is no longer read from the Project singleton — it comes
-    // from max(File.analyzedAtCommit). When loadGraphFromNeo4j is called
-    // without projectRoot, the resulting KnowledgeGraph.project.gitCommitHash
-    // is empty.
-    expect(result!.project.gitCommitHash).toBe("");
-    expect(result!.project.languages).toEqual(["typescript"]);
+    // project meta is reconstructed elsewhere (config.json / File aggregates),
+    // not persisted on a :Project node any more.
+    expect(result!.project.name).toBe("");
+    expect(result!.project.languages).toEqual([]);
   });
 
   it("loads nodes from Neo4j and reconstructs GraphNode objects", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: [],
-                frameworks: [],
-                description: "",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         if (query.includes("MATCH (n:Codebase)")) {
           return {
@@ -954,20 +883,8 @@ describe("loadGraphFromNeo4j", () => {
   it("loads edges from Neo4j as RELATES relationships", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: [],
-                frameworks: [],
-                description: "",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         if (query.includes("MATCH (source:Codebase)-[r:RELATES]")) {
           return {
@@ -1002,20 +919,8 @@ describe("loadGraphFromNeo4j", () => {
   it("loads layers from Neo4j", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: [],
-                frameworks: [],
-                description: "",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         if (query.includes("MATCH (l:Layer)")) {
           return {
@@ -1046,20 +951,8 @@ describe("loadGraphFromNeo4j", () => {
   it("loads tour steps ordered by order property", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: [],
-                frameworks: [],
-                description: "",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         if (query.includes("MATCH (t:TourStep)")) {
           return {
@@ -1084,20 +977,8 @@ describe("loadGraphFromNeo4j", () => {
   it("returns empty arrays when no nodes/edges/layers/tour exist", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: [],
-                frameworks: [],
-                description: "",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         return { records: [] };
       }),
@@ -1115,20 +996,8 @@ describe("loadGraphFromNeo4j", () => {
   it("loads sourceFiles, generatedAt, sourceCommit from Neo4j", async () => {
     const mockSession = {
       run: vi.fn(async (query: string) => {
-        if (query.includes("MATCH (p:Project")) {
-          return {
-            records: [
-              {
-                name: "test",
-                languages: ["typescript"],
-                frameworks: [],
-                description: "test",
-                analyzedAt: "2026-01-01T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
-              },
-            ],
-          };
+        if (query.includes("count(n) > 0")) {
+          return { records: [{ hasGraph: true }] };
         }
         if (query.includes("MATCH (n:Codebase)")) {
           // Return nodes in the exact format loadGraphFromNeo4j expects: each record has an "n" key
@@ -1165,15 +1034,6 @@ describe("loadGraphFromNeo4j", () => {
             ],
           };
         }
-        if (query.includes("MATCH (source:Codebase)-[r:RELATES]")) {
-          return { records: [] };
-        }
-        if (query.includes("MATCH (l:Layer)")) {
-          return { records: [] };
-        }
-        if (query.includes("MATCH (t:TourStep)")) {
-          return { records: [] };
-        }
         return { records: [] };
       }),
     };
@@ -1193,3 +1053,5 @@ describe("loadGraphFromNeo4j", () => {
     expect((knowledgeNode as any).sourceCommit).toBe("def456");
   });
 });
+});
+

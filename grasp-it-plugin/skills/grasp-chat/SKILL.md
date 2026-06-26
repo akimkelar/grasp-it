@@ -89,19 +89,15 @@ GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 
 ### Phase 1: Verify Graph Exists
 
-1. Query Neo4j for the `Project` singleton:
+1. Query Neo4j to confirm any Codebase node exists for this project:
    ```bash
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Codebase) WHERE n.projectId = 'project:singleton' RETURN count(n) > 0 AS hasGraph"
    ```
-2. If Neo4j returns no results, tell the user to run `/grasp` first.
+2. If Neo4j returns no rows (or `hasGraph` is false), tell the user to run `/grasp` first.
 
 ### Phase 2: Get Project Context
 
-Query for project metadata:
-```bash
-node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.name, p.description, p.languages, p.frameworks"
-```
-If Neo4j query fails, report the error and **STOP**.
+Project name, description, languages, and frameworks come from the input graph passed by the calling agent (the graph that `/grasp` produced) — they are not stored on a `:Project` node any more (Task G removed the singleton). Read them from the assembled `KnowledgeGraph.project` payload on the input context.
 
 ### Phase 3: Search for Relevant Nodes
 

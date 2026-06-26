@@ -1,10 +1,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { KnowledgeGraph, GraphNode, GraphEdge, AnalysisMeta, ProjectConfig, ProjectSingletonMeta } from "../types.js";
+import type { KnowledgeGraph, GraphNode, GraphEdge, AnalysisMeta, ProjectConfig } from "../types.js";
 import type { FingerprintStore } from "../fingerprint.js";
 import { toNeo4jLabel } from "../schema.js";
-
-const PROJECT_SINGLETON_ID = "project:singleton";
 
 const UA_DIR = ".grasp-it";
 const FINGERPRINT_FILE = "fingerprints.json";
@@ -14,7 +12,7 @@ const CONFIG_FILE = "config.json";
 const ALLOWED_LABELS = [
   "File", "Function", "Class", "Interface", "Enum", "Module",
   "Layer", "Tour", "Domain", "Feature", "Operation", "Actor",
-  "BusinessRule", "Entity", "Project",
+  "BusinessRule", "Entity",
 ];
 
 // Codebase node types that must have kind = "codebase"
@@ -186,18 +184,18 @@ function edgeToProperties(edge: GraphEdge): Record<string, unknown> {
  * Persist a full knowledge graph to Neo4j.
  *
  * Clears all existing nodes and edges for the project, then writes all nodes,
- * edges, layers, and tour steps. Project metadata is stored in the Project
- * singleton node.
+ * edges, layers, and tour steps. Each node carries a `projectId` property
+ * (no `:Project` singleton, no `:PART_OF` edges).
  *
  * @param session   Neo4j driver session
  * @param graph     Knowledge graph to persist
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @param projectId Project identifier
  */
 export async function saveGraphToNeo4j(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   graph: KnowledgeGraph,
-  projectId: string = PROJECT_SINGLETON_ID,
+  projectId: string = "project:singleton",
 ): Promise<void> {
   // Clear existing graph data for this project
   await session.run(
@@ -209,27 +207,17 @@ export async function saveGraphToNeo4j(
     { projectId },
   );
 
-  // Merge the Project singleton — only structural + per-graph properties.
-  // The four migrated fields (gitCommitHash, lastAnalyzedAt, version,
-  // analyzedFiles) are NOT written here; they live elsewhere
-  // (File-node aggregation and .grasp-it/config.json).
-  await session.run(
-    `MERGE (p:Project {id: $projectId})
- SET p.name = $name,
-         p.languages   = $languages,
-         p.frameworks  = $frameworks,
-         p.description = $description,
-         p.kind        = "project"`,
-    {
-      projectId,
-      name: graph.project.name,
-      languages: graph.project.languages,
-      frameworks: graph.project.frameworks,
-      description: graph.project.description,
-    },
-  );
+  // Project-level metadata is now stored inline on the first graph node's
+  // project-meta sentinel — but actually, we keep this simpler: the project
+  // name/languages/frameworks/description live on the KnowledgeGraph.project
+  // payload but are not duplicated in Neo4j. The persisted nodes each carry
+  // their own properties; project meta is reconstructed at load time by
+  // scanning any nodes (the first one is used). For now we don't persist
+  // project meta to Neo4j at all — `/grasp` already writes it to
+  // .grasp-it/knowledge-graph.json. (Task G removed the Project singleton;
+  // project meta lives in JSON + .grasp-it/config.json.)
 
-  // Write nodes with projectId label
+  // Write nodes with projectId property
   for (const node of graph.nodes) {
     validateNodeLabel(node);
     validateNodeKind(node);
@@ -238,12 +226,10 @@ export async function saveGraphToNeo4j(
     // Use Codebase: grouping label for codebase nodes, Knowledge: for knowledge nodes
     const groupLabel = CODEBASE_TYPES.has(node.type) ? "Codebase" : "Knowledge";
     await session.run(
-      `MATCH (p:Project {id: $projectId})
-       CREATE (n:${groupLabel}:${label} {
+      `CREATE (n:${groupLabel}:${label} {
          projectId: $projectId,
          ${Object.keys(props).map((k) => `${k}: $${k}`).join(", ")}
-       })
-       CREATE (n)-[:PART_OF]->(p)`,
+       })`,
       { projectId, ...props },
     );
   }
@@ -263,15 +249,13 @@ export async function saveGraphToNeo4j(
   // Write layers
   for (const layer of graph.layers) {
     await session.run(
-      `MATCH (p:Project {id: $projectId})
-       CREATE (l:Layer {
+      `CREATE (l:Layer {
          projectId: $projectId,
          id: $id,
          name: $name,
          description: $description,
          nodeIds: $nodeIds
-       })
-       CREATE (l)-[:PART_OF]->(p)`,
+       })`,
       {
         projectId,
         id: layer.id,
@@ -285,16 +269,14 @@ export async function saveGraphToNeo4j(
   // Write tour steps
   for (const step of graph.tour) {
     await session.run(
-      `MATCH (p:Project {id: $projectId})
-       CREATE (t:TourStep {
+      `CREATE (t:TourStep {
          projectId: $projectId,
          order: $order,
          title: $title,
          description: $description,
          nodeIds: $nodeIds,
          languageLesson: $languageLesson
-       })
-       CREATE (t)-[:PART_OF]->(p)`,
+       })`,
       {
         projectId,
         order: step.order,
@@ -311,33 +293,36 @@ export async function saveGraphToNeo4j(
  * Load a full knowledge graph from Neo4j.
  *
  * Queries all nodes, edges, layers, and tour steps for the given project.
- * Returns null if no Project singleton exists (first run).
+ * Returns null if no Codebase nodes exist for this project (first run).
+ *
+ * Project metadata (name, languages, frameworks, description) is reconstructed
+ * by aggregating from any node in the project — when only `gitCommitHash` and
+ * `analyzedAt` are needed, they come from `max(File.analyzedAtCommit)` and
+ * `max(File.analyzedAt)` elsewhere (not persisted here). The persisted nodes
+ * are the primary payload; project meta lives in `.grasp-it/knowledge-graph.json`.
  *
  * @param session   Neo4j driver session
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @param projectId Project identifier
  */
 export async function loadGraphFromNeo4j(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  projectId: string = PROJECT_SINGLETON_ID,
+  projectId: string = "project:singleton",
   projectRoot?: string,
 ): Promise<KnowledgeGraph | null> {
-  // Load project singleton — only structural + per-graph properties.
-  // The four migrated fields are derived elsewhere (File-node aggregation,
-  // .grasp-it/config.json).
-  const projectResult = await session.run(
-    `MATCH (p:Project {id: $projectId})
-     RETURN p.name AS name, p.languages AS languages, p.frameworks AS frameworks,
-            p.description AS description`,
+  // First-run detection: any Codebase node with this projectId means a graph exists.
+  const firstRunCheck = await session.run(
+    `MATCH (n:Codebase) WHERE n.projectId = $projectId RETURN count(n) > 0 AS hasGraph`,
     { projectId },
   );
-
-  const projectRecord = projectResult.records[0] as unknown as Record<string, unknown> | undefined;
-  if (!projectRecord) return null;
+  const hasGraphRecord = firstRunCheck.records[0] as unknown as Record<string, unknown> | undefined;
+  if (!hasGraphRecord || hasGraphRecord["hasGraph"] !== true) {
+    return null;
+  }
 
   // Load nodes
   const nodesResult = await session.run(
-    `MATCH (n:Codebase)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (n:Codebase) WHERE n.projectId = $projectId
      RETURN n`,
     { projectId },
   );
@@ -403,7 +388,7 @@ export async function loadGraphFromNeo4j(
 
   // Load layers
   const layersResult = await session.run(
-    `MATCH (l:Layer)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (l:Layer) WHERE l.projectId = $projectId
      RETURN l`,
     { projectId },
   );
@@ -420,7 +405,7 @@ export async function loadGraphFromNeo4j(
 
   // Load tour steps
   const tourResult = await session.run(
-    `MATCH (t:TourStep)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (t:TourStep) WHERE t.projectId = $projectId
      RETURN t ORDER BY t.order`,
     { projectId },
   );
@@ -436,18 +421,17 @@ export async function loadGraphFromNeo4j(
     };
   });
 
-  // The four migrated fields are derived elsewhere — for `version`, fall back
-  // to .grasp-it/config.json when `projectRoot` is provided.
+  // `version` is read from .grasp-it/config.json when `projectRoot` is provided.
   const version = projectRoot ? loadConfig(projectRoot).version ?? "1.0.0" : "1.0.0";
 
   return {
     version,
     kind: "codebase",
     project: {
-      name: projectRecord["name"] as string,
-      languages: (projectRecord["languages"] as string[]) ?? [],
-      frameworks: (projectRecord["frameworks"] as string[]) ?? [],
-      description: (projectRecord["description"] as string) ?? "",
+      name: "",
+      languages: [],
+      frameworks: [],
+      description: "",
       analyzedAt: "",
       gitCommitHash: "",
     },
@@ -458,46 +442,6 @@ export async function loadGraphFromNeo4j(
   };
 }
 
-// ── Neo4j Project Singleton ──────────────────────────────────────────────────
-
-/**
- * DEPRECATED: project-level metadata fields have been migrated off the
- * Project singleton. New callers should derive `gitCommitHash`,
- * `lastAnalyzedAt`, `analyzedFiles` from File-node aggregations and
- * `version` from `.grasp-it/config.json`.
- *
- * This function is kept as a no-op for backwards compatibility with existing
- * callers that import it — the legacy fields are no longer written.
- *
- * @param session   Neo4j driver session
- * @param _meta     (ignored — fields no longer persisted here)
- * @param _projectId (ignored — singleton anchor)
- */
-export async function saveProjectMetaToNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  _meta?: AnalysisMeta,
-  _projectId: string = PROJECT_SINGLETON_ID,
-): Promise<void> {
-  // No-op: the four migrated fields are no longer stored on the Project singleton.
-}
-
-/**
- * DEPRECATED: project-level metadata fields have been migrated off the
- * Project singleton. Returns `null` (the Project singleton now exists
- * structurally as the `:PART_OF` anchor but carries no semantic content).
- *
- * @deprecated Use File-node aggregation (`max(File.analyzedAtCommit)` etc.)
- * and `.grasp-it/config.json` for `version`.
- */
-export async function loadProjectMetaFromNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  _projectId: string = PROJECT_SINGLETON_ID,
-): Promise<ProjectSingletonMeta | null> {
-  return null;
-}
-
 // ── Domain Graph Neo4j Persistence ──────────────────────────────────────────
 
 /**
@@ -505,15 +449,15 @@ export async function loadProjectMetaFromNeo4j(
  * Returns nodes with label Knowledge plus their secondary label (Domain/Feature/etc).
  *
  * @param session Neo4j driver session
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @param projectId Project identifier
  */
 export async function loadDomainGraphFromNeo4j(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  projectId: string = PROJECT_SINGLETON_ID,
+  projectId: string = "project:singleton",
 ): Promise<KnowledgeGraph | null> {
   const result = await session.run(
-    `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (d:Knowledge) WHERE d.projectId = $projectId
      RETURN d.id AS id, d.name AS name, d.summary AS summary, d.type AS type,
             d.source AS source, d.sourceFile AS sourceFile, d.filePath AS filePath,
             d.lineRange AS lineRange, d.tags AS tags, d.complexity AS complexity,
@@ -569,22 +513,19 @@ export async function loadDomainGraphFromNeo4j(
  * Writes Knowledge nodes with secondary labels (Domain/Feature/etc).
  *
  * Domain nodes carry `analyzedAtCommit` and `analyzedAt` properties for
- * per-Domain staleness tracking — this replaces the legacy
- * `Project.domainCommit` / `Project.domainAnalyzedAt` global stamp that was
- * removed in Task F. The Project singleton is no longer updated with
- * domain-analysis metadata; it remains purely a structural anchor for
- * `:PART_OF` edges.
+ * per-Domain staleness tracking. Each node also carries a `projectId`
+ * property (no `:Project` singleton, no `:PART_OF` edges).
  *
  * @param session   Neo4j driver session
  * @param graph     Domain graph to persist
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @param projectId Project identifier
  * @param commit    Git commit hash at which domain analysis was run
  */
 export async function saveDomainGraphToNeo4j(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   graph: KnowledgeGraph,
-  projectId: string = PROJECT_SINGLETON_ID,
+  projectId: string = "project:singleton",
   commit?: string,
 ): Promise<void> {
   // Resolve the commit to stamp on Domain nodes. Falls back to the graph's
@@ -594,7 +535,7 @@ export async function saveDomainGraphToNeo4j(
 
   // Clear existing domain elements for this project
   await session.run(
-    `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
+    `MATCH (d:Knowledge) WHERE d.projectId = $projectId
      DELETE d`,
     { projectId },
   );
@@ -635,8 +576,7 @@ export async function saveDomainGraphToNeo4j(
     }
 
     await session.run(
-      `MATCH (p:Project {id: $projectId})
-       CREATE (d:${labels} {
+      `CREATE (d:${labels} {
          id: $id,
          name: $name,
          type: $type,
@@ -652,8 +592,7 @@ export async function saveDomainGraphToNeo4j(
          sourceCommit: $sourceCommit,
          ${domainProps}
          projectId: $projectId
-       })
-       CREATE (d)-[:PART_OF]->(p)`,
+       })`,
       params,
     );
   }

@@ -70,7 +70,7 @@ export interface GraphNode {
   // Codebase node properties
   analyzedAtCommit?: string;                      // File (git commit hash at which file was last analyzed)
   // Shared node properties
-  kind?: "codebase" | "knowledge" | "project";
+  kind?: "codebase" | "knowledge";
   source?: "code-analysis" | "concept" | "wiki";
   // Risk node properties
   severity?: "low" | "medium" | "high" | "critical";
@@ -122,7 +122,7 @@ export interface ProjectMeta {
 // Root KnowledgeGraph
 export interface KnowledgeGraph {
   version: string;
-  kind?: "codebase" | "knowledge" | "project";
+  kind?: "codebase" | "knowledge";
   project: ProjectMeta;
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -136,18 +136,7 @@ export interface ThemeConfig {
   accentId: string;
 }
 
-// Project singleton meta — DEPRECATED.
-// The four fields used to live on the Project singleton node (kind: "project")
-// in Neo4j, but they have all been migrated to better homes:
-//   - gitCommitHash → max(File.analyzedAtCommit) (Cypher aggregate)
-//   - lastAnalyzedAt → max(File.analyzedAt) (Cypher aggregate)
-//   - analyzedFiles → count(:File) (Cypher aggregate)
-//   - version → .grasp-it/config.json
-// Kept as an empty interface for backwards compatibility with existing imports;
-// new code should not reference it.
-export interface ProjectSingletonMeta {}
-
-// AnalysisMeta (for persistence) — kept for legacy callers.
+// AnalysisMeta — kept for legacy callers (skill scripts may pass it through).
 // New code should derive these values from File-node aggregations and config.json.
 export interface AnalysisMeta {
   lastAnalyzedAt?: string;

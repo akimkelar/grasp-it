@@ -87,21 +87,14 @@ function createSampleGraph(): KnowledgeGraph {
 function createMockSessionWithGraph(graph: KnowledgeGraph) {
   return {
     run: vi.fn(async (query: string) => {
-      if (query.includes("MATCH (p:Project")) {
+      // First-run check: returns hasGraph=true when graph has any Codebase nodes
+      if (query.includes("count(n) > 0")) {
         return {
-          records: [{
-            name: graph.project.name,
-            languages: graph.project.languages,
-            frameworks: graph.project.frameworks,
-            description: graph.project.description,
-            analyzedAt: graph.project.analyzedAt,
-            gitCommitHash: graph.project.gitCommitHash,
-            version: graph.version,
-          }],
+          records: [{ hasGraph: graph.nodes.length > 0 }],
         };
       }
 
-      if (query.includes("MATCH (n:Codebase)-[:PART_OF]->(p:Project")) {
+      if (query.includes("MATCH (n:Codebase) WHERE n.projectId")) {
         return {
           records: graph.nodes.map((node) => ({
             n: {
@@ -133,7 +126,7 @@ function createMockSessionWithGraph(graph: KnowledgeGraph) {
         };
       }
 
-      if (query.includes("MATCH (l:Layer)-[:PART_OF]->(p:Project")) {
+      if (query.includes("MATCH (l:Layer) WHERE l.projectId")) {
         return {
           records: graph.layers.map((layer) => ({
             l: {
@@ -146,7 +139,7 @@ function createMockSessionWithGraph(graph: KnowledgeGraph) {
         };
       }
 
-      if (query.includes("MATCH (t:TourStep)-[:PART_OF]->(p:Project")) {
+      if (query.includes("MATCH (t:TourStep) WHERE t.projectId")) {
         return {
           records: graph.tour.map((step) => ({
             t: {
@@ -518,7 +511,7 @@ describe("MCPServer", () => {
       expect(parsed.layers).toContain("Presentation");
     });
 
-    it("get_project_info returns project metadata", async () => {
+    it("get_project_info returns project metadata from graph", async () => {
       const graph = createSampleGraph();
       const mockSession = createMockSessionWithGraph(graph);
       vi.mocked(createNeo4jSession).mockResolvedValue({
@@ -540,8 +533,13 @@ describe("MCPServer", () => {
       expect(response.result).toBeDefined();
       const result = response.result as { content: Array<{ text: string }> };
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.name).toBe("test-project");
-      expect(parsed.languages).toContain("TypeScript");
+      // After Task G, the Project singleton is gone. Project meta (name,
+      // languages, frameworks, description, analyzedAt, gitCommitHash) is
+      // no longer persisted on a :Project node — `gitCommitHash` and
+      // `lastAnalyzedAt` come from File-node aggregates, `version` from
+      // .grasp-it/config.json, and name/languages/etc. are reconstructed
+      // elsewhere. getProjectInfo still returns the shape, with empty
+      // meta fields when not populated by those external sources.
       expect(parsed.nodeCount).toBe(3);
       expect(parsed.edgeCount).toBe(2);
     });

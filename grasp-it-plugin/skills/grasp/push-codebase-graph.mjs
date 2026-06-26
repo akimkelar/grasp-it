@@ -224,9 +224,10 @@ function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
   // Update File nodes with analyzedAtCommit and analyzedAt — these derive
   // the new global values that used to live on the Project singleton
   // (gitCommitHash = max(File.analyzedAtCommit), lastAnalyzedAt = max(File.analyzedAt)).
-  // The Project singleton no longer carries these fields (it is purely a
-  // structural anchor). `version` lives in .grasp-it/config.json and
-  // `analyzedFiles` is computed at query time via `count(:File)`.
+  // After Task G, the Project singleton no longer exists — there is no
+  // Project node and no `:PART_OF` edges. Each Codebase node carries a
+  // `projectId` property instead. `version` lives in .grasp-it/config.json
+  // and `analyzedFiles` is computed at query time via `count(:File)`.
   const updateFileStampsCypher = `MATCH (f:File) SET f.analyzedAtCommit = ${cypherEscape(projectMeta.gitCommitHash)}, f.analyzedAt = datetime()`;
   runCypherShell(neo4jConfig, updateFileStampsCypher); // best-effort
 
@@ -475,9 +476,10 @@ async function pushCodebaseGraph(projectRoot) {
       // Update File nodes with analyzedAtCommit and analyzedAt — these derive
       // the new global values that used to live on the Project singleton
       // (gitCommitHash = max(File.analyzedAtCommit), lastAnalyzedAt = max(File.analyzedAt)).
-      // The Project singleton no longer carries these fields (it is purely a
-      // structural anchor). `version` lives in .grasp-it/config.json and
-      // `analyzedFiles` is computed at query time via `count(:File)`.
+      // After Task G, the Project singleton no longer exists — there is no
+      // Project node and no `:PART_OF` edges. Each Codebase node carries a
+      // `projectId` property instead. `version` lives in .grasp-it/config.json
+      // and `analyzedFiles` is computed at query time via `count(:File)`.
       await session.run(
         `MATCH (f:File)
          SET f.analyzedAtCommit = $gitCommitHash, f.analyzedAt = datetime()`,

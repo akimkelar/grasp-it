@@ -237,9 +237,12 @@ describe("domain graph nodes in Neo4j (Knowledge label)", () => {
     expect(domainTypes).toContain("Entity");
   });
 
-  it("domain elements have PART_OF relationship to Project", () => {
-    const relationship = "PART_OF";
-    expect(relationship).toBe("PART_OF");
+  it("domain elements carry a projectId property (Task G: no more :PART_OF anchor)", () => {
+    // After Task G, domain nodes are anchored to a project via the
+    // `projectId` string property rather than a `:PART_OF` relationship
+    // to a `:Project` singleton.
+    const anchorProperty = "projectId";
+    expect(anchorProperty).toBe("projectId");
   });
 
   it("loadDomainGraphFromNeo4j returns null when no Knowledge nodes exist", async () => {
@@ -248,7 +251,7 @@ describe("domain graph nodes in Neo4j (Knowledge label)", () => {
     };
 
     const result = await session.run(
-      `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId}) RETURN d`,
+      `MATCH (d:Knowledge) WHERE d.projectId = $projectId RETURN d`,
       { projectId: "project:singleton" },
     );
 

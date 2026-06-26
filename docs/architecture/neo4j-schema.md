@@ -168,19 +168,6 @@ During a concept plan, the skill must check the graph before creating new nodes.
 
 **Critical nodes for graph connectivity**: `Domain` and `Feature` must always be connected — they form the backbone of the graph structure.
 
-### Project Singleton Node
-
-A single `(p:Project {id: "project:singleton", kind: "project"})` node holds project-level
-metadata and is the shared authoritative source of the last-analyzed commit hash in multi-user
-Neo4j setups. It is excluded from the codebase wipe (`WHERE n.kind = "codebase"`) and therefore
-persists across all `/grasp` runs.
-
-| Label | Description | ID | Properties |
-|-------|-------------|-------|------------|
-| `Project` | Project-level metadata singleton | `project:singleton` | `gitCommitHash`, `lastAnalyzedAt`, `version`, `analyzedFiles`, `kind` |
-
-See Task 22 for implementation details.
-
 ### Structural Non-code Nodes (codebase subgraph)
 
 Produced deterministically by parsers and extractors for non-source-code files. These belong to
@@ -552,8 +539,6 @@ CREATE CONSTRAINT constraint_id FOR (n:Constraint) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT concept_id FOR (n:Concept) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT claim_id FOR (n:Claim) REQUIRE n.id IS UNIQUE;
 CREATE CONSTRAINT risk_id FOR (n:Risk) REQUIRE n.id IS UNIQUE;
--- Project singleton — single node per database, holds shared gitCommitHash across users
-CREATE CONSTRAINT project_id FOR (p:Project) REQUIRE p.id IS UNIQUE;
 ```
 
 ### Recommended Indexes
@@ -647,3 +632,27 @@ Internal `type` values (JSON / schema.ts) are lowercase or kebab-case. Neo4j lab
 | `Risk` | `risk` | `risk:<kebab-name>` | `risk:rounding-in-invoice-totals` |
 
 ¹ Currently stored as `"BusinessRule"` in schema.ts enum (not yet `"business-rule"`). See Task 17.
+
+---
+
+## Project Anchoring
+
+After the freshness refactor (Task F + Task G), there is **no `:Project` singleton node** in the graph. Project identity is carried by a `projectId` string property on each Codebase / Knowledge / Layer / TourStep node. Reads and writes filter by `n.projectId = 'project:singleton'` (or whatever identifier is passed in). There are no `:PART_OF` edges to a `:Project` node.
+
+### Migrating from pre-Task-G graphs
+
+Existing graphs in Neo4j written before Task G still have the `:Project` singleton and `[:PART_OF]` edges. To migrate an existing graph to the post-Task-G schema, run this one-time Cypher:
+
+```cypher
+// Migrate from pre-Task-G schema: drop :Project singleton and :PART_OF edges,
+// copy the singleton's id onto each node's projectId property.
+MATCH (n)-[r:PART_OF]->(p:Project) SET n.projectId = p.id DELETE r, p
+```
+
+After running this, the existing data is queryable via the new code path (filter by `n.projectId`). Drop the legacy `project_id` constraint if it still exists:
+
+```cypher
+DROP CONSTRAINT project_id IF EXISTS
+```
+
+The updated `setup-neo4j-schema.cypher` no longer creates the `project_id` constraint, so this is only needed for databases that ran the old setup script.

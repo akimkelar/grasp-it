@@ -411,7 +411,7 @@ export const GraphNodeSchema = z.object({
   confidence: z.enum(["tentative", "agreed"]).optional(),
   subConcepts: z.array(z.string()).optional(),
   constrainedBy: z.array(z.string()).optional(),
-  kind: z.enum(["codebase", "knowledge", "project"]).optional(),
+  kind: z.enum(["codebase", "knowledge"]).optional(),
   source: z.enum(["code-analysis", "concept", "wiki"]).optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   probability: z.enum(["low", "medium", "high"]).optional(),
@@ -456,7 +456,7 @@ export const ProjectMetaSchema = z.object({
 
 export const KnowledgeGraphSchema = z.object({
   version: z.string(),
-  kind: z.enum(["codebase", "knowledge", "project"]).optional(),
+  kind: z.enum(["codebase", "knowledge"]).optional(),
   project: ProjectMetaSchema,
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),

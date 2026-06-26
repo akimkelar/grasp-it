@@ -4,11 +4,13 @@
 
 The graph is **derived knowledge** — it is produced by analysis scripts and LLM agents from source code and concept plan sessions. When the sources change, the graph can become stale. Staleness must be controlled and visible.
 
+Staleness is detected per-node (not against a global Project stamp). Each File node carries `analyzedAtCommit` and each Knowledge node carries `sourceCommit` / `analyzedAtCommit` — comparing those against `git rev-parse HEAD` is the canonical mechanism.
+
 ## How "New" Code Is Determined
 
 **Git commit hash comparison is the sole mechanism**, not file modification dates.
 
-When `/grasp` runs, Phase 0 reads the previously stored `gitCommitHash`, then compares:
+When `/grasp` runs, Phase 0 reads the previously stored `gitCommitHash` (derived from `max(File.analyzedAtCommit)`), then compares:
 
 ```bash
 git diff <lastCommitHash>..HEAD --name-only
@@ -18,14 +20,14 @@ This returns the list of changed files. If no files changed, the graph is consid
 
 ### Canonical source of `gitCommitHash`
 
-The hash is stored in two places (in order of authority):
+The hash is computed at query time from Neo4j:
 
-| Location | When used |
-|----------|-----------|
-| **Neo4j `Project` singleton** (`Project.gitCommitHash`) | Multi-user cloud setup — all users read the shared canonical hash from Neo4j |
-| **`.grasp-it/knowledge-graph.json`** (`project.gitCommitHash`) | Single-user local fallback — already present in every `/grasp` output, read before any Neo4j query |
+| Source | When used |
+|--------|-----------|
+| `max(File.analyzedAtCommit)` | All Neo4j setups — the `:Project` singleton no longer exists (Task G removed it) |
+| `.grasp-it/knowledge-graph.json` (`project.gitCommitHash`) | Single-user local fallback — already present in every `/grasp` output, read before any Neo4j query |
 
-`.grasp-it/meta.json` is a redundant local copy of the same hash written for backward compatibility. The skill reads `knowledge-graph.json` first (Phase 0 step 5) — `meta.json` is not structurally required and is slated for removal once the `Project` singleton is in place (see Task 22).
+`.grasp-it/meta.json` is a redundant local copy of the same hash written for backward compatibility.
 
 File modification timestamps are **not** used anywhere in staleness detection.
 
@@ -64,12 +66,6 @@ This query surfaces all knowledge nodes that were derived from an older commit. 
 | `sourceCommit` on knowledge node | The knowledge node itself was derived at an older commit | "Is this piece of knowledge still valid at current HEAD?" |
 
 Both signals are complementary. `sourceCommit` is the primary mechanism for per-node staleness; `File.analyzedAtCommit` is a secondary signal that confirms whether the underlying code has been re-analyzed.
-
-### `Project` singleton node
-
-A single `(p:Project {id: "project:singleton", kind: "project"})` node holds project-level metadata. It is excluded from the codebase wipe (`WHERE n.kind = "codebase"`) and therefore persists across all `/grasp` runs. In multi-user scenarios, this is the shared authoritative source of the last-analyzed commit hash.
-
-See Task 22 for implementation.
 
 ## Types of Staleness
 
@@ -238,8 +234,10 @@ RETURN labels(k)[0] AS type, k.id, k.name, f.filePath
 ### Graph vs. local commit sync check
 
 ```cypher
-MATCH (p:Project {id: "project:singleton"})
-RETURN p.gitCommitHash AS graphCommit, p.lastAnalyzedAt AS lastAnalyzedAt
+// Task G: gitCommitHash is no longer on a :Project singleton.
+// Derive it from the File-node aggregate (the canonical source after Task F/G).
+MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL
+RETURN max(f.analyzedAtCommit) AS graphCommit
 ```
 
 Compare `graphCommit` against the local `git rev-parse HEAD` using `git merge-base` to determine ancestry (not just equality) — the graph may be ahead of the local clone, behind it, or at the same commit.
@@ -248,7 +246,7 @@ Compare `graphCommit` against the local `git rev-parse HEAD` using `git merge-ba
 
 | Check | Compares | Answers |
 |-------|----------|---------|
-| **Phase 0 staleness check** (per-skill) | Neo4j `Project.gitCommitHash` vs. local git HEAD | "Do I need to re-run `/grasp`?" |
+| **Phase 0 staleness check** (per-skill) | Neo4j `max(File.analyzedAtCommit)` vs. local git HEAD | "Do I need to re-run `/grasp`?" |
 | **Cross-user sync check** | Local graph vs. shared Neo4j database | "Is my analysis in sync with the shared Neo4j database?" |
 
 In single-user setups, both checks often agree. In multi-user setups, they can diverge: your local graph may be up-to-date with HEAD while Neo4j still holds an older commit hash (because another user pushed their analysis more recently).
@@ -278,7 +276,7 @@ The `graph-reviewer` agent also validates staleness as part of its approval proc
 ### Primary: `/grasp` skill (grasp-it-plugin/skills/grasp/)
 
 The main analysis skill. Phase 0 decision logic:
-1. Reads `knowledge-graph.json` (or Neo4j `Project` singleton) to get `gitCommitHash`
+1. Reads `gitCommitHash` from `knowledge-graph.json` or `max(File.analyzedAtCommit)`
 2. Runs `git diff <lastCommitHash>..HEAD --name-only`
 3. If no files changed → "Graph is up to date" (STOP)
 4. If files changed → incremental update

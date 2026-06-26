@@ -1103,7 +1103,7 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
    fi
    ```
    
-   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates `File.analyzedAtCommit` and `File.analyzedAt` so the next read of `gitCommitHash` (derived from `max(File.analyzedAtCommit)`) and `lastAnalyzedAt` (derived from `max(File.analyzedAt)`) reflects this commit. The `Project` singleton is purely a structural anchor (no semantic fields). `version` lives in `.grasp-it/config.json` and `analyzedFiles` is computed at query time via `count(:File)`.
+   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates `File.analyzedAtCommit` and `File.analyzedAt` so the next read of `gitCommitHash` (derived from `max(File.analyzedAtCommit)`) and `lastAnalyzedAt` (derived from `max(File.analyzedAt)`) reflects this commit. Each node carries a `projectId` property (Task G removed the `:Project` singleton — there is no Project node or `:PART_OF` edges any more). `version` lives in `.grasp-it/config.json` and `analyzedFiles` is computed at query time via `count(:File)`.
 
    **Node update strategy:** The script uses `MERGE` on node IDs to update existing nodes in place — it does NOT delete all Codebase nodes before inserting. This means:
    - Nodes in the assembled graph are created or updated (upsert behavior)

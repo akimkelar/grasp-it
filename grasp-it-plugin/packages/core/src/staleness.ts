@@ -1,6 +1,5 @@
 import { execFileSync } from "child_process";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "./types.js";
-import { loadProjectMetaFromNeo4j } from "./persistence/index.js";
 
 export interface StaleImplementedByResult {
   staleEdges: StaleEdge[];

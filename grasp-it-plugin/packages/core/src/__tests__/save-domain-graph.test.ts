@@ -66,9 +66,11 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    // First call clears existing domain elements
+    // First call clears existing domain elements via projectId filter (Task G:
+    // no more :PART_OF edges or :Project singleton)
     const clearCall = mockSession.run.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(clearCall[0]).toContain("MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})");
+    expect(clearCall[0]).toContain("MATCH (d:Knowledge) WHERE d.projectId = $projectId");
+    expect(clearCall[0]).not.toContain(":PART_OF");
 
     // Second call creates the domain node with dual-label pattern
     const createCall = mockSession.run.mock.calls[1] as unknown as [string, Record<string, unknown>];

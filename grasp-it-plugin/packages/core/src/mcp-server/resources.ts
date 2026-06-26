@@ -23,7 +23,6 @@ const META_URI = "grasp://meta";
 const STATS_URI = "grasp://stats";
 const SCHEMA_URI = "grasp://schema";
 
-const NODE_KINDS = ["codebase", "knowledge", "project"] as const;
 const NODE_TYPE_DESCRIPTIONS: Record<string, string> = {
   file: "Source code file",
   function: "Function or method",
