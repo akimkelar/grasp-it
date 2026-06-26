@@ -598,8 +598,8 @@ export async function saveDomainGraphToNeo4j(
   }
 }
 
-// Note: The following functions were removed in the Neo4j-first migration.
-// All reads/writes now go directly to Neo4j only.
-// - loadGraph / saveGraph: removed (use loadGraphFromNeo4j / saveGraphToNeo4j)
-// - loadMeta / saveMeta: removed (use loadProjectMetaFromNeo4j / saveProjectMetaToNeo4j)
-// - loadDomainGraph / saveDomainGraph: removed (use loadDomainGraphFromNeo4j / saveDomainGraphToNeo4j)
+// Note: Project-level metadata (gitCommitHash, lastAnalyzedAt, version,
+// analyzedFiles) is derived from File-node aggregations and .grasp-it/config.json.
+// Project-level domainCommit / domainAnalyzedAt was replaced by per-Domain
+// analyzedAtCommit. See staleness.ts and config.json handling for the canonical
+// source of each field.
