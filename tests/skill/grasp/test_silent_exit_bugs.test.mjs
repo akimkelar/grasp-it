@@ -133,15 +133,15 @@ describe('BUG-02: push-concept-graph.mjs triggers fallback for DNS-like errors',
   });
 
   it('triggers cypher-shell fallback when error message contains ENOTFOUND (DNS failure)', () => {
-    // We simulate a ServiceUnavailable/DNS error by using an unresolvable hostname.
-    // The driver throws an error with ENOTFOUND in the message for DNS failures.
-    // With our fix, this should trigger the cypher-shell fallback path.
-    // Since cypher-shell isn't available either (path stripped), it will fail at exit(1).
+    // Simulate a DNS failure via the test mock so we don't depend on real DNS timeouts.
+    // NEO4J_TEST_MOCK_ERR injects an ENOTFOUND-style message into the thrown error.
     const result = runScript(PUSH_CONCEPT_SCRIPT, [root], {
-      NEO4J_URI: 'neo4j://this.host.does.not.exist.invalid:7687',
+      NEO4J_URI: 'neo4j://localhost:9999',
       NEO4J_USERNAME: 'neo4j',
       NEO4J_PASSWORD: 'password',
       NEO4J_DATABASE: 'grasp',
+      NEO4J_TEST_MOCK: '1',
+      NEO4J_TEST_MOCK_ERR: 'getaddrinfo ENOTFOUND this.host.does.not.exist.invalid',
       PATH: '/usr/local/bin:/usr/bin:/bin',
     });
 
@@ -149,7 +149,8 @@ describe('BUG-02: push-concept-graph.mjs triggers fallback for DNS-like errors',
     expect(result.status).toBe(1);
     // The error message about the push failure or fallback attempt must be visible
     expect(result.stderr).toBeTruthy();
-  }, 15_000);
+    expect(result.stderr).toMatch(/ENOTFOUND/);
+  });
 
   it('triggers cypher-shell fallback when error.code is ServiceUnavailable', () => {
     // We create a mock scenario: the driver import succeeds but session.run throws
@@ -223,19 +224,22 @@ describe('BUG-02 (push-domain-graph.mjs): fallback condition covers DNS failures
   });
 
   it('attempts cypher-shell fallback for DNS-like failures (ENOTFOUND in message)', () => {
-    // Unresolvable hostname triggers ENOTFOUND which must now be in the fallback condition
+    // Simulate DNS failure via test mock to avoid real DNS timeouts
     const result = runScript(PUSH_DOMAIN_SCRIPT, [root], {
-      NEO4J_URI: 'neo4j://this.host.does.not.exist.invalid:7687',
+      NEO4J_URI: 'neo4j://localhost:9999',
       NEO4J_USERNAME: 'neo4j',
       NEO4J_PASSWORD: 'password',
       NEO4J_DATABASE: 'grasp',
+      NEO4J_TEST_MOCK: '1',
+      NEO4J_TEST_MOCK_ERR: 'getaddrinfo ENOTFOUND this.host.does.not.exist.invalid',
       PATH: '/usr/local/bin:/usr/bin:/bin',
     });
 
     // Should fail (cypher-shell also unavailable) but must have tried the fallback
     expect(result.status).toBe(1);
     expect(result.stderr).toBeTruthy();
-  }, 15_000);
+    expect(result.stderr).toMatch(/ENOTFOUND/);
+  });
 });
 
 // ── BUG-02 same pattern: push-codebase-graph.mjs ─────────────────────────────

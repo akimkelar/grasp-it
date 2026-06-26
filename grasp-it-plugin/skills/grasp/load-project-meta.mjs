@@ -46,7 +46,7 @@ async function loadProjectMetaViaDriver(neo4jConfig) {
   try {
     // Test mode: use a mock driver that fails predictably
     if (process.env.NEO4J_TEST_MOCK === '1') {
-      throw new Error('Connection refused (TestMock)');
+      throw new Error(process.env.NEO4J_TEST_MOCK_ERR || 'Connection refused (TestMock)');
     }
     const { default: neo4j } = await import("neo4j-driver");
     driver = neo4j.driver(

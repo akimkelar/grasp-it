@@ -325,7 +325,7 @@ async function pushCodebaseGraph(projectRoot) {
   try {
     // Test mode: use a mock driver that fails predictably
     if (process.env.NEO4J_TEST_MOCK === '1') {
-      throw new Error('Connection refused (TestMock)');
+      throw new Error(process.env.NEO4J_TEST_MOCK_ERR || 'Connection refused (TestMock)');
     }
     // Test mode: controlled failure count or auth fail — use a stub driver to avoid real network activity
     if (mockFailsRemaining !== null || process.env.NEO4J_TEST_MOCK_AUTH_FAIL === '1') {
