@@ -134,7 +134,7 @@ export class MCPResources {
     }
 
     try {
-      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session);
+      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session, undefined, this.projectRoot);
     } finally {
       await sessionResult.session.close();
     }

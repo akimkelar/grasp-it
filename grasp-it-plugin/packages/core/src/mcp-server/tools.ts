@@ -49,7 +49,7 @@ export class MCPTools {
     }
 
     try {
-      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session);
+      this.cachedGraph = await loadGraphFromNeo4j(sessionResult.session, undefined, this.projectRoot);
       if (this.cachedGraph?.nodes) {
         this.cachedNodes = this.cachedGraph.nodes;
         this.searchEngine = new SearchEngine(this.cachedGraph.nodes);

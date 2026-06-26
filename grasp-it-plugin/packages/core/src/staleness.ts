@@ -81,8 +81,8 @@ export function isStale(
 /**
  * Preflight check: determine whether the stored graph is stale relative to HEAD.
  *
- * Queries Neo4j Project singleton for the last-analyzed git commit hash
- * and compares it to the current HEAD.
+ * Derives the last-analyzed git commit hash from `max(File.analyzedAtCommit)`
+ * (the Project singleton no longer carries this field; it lives on File nodes).
  *
  * Returns a result indicating:
  * - Whether the graph is stale
@@ -104,12 +104,17 @@ export async function checkGraphFreshness(
     throw new Error("No analysis found. Run /grasp first.");
   }
 
-  const neo4jMeta = await loadProjectMetaFromNeo4j(session);
-  if (!neo4jMeta?.gitCommitHash) {
+  const result = await session.run(
+    `MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS lastCommit`,
+    {},
+  );
+  const record = result.records[0] as unknown as Record<string, unknown> | undefined;
+  const lastCommit = (record?.["lastCommit"] as string | null) ?? null;
+  if (!lastCommit) {
     throw new Error("No analysis found. Run /grasp first.");
   }
 
-  return checkFreshnessWithCommit(projectDir, neo4jMeta.gitCommitHash);
+  return checkFreshnessWithCommit(projectDir, lastCommit);
 }
 
 /**

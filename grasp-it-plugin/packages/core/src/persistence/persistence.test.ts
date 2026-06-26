@@ -80,7 +80,9 @@ describe("saveFingerprints / loadFingerprints", () => {
       saveConfig(tempDir, { autoUpdate: true });
       const loaded = loadConfig(tempDir);
 
-      expect(loaded).toEqual({ autoUpdate: true });
+      // saveConfig merges with defaults and any prior content, so the saved file
+      // includes the default outputLanguage alongside autoUpdate.
+      expect(loaded).toEqual({ autoUpdate: true, outputLanguage: "en" });
     });
 
     it("should return default config when no file exists", () => {
@@ -96,6 +98,15 @@ describe("saveFingerprints / loadFingerprints", () => {
 
       const loaded = loadConfig(tempDir);
       expect(loaded).toEqual({ autoUpdate: false, outputLanguage: "en" });
+    });
+
+    it("should preserve an explicit `version` field across save/load", () => {
+      saveConfig(tempDir, { autoUpdate: true });
+      saveConfig(tempDir, { version: "1.2.3" });
+      const loaded = loadConfig(tempDir);
+      // version is preserved because saveConfig merges with the existing content.
+      expect(loaded.version).toBe("1.2.3");
+      expect(loaded.autoUpdate).toBe(true);
     });
   });
 
@@ -496,7 +507,10 @@ describe("loadDomainGraphFromNeo4j", () => {
 // ─────────────────────────────────────────────────────────────────
 
 describe("saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j", () => {
-    it("should call session.run with correct MERGE query and params", async () => {
+    it("should be a no-op (legacy fields no longer written to the Project singleton)", async () => {
+      // saveProjectMetaToNeo4j is deprecated: the four migrated fields
+      // (gitCommitHash, lastAnalyzedAt, version, analyzedFiles) no longer
+      // live on the Project singleton. The function should be a no-op.
       const sampleMeta: AnalysisMeta = {
         lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
         gitCommitHash: "abc123def456",
@@ -504,34 +518,19 @@ describe("saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j", () => {
         analyzedFiles: 42,
       };
 
-      let ranQuery = "";
-      let ranParams: Record<string, unknown> = {};
-
+      let ranAny = false;
       const mockSession = {
-        run: async (query: string, params: Record<string, unknown>) => {
-          ranQuery = query;
-          ranParams = params;
+        run: async (_query: string, _params: Record<string, unknown>) => {
+          ranAny = true;
           return { records: [] };
         },
       };
 
-      await saveProjectMetaToNeo4j(mockSession as never, sampleMeta);
-
-      expect(ranQuery).toContain("MERGE (p:Project");
-      expect(ranQuery).toContain("SET");
-      expect(ranQuery).toContain("p.gitCommitHash");
-      expect(ranQuery).toContain("p.lastAnalyzedAt");
-      expect(ranQuery).toContain("p.version");
-      expect(ranQuery).toContain("p.analyzedFiles");
-      expect(ranQuery).toContain("p.kind");
-      expect(ranParams.projectId).toBe("project:singleton");
-      expect(ranParams.gitCommitHash).toBe("abc123def456");
-      expect(ranParams.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
-      expect(ranParams.version).toBe("1.0.0");
-      expect(ranParams.analyzedFiles).toBe(42);
+      await expect(saveProjectMetaToNeo4j(mockSession as never, sampleMeta)).resolves.toBeUndefined();
+      expect(ranAny).toBe(false);
     });
 
-    it("should return null when no Project singleton exists", async () => {
+    it("loadProjectMetaFromNeo4j always returns null (legacy fields removed)", async () => {
       const mockSession = {
         run: async (_query: string, _params: Record<string, unknown>) => {
           return { records: [] };
@@ -540,66 +539,6 @@ describe("saveProjectMetaToNeo4j / loadProjectMetaFromNeo4j", () => {
 
       const result = await loadProjectMetaFromNeo4j(mockSession as never);
       expect(result).toBeNull();
-    });
-
-    it("propagates error when session.run() throws", async () => {
-      const mockSession = {
-        run: async (_query: string, _params: Record<string, unknown>) => {
-          throw new Error("Connection timeout");
-        },
-      };
-
-      await expect(saveProjectMetaToNeo4j(mockSession as never, sampleMeta)).rejects.toThrow(
-        "Connection timeout",
-      );
-    });
-
-    it("returns null when record has unexpected shape (gitCommitHash is null)", async () => {
-      const mockRecord = {
-        gitCommitHash: null,
-        lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
-        version: "1.0.0",
-        analyzedFiles: 42,
-      };
-
-      const mockSession = {
-        run: async (_query: string, _params: Record<string, unknown>) => {
-          return {
-            records: [mockRecord],
-          };
-        },
-      };
-
-      const result = await loadProjectMetaFromNeo4j(mockSession as never);
-      // The function casts fields directly; null gitCommitHash becomes null in the result.
-      // Current behavior: returns object with null gitCommitHash (not null itself).
-      // Task expectation: return null or safe default, not throw.
-      expect(result).not.toBeNull();
-      expect(result!.gitCommitHash).toBeNull();
-    });
-
-    it("should return ProjectSingletonMeta when node exists", async () => {
-      const mockRecord = {
-        gitCommitHash: "abc123def456",
-        lastAnalyzedAt: "2026-03-14T00:00:00.000Z",
-        version: "1.0.0",
-        analyzedFiles: 42,
-      };
-
-      const mockSession = {
-        run: async (_query: string, _params: Record<string, unknown>) => {
-          return {
-            records: [mockRecord],
-          };
-        },
-      };
-
-      const result = await loadProjectMetaFromNeo4j(mockSession as never);
-      expect(result).not.toBeNull();
-      expect(result!.gitCommitHash).toBe("abc123def456");
-      expect(result!.lastAnalyzedAt).toBe("2026-03-14T00:00:00.000Z");
-      expect(result!.version).toBe("1.0.0");
-      expect(result!.analyzedFiles).toBe(42);
     });
   });
 });
@@ -687,11 +626,17 @@ describe("saveGraphToNeo4j", () => {
     // Find the MERGE Project call (after DELETE calls)
     const projectCall = calls.find(([q]) => q.includes("MERGE (p:Project"));
     expect(projectCall).toBeDefined();
+    // The Project singleton only carries structural + per-graph properties.
+    // The four migrated fields (gitCommitHash, lastAnalyzedAt, version,
+    // analyzedFiles) are derived elsewhere (File-node aggregation +
+    // .grasp-it/config.json).
     expect(projectCall![1]).toMatchObject({
       projectId: "project:singleton",
       name: "test-project",
-      gitCommitHash: "abc123",
     });
+    expect(projectCall![1]).not.toHaveProperty("gitCommitHash");
+    expect(projectCall![1]).not.toHaveProperty("version");
+    expect(projectCall![1]).not.toHaveProperty("analyzedAt");
   });
 
   it("creates one Codebase:File node per file node in the graph", async () => {
@@ -891,9 +836,6 @@ describe("loadGraphFromNeo4j", () => {
                 languages: ["typescript"],
                 frameworks: ["vitest"],
                 description: "A test project",
-                analyzedAt: "2026-03-14T00:00:00.000Z",
-                gitCommitHash: "abc123",
-                version: "1.0.0",
               },
             ],
           };
@@ -907,7 +849,11 @@ describe("loadGraphFromNeo4j", () => {
 
     expect(result).not.toBeNull();
     expect(result!.project.name).toBe("test-project");
-    expect(result!.project.gitCommitHash).toBe("abc123");
+    // gitCommitHash is no longer read from the Project singleton — it comes
+    // from max(File.analyzedAtCommit). When loadGraphFromNeo4j is called
+    // without projectRoot, the resulting KnowledgeGraph.project.gitCommitHash
+    // is empty.
+    expect(result!.project.gitCommitHash).toBe("");
     expect(result!.project.languages).toEqual(["typescript"]);
   });
 

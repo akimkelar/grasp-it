@@ -89,16 +89,33 @@ export function loadFingerprints(projectRoot: string): FingerprintStore | null {
   }
 }
 
+/**
+ * Save the project config to `.grasp-it/config.json`, preserving any existing
+ * fields not present in the new config (e.g., `version` set by `/grasp`).
+ */
 export function saveConfig(projectRoot: string, config: ProjectConfig): void {
   const dir = ensureDir(projectRoot);
-  writeFileSync(join(dir, CONFIG_FILE), JSON.stringify(config, null, 2), "utf-8");
+  const filePath = join(dir, CONFIG_FILE);
+  const existing: ProjectConfig = existsSync(filePath)
+    ? (() => {
+        try {
+          return JSON.parse(readFileSync(filePath, "utf-8")) as ProjectConfig;
+        } catch {
+          return { ...DEFAULT_CONFIG };
+        }
+      })()
+    : { ...DEFAULT_CONFIG };
+  const merged: ProjectConfig = { ...existing, ...config };
+  writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
 }
 
 export function loadConfig(projectRoot: string): ProjectConfig {
   const filePath = join(projectRoot, UA_DIR, CONFIG_FILE);
   if (!existsSync(filePath)) return { ...DEFAULT_CONFIG };
   try {
-    return JSON.parse(readFileSync(filePath, "utf-8")) as ProjectConfig;
+    const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as ProjectConfig;
+    // Defensive: ensure autoUpdate is always a boolean (defaults if missing).
+    return { ...DEFAULT_CONFIG, ...parsed };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
@@ -192,16 +209,16 @@ export async function saveGraphToNeo4j(
     { projectId },
   );
 
-  // Merge the Project singleton
+  // Merge the Project singleton — only structural + per-graph properties.
+  // The four migrated fields (gitCommitHash, lastAnalyzedAt, version,
+  // analyzedFiles) are NOT written here; they live elsewhere
+  // (File-node aggregation and .grasp-it/config.json).
   await session.run(
     `MERGE (p:Project {id: $projectId})
  SET p.name = $name,
          p.languages   = $languages,
          p.frameworks  = $frameworks,
          p.description = $description,
-         p.analyzedAt  = $analyzedAt,
-         p.gitCommitHash = $gitCommitHash,
-         p.version     = $version,
          p.kind        = "project"`,
     {
       projectId,
@@ -209,9 +226,6 @@ export async function saveGraphToNeo4j(
       languages: graph.project.languages,
       frameworks: graph.project.frameworks,
       description: graph.project.description,
-      analyzedAt: graph.project.analyzedAt,
-      gitCommitHash: graph.project.gitCommitHash,
-      version: graph.version,
     },
   );
 
@@ -306,13 +320,15 @@ export async function loadGraphFromNeo4j(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   projectId: string = PROJECT_SINGLETON_ID,
+  projectRoot?: string,
 ): Promise<KnowledgeGraph | null> {
-  // Load project singleton
+  // Load project singleton — only structural + per-graph properties.
+  // The four migrated fields are derived elsewhere (File-node aggregation,
+  // .grasp-it/config.json).
   const projectResult = await session.run(
     `MATCH (p:Project {id: $projectId})
      RETURN p.name AS name, p.languages AS languages, p.frameworks AS frameworks,
-            p.description AS description, p.analyzedAt AS analyzedAt,
-            p.gitCommitHash AS gitCommitHash, p.version AS version`,
+            p.description AS description`,
     { projectId },
   );
 
@@ -420,16 +436,20 @@ export async function loadGraphFromNeo4j(
     };
   });
 
+  // The four migrated fields are derived elsewhere — for `version`, fall back
+  // to .grasp-it/config.json when `projectRoot` is provided.
+  const version = projectRoot ? loadConfig(projectRoot).version ?? "1.0.0" : "1.0.0";
+
   return {
-    version: (projectRecord["version"] as string) ?? "1.0.0",
+    version,
     kind: "codebase",
     project: {
       name: projectRecord["name"] as string,
       languages: (projectRecord["languages"] as string[]) ?? [],
       frameworks: (projectRecord["frameworks"] as string[]) ?? [],
       description: (projectRecord["description"] as string) ?? "",
-      analyzedAt: (projectRecord["analyzedAt"] as string) ?? "",
-      gitCommitHash: (projectRecord["gitCommitHash"] as string) ?? "",
+      analyzedAt: "",
+      gitCommitHash: "",
     },
     nodes,
     edges,
@@ -441,61 +461,41 @@ export async function loadGraphFromNeo4j(
 // ── Neo4j Project Singleton ──────────────────────────────────────────────────
 
 /**
- * Persist project-level metadata to the Project singleton node in Neo4j.
+ * DEPRECATED: project-level metadata fields have been migrated off the
+ * Project singleton. New callers should derive `gitCommitHash`,
+ * `lastAnalyzedAt`, `analyzedFiles` from File-node aggregations and
+ * `version` from `.grasp-it/config.json`.
+ *
+ * This function is kept as a no-op for backwards compatibility with existing
+ * callers that import it — the legacy fields are no longer written.
  *
  * @param session   Neo4j driver session
- * @param meta Analysis metadata to persist
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @param _meta     (ignored — fields no longer persisted here)
+ * @param _projectId (ignored — singleton anchor)
  */
 export async function saveProjectMetaToNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  meta: AnalysisMeta,
-  projectId: string = PROJECT_SINGLETON_ID,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+  _meta?: AnalysisMeta,
+  _projectId: string = PROJECT_SINGLETON_ID,
 ): Promise<void> {
-  await session.run(
-    `MERGE (p:Project {id: $projectId})
-     SET p.gitCommitHash  = $gitCommitHash,
-         p.lastAnalyzedAt = $lastAnalyzedAt,
-         p.version        = $version,
-         p.analyzedFiles  = $analyzedFiles,
-         p.kind           = "project"`,
-    {
-      projectId,
-      gitCommitHash: meta.gitCommitHash,
-      lastAnalyzedAt: meta.lastAnalyzedAt,
-      version: meta.version,
-      analyzedFiles: meta.analyzedFiles,
-    },
-  );
+  // No-op: the four migrated fields are no longer stored on the Project singleton.
 }
 
 /**
- * Load project-level metadata from the Project singleton node in Neo4j.
- * Returns null if the node does not exist yet (first run).
+ * DEPRECATED: project-level metadata fields have been migrated off the
+ * Project singleton. Returns `null` (the Project singleton now exists
+ * structurally as the `:PART_OF` anchor but carries no semantic content).
  *
- * @param session   Neo4j driver session
- * @param projectId Project identifier (defaults to "project:singleton")
+ * @deprecated Use File-node aggregation (`max(File.analyzedAtCommit)` etc.)
+ * and `.grasp-it/config.json` for `version`.
  */
 export async function loadProjectMetaFromNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  projectId: string = PROJECT_SINGLETON_ID,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
+  _projectId: string = PROJECT_SINGLETON_ID,
 ): Promise<ProjectSingletonMeta | null> {
-  const result = await session.run(
-    `MATCH (p:Project {id: $projectId}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`,
-    { projectId },
-  );
-
-  const record = result.records[0] as unknown as Record<string, unknown> | undefined;
-  if (!record) return null;
-
-  return {
-    gitCommitHash: record["gitCommitHash"] as string,
-    lastAnalyzedAt: record["lastAnalyzedAt"] as string,
-    version: record["version"] as string,
-    analyzedFiles: record["analyzedFiles"] as number,
-  };
+  return null;
 }
 
 // ── Domain Graph Neo4j Persistence ──────────────────────────────────────────

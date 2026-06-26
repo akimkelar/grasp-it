@@ -136,28 +136,34 @@ export interface ThemeConfig {
   accentId: string;
 }
 
-// Project singleton meta — written to Neo4j as a singleton node (kind: "project")
-export interface ProjectSingletonMeta {
-  gitCommitHash: string;
-  lastAnalyzedAt: string;
-  version: string;
-  analyzedFiles: number;
-}
+// Project singleton meta — DEPRECATED.
+// The four fields used to live on the Project singleton node (kind: "project")
+// in Neo4j, but they have all been migrated to better homes:
+//   - gitCommitHash → max(File.analyzedAtCommit) (Cypher aggregate)
+//   - lastAnalyzedAt → max(File.analyzedAt) (Cypher aggregate)
+//   - analyzedFiles → count(:File) (Cypher aggregate)
+//   - version → .grasp-it/config.json
+// Kept as an empty interface for backwards compatibility with existing imports;
+// new code should not reference it.
+export interface ProjectSingletonMeta {}
 
-// AnalysisMeta (for persistence)
+// AnalysisMeta (for persistence) — kept for legacy callers.
+// New code should derive these values from File-node aggregations and config.json.
 export interface AnalysisMeta {
-  lastAnalyzedAt: string;
-  gitCommitHash: string;
-  version: string;
-  analyzedFiles: number;
+  lastAnalyzedAt?: string;
+  gitCommitHash?: string;
+  version?: string;
+  analyzedFiles?: number;
   theme?: ThemeConfig;
   domainGraphStale?: boolean;
 }
 
 // Project config (for auto-update opt-in and language preference)
+// `version` is the schema version of the assembled knowledge graph (read+written here).
 export interface ProjectConfig {
   autoUpdate: boolean;
   outputLanguage?: string;
+  version?: string;
 }
 
 // Non-code structural sub-interfaces

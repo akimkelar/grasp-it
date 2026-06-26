@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { KnowledgeGraph, GraphNode, GraphEdge } from "../types.js";
-import type { ProjectSingletonMeta } from "../types.js";
 
 vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
@@ -65,20 +64,21 @@ type MockSession = {
   run: ReturnType<typeof vi.fn>;
 };
 
-/** Creates a mock Neo4j session that returns the given ProjectSingletonMeta. */
-function makeNeo4jSession(meta: ProjectSingletonMeta | null): MockSession {
+/**
+ * Creates a mock Neo4j session that simulates the
+ * `MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL
+ *  RETURN max(f.analyzedAtCommit) AS lastCommit` aggregation used by
+ * `checkGraphFreshness` after Phase 3 of the freshness refactor.
+ *
+ * Pass the commit hash the aggregation should return, or `null` to simulate
+ * an empty graph (no File nodes).
+ */
+function makeNeo4jSession(lastCommit: string | null): MockSession {
   return {
     run: vi.fn(async () => {
-      if (!meta) return { records: [] };
+      if (lastCommit == null) return { records: [] };
       return {
-        records: [
-          {
-            gitCommitHash: meta.gitCommitHash,
-            lastAnalyzedAt: meta.lastAnalyzedAt,
-            version: meta.version,
-            analyzedFiles: meta.analyzedFiles,
-          },
-        ],
+        records: [{ lastCommit }],
       };
     }),
   };
@@ -172,12 +172,7 @@ describe("checkGraphFreshness (Neo4j-only)", () => {
   });
 
   it("queries Neo4j and returns stale=false when commit matches HEAD", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      version: "1.0.0",
-      analyzedFiles: 10,
-    });
+    const session = makeNeo4jSession("abc123");
     mockedExecFileSync.mockReturnValue("abc123");
 
     const result = await checkGraphFreshness("/project", session);
@@ -192,12 +187,7 @@ describe("checkGraphFreshness (Neo4j-only)", () => {
   });
 
   it("returns stale=true when Neo4j commit differs from HEAD", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      version: "1.0.0",
-      analyzedFiles: 10,
-    });
+    const session = makeNeo4jSession("abc123");
     mockedExecFileSync.mockImplementation((cmd, args) => {
       if (cmd === "git" && args?.[0] === "rev-parse") return "def456";
       if (cmd === "git" && args?.[0] === "rev-list") return "5";
@@ -239,12 +229,7 @@ describe("checkGraphFreshness (Neo4j-only)", () => {
   });
 
   it("gracefully handles HEAD git error after Neo4j success", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      lastAnalyzedAt: "2026-01-01T00:00:00.000Z",
-      version: "1.0.0",
-      analyzedFiles: 10,
-    });
+    const session = makeNeo4jSession("abc123");
     mockedExecFileSync.mockImplementation((cmd, args) => {
       if (cmd === "git" && args?.[0] === "rev-parse") {
         throw new Error("fatal: not a git repo");
@@ -260,6 +245,21 @@ describe("checkGraphFreshness (Neo4j-only)", () => {
       headCommit: "",
       commitsBehind: 0,
     });
+  });
+
+  it("queries File-node aggregation, not the Project singleton", async () => {
+    // Phase 3 refactor: checkGraphFreshness now derives lastCommit from
+    // max(File.analyzedAtCommit) rather than the Project singleton's
+    // gitCommitHash field.
+    const session = makeNeo4jSession("abc123");
+    mockedExecFileSync.mockReturnValue("abc123");
+
+    await checkGraphFreshness("/project", session);
+
+    const callArgs = session.run.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(callArgs[0]).toContain("MATCH (f:File)");
+    expect(callArgs[0]).toContain("max(f.analyzedAtCommit)");
+    expect(callArgs[0]).not.toContain("MATCH (p:Project");
   });
 });
 
