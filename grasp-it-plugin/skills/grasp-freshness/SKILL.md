@@ -192,9 +192,11 @@ For each stale knowledge node, walk the graph upwards to find its `Domain` ances
 
 - `Feature` is reached from `Domain` via `(:Domain)-[:HAS_FEATURE]->(:Feature)`.
 - `Operation` is reached from `Feature` via `(:Feature)-[:HAS_OPERATION]->(:Operation)`.
-- Most other knowledge types (`BusinessRule`, `Entity`, `Constraint`, `Risk`, `Concept`) hang off `Feature` or `Operation` via `related`, `performed_by`, or `governed_by` edges. We allow any relationship direction so we don't have to enumerate the full set.
+- Other knowledge nodes hang off `Feature` or `Operation` via the schema-defined `GOVERNS` (BusinessRule → Feature/Operation), `DECIDES` (Decision → Feature/BusinessRule), `CONSTRAINED_BY` (Feature/Decision/BR/Concept → Constraint), and `APPLIES_IN` (Constraint/BR/Risk → Concept/Feature/Operation) edges. We enumerate these explicitly so the traversal does not wander into unrelated subgraphs (e.g., codebase `IMPLEMENTED_BY` edges to Files, which are not `Domain` ancestors).
 
-The traversal uses a variable-length path bounded at 6 hops — Domain → Feature → Operation is 2 hops; real graphs rarely exceed 4–5 in either direction. `OPTIONAL MATCH` keeps nodes with no Domain in the result set (they fall through to Phase 4).
+We walk up to 6 hops because some knowledge nodes (Decision, Constraint, Concept) sit 3–4 hops away from their owning `Domain` via `DECIDES` / `CONSTRAINED_BY` / `APPLIES_IN`. The walk is bounded — it never follows codebase-only relationships (`CONTAINS`, `CALLS`, `IMPORTS`, `IMPLEMENTED_BY`, etc.), so it cannot mis-attribute a node to an unrelated Domain.
+
+`OPTIONAL MATCH` keeps nodes with no Domain in the result set (they fall through to Phase 4).
 
 ```bash
 # Collect unique node IDs from Phase 2.
@@ -203,13 +205,22 @@ NODE_IDS=$(echo "$STALE_ROWS" | jq -r '[.[].nodeId] | unique | .[]')
 # Build a JSON list literal: ['feature:auth','operation:login',...]
 NODE_IDS_LITERAL=$(echo "$STALE_ROWS" | jq -c '[.[].nodeId] | unique')
 
-# Query for Domain ancestors. For each stale node, find the nearest :Domain
-# reachable by traversing any relationship (max 6 hops). Use collect(DISTINCT
-# ...) and take [0] — multiple Domain hits collapse to one row per node.
+# Query for Domain ancestors. For each stale node, walk up to 6 hops through
+# the schema-defined knowledge-traversal relationship types only. We use a
+# typed pattern (not `[*0..6]`) so the traversal cannot follow unrelated
+# codebase edges like IMPLEMENTED_BY → File and accidentally bind a File's
+# enclosing Domain. The walked types are the canonical "this-node-belongs-to-
+# a-Feature-or-Operation" set from docs/architecture/neo4j-schema.md:
+#   HAS_FEATURE    (Domain → Feature)
+#   HAS_OPERATION  (Feature → Operation)
+#   GOVERNS        (BusinessRule → Feature/Operation)
+#   DECIDES        (Decision → Feature/BusinessRule)
+#   CONSTRAINED_BY (Feature/Decision/BR/Concept → Constraint)
+#   APPLIES_IN     (Constraint/BR/Risk → Concept/Feature/Operation)
 DOMAIN_QUERY="
 UNWIND ${NODE_IDS_LITERAL} AS nodeId
 MATCH (k) WHERE k.id = nodeId
-OPTIONAL MATCH (k)-[*0..6]-(d:Domain)
+OPTIONAL MATCH (k)-[:HAS_FEATURE|HAS_OPERATION|GOVERNS|DECIDES|CONSTRAINED_BY|APPLIES_IN*1..6]-(d:Domain)
 WITH nodeId, k, collect(DISTINCT d) AS domains
 RETURN nodeId AS nodeId,
        head([dom IN domains WHERE dom IS NOT NULL | dom.id]) AS domainId,
@@ -237,7 +248,7 @@ fi
 echo "$DOMAIN_RESULT" | jq -c '.results // [] | map({ (.nodeId): (.domainId // null) }) | add // {}' > /tmp/grasp-freshness-domain-map.json
 ```
 
-**Note:** the path-traversal uses a fixed upper bound of 6 hops, which is comfortably more than the maximum depth in any real graph (Domain → Feature → Operation is 2 hops; deeper Concept/Decision graphs rarely exceed 4–5). The `OPTIONAL MATCH` ensures nodes with no Domain still appear in the output (with `domainId: null`).
+**Note:** the path-traversal uses a typed relationship set (six schema-defined knowledge-traversal types) with a fixed upper bound of 6 hops. The walk is intentionally narrow — it only follows the schema-defined "this-node-belongs-to-a-Feature-or-Operation" relationships, never codebase-only edges like `IMPLEMENTED_BY` / `CONTAINS` / `CALLS`. This prevents the traversal from wandering into the codebase subgraph and mis-attributing a node to an unrelated `Domain`. The `OPTIONAL MATCH` ensures nodes with no Domain still appear in the output (with `domainId: null`).
 
 ### Phase 4: Fallback grouping — `sourceFiles` directory
 
