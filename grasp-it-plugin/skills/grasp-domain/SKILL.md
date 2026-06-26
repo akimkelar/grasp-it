@@ -147,10 +147,10 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
 
 Before deriving domain knowledge, check whether Neo4j is reachable and what graph state exists:
 
-1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
+1. Query Neo4j `Project` singleton for the codebase `gitCommitHash` (used by the domainCommit comparison in Phase 2 and as a `sourceCommit` fallback in Phase 6):
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p { .gitCommitHash } AS meta" 2>/dev/null)
    EXIT_CODE=$?
 
    # Exit code 2 means driver was unavailable — fall back to cypher-shell
@@ -167,7 +167,7 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
        URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p { .gitCommitHash } AS meta" 2>/dev/null)
        EXIT_CODE=$?
      else
        echo "Error: neo4j-driver is unavailable and cypher-shell is not installed."
@@ -191,7 +191,7 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
      HAS_CODEBASE_GRAPH="false"
      LAST_COMMIT=""
    else
-     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty' 2>/dev/null)
+     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.meta.gitCommitHash // empty' 2>/dev/null)
      if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
        echo "[grasp-domain] No existing knowledge graph found (no gitCommitHash)."
        echo "[grasp-domain] Will run in standalone mode — IMPLEMENTED_BY edges will not be produced."
@@ -203,15 +203,12 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
      fi
    fi
    ```
-2. If `HAS_CODEBASE_GRAPH="true"`, compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
-3. If stale, print a warning:
-   > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent code changes. Run `/grasp` to update."
-4. **Continue execution regardless** — the warning is advisory only
+2. **Continue execution regardless** of codebase-graph staleness — the per-domain staleness check below uses `domainCommit` vs `gitCommitHash` to determine whether the domain graph is current, which subsumes the global "is the graph stale relative to HEAD" question.
 
 > **Three-way decision logic:**
 > - Neo4j connection error → **STOP** (cannot proceed)
 > - Neo4j reachable but no `Project` singleton → **continue to Phase 2 standalone mode** (HAS_CODEBASE_GRAPH=false)
-> - Neo4j has `Project.gitCommitHash` → **continue to Phase 2** (HAS_CODEBASE_GRAPH=true, check staleness)
+> - Neo4j has `Project.gitCommitHash` → **continue to Phase 2** (HAS_CODEBASE_GRAPH=true)
 
 5. **Apply Neo4j schema if needed:** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
    ```bash

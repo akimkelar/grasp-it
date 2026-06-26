@@ -90,31 +90,6 @@ echo "[grasp-diff] Using plugin: $PLUGIN_ROOT (version: $(jq -r '.version' "$PLU
 GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 ```
 
-### Phase 1: Graph Freshness Check
-
-Before reading the graph, check whether it is stale relative to the current HEAD:
-
-1. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
-   ```bash
-   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
-   if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
-     echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
-     echo "Ensure Neo4j is running and accessible, then re-run /grasp-diff."
-     exit 1
-   fi
-   LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
-   if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
-     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
-     exit 1
-   fi
-   ```
-2. Compare `LAST_COMMIT` to `git rev-parse HEAD` — if they differ, the graph is stale
-3. If stale, print a warning:
-   > "Graph may be stale — last analyzed at `<lastCommit>` (`N` commits behind HEAD). Results may not reflect recent changes. Run `/grasp` to update."
-4. **Continue execution regardless** — the warning is advisory only
-
-> **Note:** This check queries Neo4j for the `Project` singleton's `gitCommitHash`. Neo4j is the only source of truth — there is no JSON fallback.
-
 ### Phase 1: Verify Graph Exists
 
 1. Check that a `Project` singleton exists in Neo4j:
