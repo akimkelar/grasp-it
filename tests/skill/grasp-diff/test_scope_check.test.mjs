@@ -141,8 +141,8 @@ describe('/grasp-diff Phase 1.5 scope check', () => {
     // Extract the scope-check bash block once and reuse it across tests.
     // The block must read $CHANGED_FILES (newline-delimited paths) and
     // GRASP_DIFF_SCOPE_MOCK (JSON map of path -> analyzedAtCommit | null).
-    // It should emit a `SCOPE_WARNINGS` env var / variable and a friendly
-    // printed table.
+    // It exports SCOPE_RESULT (machine-readable JSON array) and prints a
+    // friendly table.
     let scopeBash;
 
     beforeEach(() => {
@@ -289,16 +289,21 @@ b.ts"
 
   describe('Phase 2 uses precomputed $CHANGED_FILES', () => {
     it('does not re-compute CHANGED_FILES — uses the value from Phase 1.5', () => {
-      // Phase 2 should now reference $CHANGED_FILES (set in Phase 1.5) rather
-      // than running git diff inline. The DELETED_FILES computation may still
-      // live in Phase 2 because it is a separate concern.
+      // Phase 2 must reference the precomputed $CHANGED_FILES from Phase 1.5
+      // and must NOT re-run `git diff` to recompute the file list. The
+      // DELETED_FILES computation may still live in Phase 2 because it is a
+      // separate concern.
       const content = readFileSync(SKILL_MD, 'utf-8');
       // Phase 2 block content
       const phase2 = content.match(/Phase 2:[\s\S]*?(?=###\s+Phase)/);
       expect(phase2).not.toBeNull();
-      // The block should mention $CHANGED_FILES (or CHANGED_FILES) — i.e. rely
-      // on the precomputed value.
+      // The block must mention CHANGED_FILES — i.e. rely on the precomputed
+      // value rather than recomputing it.
       expect(phase2[0]).toMatch(/CHANGED_FILES/);
+      // And must NOT contain `git diff` (the diff is computed once, in
+      // Phase 1.5). Without this assertion a Phase 2 that mentions
+      // $CHANGED_FILES but also re-runs `git diff` would still pass.
+      expect(phase2[0]).not.toMatch(/git diff/);
     });
   });
 });

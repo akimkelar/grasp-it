@@ -135,7 +135,11 @@ DELETED_FILES=$(git diff --name-only --diff-filter=D main...HEAD 2>/dev/null \
 # inlined into the Cypher string. Paths in real checkins cannot contain a
 # single quote, so simple escaping via jq is sufficient.
 SCOPE_RESULT=""
-SCOPE_WARNINGS=""
+# Note: a $SCOPE_WARNINGS accumulator was previously used to collect stale/
+# not-analyzed/unanalyzed entries as plain text, then exported for downstream
+# phases. Nothing parsed it as structured data — the printed table is the
+# actionable surface — so it was removed. Do not reintroduce: SCOPE_RESULT
+# carries the machine-readable classification.
 if [ -n "$CHANGED_FILES" ]; then
   # Read analyzedAtCommit map. When GRASP_DIFF_SCOPE_MOCK is set, the test
   # harness injects a JSON object { "path": "commit" | null } and the live
@@ -209,26 +213,12 @@ if [ -n "$CHANGED_FILES" ]; then
     else
       SCOPE_RESULT="$SCOPE_RESULT,{\"path\":\"$path\",\"status\":\"$STATUS\"}"
     fi
-
-    if [ "$STATUS" != "fresh" ]; then
-      if [ -z "$SCOPE_WARNINGS" ]; then
-        SCOPE_WARNINGS="$path: $STATUS — $DETAIL"
-      else
-        SCOPE_WARNINGS="$SCOPE_WARNINGS
-$path: $STATUS — $DETAIL"
-      fi
-    fi
   done <<< "$CHANGED_FILES"
 
   echo ""
-  if [ -n "$SCOPE_WARNINGS" ]; then
-    echo "── Scope check warnings (advisory — execution continues) ──"
-    printf '%s\n' "$SCOPE_WARNINGS"
-    echo ""
-  fi
   SCOPE_RESULT="[$SCOPE_RESULT]"
 fi
-export CHANGED_FILES DELETED_FILES SCOPE_RESULT SCOPE_WARNINGS
+export CHANGED_FILES DELETED_FILES SCOPE_RESULT
 ```
 
 ### Phase 2: Use precomputed changed/deleted files
