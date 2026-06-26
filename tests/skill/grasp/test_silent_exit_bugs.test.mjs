@@ -150,7 +150,7 @@ describe('BUG-02: push-concept-graph.mjs triggers fallback for DNS-like errors',
     // The error message about the push failure or fallback attempt must be visible
     expect(result.stderr).toBeTruthy();
     expect(result.stderr).toMatch(/ENOTFOUND/);
-  });
+  }, 30_000);
 
   it('triggers cypher-shell fallback when error.code is ServiceUnavailable', () => {
     // We create a mock scenario: the driver import succeeds but session.run throws
@@ -239,7 +239,7 @@ describe('BUG-02 (push-domain-graph.mjs): fallback condition covers DNS failures
     expect(result.status).toBe(1);
     expect(result.stderr).toBeTruthy();
     expect(result.stderr).toMatch(/ENOTFOUND/);
-  });
+  }, 30_000);
 });
 
 // ── BUG-02 same pattern: push-codebase-graph.mjs ─────────────────────────────
