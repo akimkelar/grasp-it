@@ -14,6 +14,7 @@ import {
   checkGraphFreshness,
   mergeGraphUpdate,
   findStaleImplementedBy,
+  buildStaleImplementedByCypher,
 } from "../staleness.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -753,5 +754,65 @@ describe("findStaleImplementedBy", () => {
     expect(result.staleEdges[0].nodeId).toBe("feature:auth");
     expect(result.staleEdges[0].filePath).toBe("src/auth.ts");
     expect(result.staleEdges[0].analyzedAtCommit).toBe("oldCommit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// buildStaleImplementedByCypher — Neo4j Cypher builder
+// ─────────────────────────────────────────────────────────────────
+
+describe("buildStaleImplementedByCypher", () => {
+  it("returns a non-empty Cypher string", () => {
+    const result = buildStaleImplementedByCypher();
+    expect(result.cypher).toBeTruthy();
+    expect(typeof result.cypher).toBe("string");
+    expect(result.cypher.length).toBeGreaterThan(0);
+  });
+
+  it("contains the expected MATCH/WHERE/RETURN/ORDER BY clauses", () => {
+    const { cypher } = buildStaleImplementedByCypher();
+    expect(cypher).toContain("MATCH (k)-[r:IMPLEMENTED_BY]->(f:File)");
+    expect(cypher).toContain("WHERE f.analyzedAtCommit IS NOT NULL");
+    expect(cypher).toContain("RETURN k.id");
+    expect(cypher).toContain("ORDER BY f.analyzedAtCommit");
+  });
+
+  it("uses $currentCommit as a parameter (no string interpolation of the commit hash)", () => {
+    const { cypher } = buildStaleImplementedByCypher();
+    expect(cypher).toContain("$currentCommit");
+    // The Cypher must NOT embed a literal commit hash — that would be injection-prone.
+    // The empty params.currentCommit is a placeholder, not a hash.
+    expect(cypher).not.toMatch(/abc123|def456|deadbeef/);
+  });
+
+  it("returns a params object with a currentCommit field", () => {
+    const { params } = buildStaleImplementedByCypher();
+    expect(params).toBeDefined();
+    expect(params).toHaveProperty("currentCommit");
+    // The placeholder is empty — the caller fills in the actual hash.
+    expect(params.currentCommit).toBe("");
+  });
+
+  it("returns shape matching the StalenessCypherQuery interface", () => {
+    const result = buildStaleImplementedByCypher();
+    // Shape: { cypher: string, params: { currentCommit: string } }
+    expect(typeof result.cypher).toBe("string");
+    expect(typeof result.params).toBe("object");
+    expect(result.params).not.toBeNull();
+    expect(typeof (result.params as Record<string, unknown>).currentCommit).toBe("string");
+  });
+
+  it("filters out files with null analyzedAtCommit (legacy unanalyzed files)", () => {
+    const { cypher } = buildStaleImplementedByCypher();
+    // The WHERE clause must include the IS NOT NULL filter so legacy
+    // (pre-Task 21) File nodes are excluded from staleness results.
+    expect(cypher).toMatch(/WHERE[\s\S]*analyzedAtCommit IS NOT NULL/);
+  });
+
+  it("returns the same query on repeated calls (deterministic)", () => {
+    const a = buildStaleImplementedByCypher();
+    const b = buildStaleImplementedByCypher();
+    expect(a.cypher).toBe(b.cypher);
+    expect(a.params).toEqual(b.params);
   });
 });

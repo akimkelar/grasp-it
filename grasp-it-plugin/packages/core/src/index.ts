@@ -38,9 +38,11 @@ export {
   checkGraphFreshness,
   mergeGraphUpdate,
   findStaleImplementedBy,
+  buildStaleImplementedByCypher,
   type StalenessResult,
   type StaleImplementedByResult,
   type StaleEdge,
+  type StalenessCypherQuery,
   type GraphFreshnessResult,
 } from "./staleness.js";
 export {

@@ -14,6 +14,22 @@ export interface StaleEdge {
   analyzedAtCommit: string;
 }
 
+/**
+ * A Cypher query + parameter bag for finding stale IMPLEMENTED_BY edges
+ * directly in Neo4j. Equivalent to findStaleImplementedBy() but operates
+ * against the live graph rather than a KnowledgeGraph JSON object.
+ *
+ * The caller is expected to pass `cypher` to `run-query.mjs` along with
+ * the project's current commit hash filled into `params.currentCommit`.
+ *
+ * `core` does not invoke Neo4j drivers directly (it must stay
+ * browser-compatible); it only builds the query.
+ */
+export interface StalenessCypherQuery {
+  cypher: string;
+  params: { currentCommit: string };
+}
+
 export interface StalenessResult {
   stale: boolean;
   changedFiles: string[];
@@ -266,4 +282,42 @@ export function findStaleImplementedBy(
   }
 
   return { staleEdges };
+}
+
+/**
+ * Build the Cypher query (and parameter bag) for finding knowledge nodes
+ * whose IMPLEMENTED_BY edges point to files whose `analyzedAtCommit` differs
+ * from `currentCommit`.
+ *
+ * This is the Neo4j equivalent of `findStaleImplementedBy()`. The skill
+ * (Node.js side) passes the returned `cypher` to `run-query.mjs` along with
+ * the project's current commit hash filled into `params.currentCommit`.
+ *
+ * Notes on the query:
+ * - `f.analyzedAtCommit IS NOT NULL` excludes legacy File nodes (pre-Task 21)
+ *   whose analysis commit was never recorded; those are treated as
+ *   unanalyzed, not stale (the diff scope check handles them separately).
+ * - `$currentCommit` is parameterized to avoid Cypher injection.
+ * - `k.sourceFiles` is returned so callers can fall back to directory-based
+ *   grouping when a knowledge node has no Domain ancestor.
+ * - `ORDER BY f.analyzedAtCommit` orders oldest-first so callers can
+ *   prioritize the most-stale edges.
+ */
+export function buildStaleImplementedByCypher(): StalenessCypherQuery {
+  return {
+    cypher: `
+      MATCH (k)-[r:IMPLEMENTED_BY]->(f:File)
+      WHERE f.analyzedAtCommit IS NOT NULL
+        AND f.analyzedAtCommit <> $currentCommit
+      RETURN k.id AS nodeId,
+             k.name AS nodeName,
+             labels(k)[0] AS nodeType,
+             k.sourceFiles AS sourceFiles,
+             f.filePath AS filePath,
+             f.analyzedAtCommit AS analyzedAtCommit
+      ORDER BY f.analyzedAtCommit
+    `.trim(),
+    // Placeholder — caller fills in the actual commit hash.
+    params: { currentCommit: "" },
+  };
 }
