@@ -98,18 +98,145 @@ GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
    ```
    If Neo4j returns no results, tell the user to run `/grasp` first.
 
-### Phase 2: Get the changed files list
+### Phase 1.5: Compute diff base + per-file scope check
 
-1. If on a branch with uncommitted changes: `git diff --name-only`
-2. If on a feature branch: `git diff main...HEAD --name-only` (or the base branch)
-3. If the user specifies a PR number: get the diff from that PR
+This phase does three things, in order: (1) determine the set of changed files
+and the set of deleted files, (2) for each changed file, classify the graph's
+view of it as fresh / stale / not analyzed / unanalyzed, and (3) print only
+the actionable warnings. The phase is advisory — execution continues
+regardless of warnings.
 
-**Detect deleted files:** Run the following to identify files removed from the codebase:
+The classification answers the right question for `/grasp-diff`: "for each file
+in the diff, is the graph's view of that file current?" — not a global
+HEAD-vs-stored-commit check that produces false positives on feature branches.
+
 ```bash
-# Get deleted files (files that existed in the base branch but not in HEAD)
-DELETED_FILES=$(git diff --name-only --diff-filter=D main...HEAD 2>/dev/null || git diff --name-only --diff-filter=D HEAD~1..HEAD 2>/dev/null || echo "")
+# ── 1. Compute diff base ──────────────────────────────────────────────────
+# CHANGED_FILES is a newline-delimited list of paths in the diff.
+# Precedence: caller-provided $GRASP_DIFF_FILES_MOCK (tests) → git diff → empty.
+if [ -z "$GRASP_DIFF_FILES_MOCK" ]; then
+  CHANGED_FILES=$(git diff main...HEAD --name-only 2>/dev/null \
+               || git diff --name-only 2>/dev/null \
+               || echo "")
+  # Strip trailing newline so [ -n "$CHANGED_FILES" ] below is reliable.
+  CHANGED_FILES=$(printf '%s' "$CHANGED_FILES")
+else
+  CHANGED_FILES="$GRASP_DIFF_FILES_MOCK"
+fi
+
+# DELETED_FILES is a separate concern — files that existed in the base branch
+# but are removed at HEAD. Phase 2.5 handles the knowledge-node cleanup.
+DELETED_FILES=$(git diff --name-only --diff-filter=D main...HEAD 2>/dev/null \
+             || git diff --name-only --diff-filter=D HEAD~1..HEAD 2>/dev/null \
+             || echo "")
+
+# ── 2. Per-file scope check ───────────────────────────────────────────────
+# run-query.mjs does not support parameterized queries, so the path list is
+# inlined into the Cypher string. Paths in real checkins cannot contain a
+# single quote, so simple escaping via jq is sufficient.
+SCOPE_RESULT=""
+SCOPE_WARNINGS=""
+if [ -n "$CHANGED_FILES" ]; then
+  # Read analyzedAtCommit map. When GRASP_DIFF_SCOPE_MOCK is set, the test
+  # harness injects a JSON object { "path": "commit" | null } and the live
+  # run-query.mjs call is skipped. Production runs leave the variable unset.
+  if [ -n "$GRASP_DIFF_SCOPE_MOCK" ]; then
+    SCOPE_MAP="$GRASP_DIFF_SCOPE_MOCK"
+  else
+    # Build the inlined list of single-quoted paths, e.g. ['a.ts','b.ts'].
+    PATHS_LITERAL=$(printf '%s\n' "$CHANGED_FILES" \
+      | jq -R '.' | jq -s 'map(select(length > 0)) | tostring')
+    SCOPE_MAP=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" \
+      "UNWIND ${PATHS_LITERAL} AS path OPTIONAL MATCH (f:File {filePath: path}) RETURN path, f.analyzedAtCommit AS analyzedAtCommit" \
+      | jq -c '.results // [] | map({ (."path"): ."analyzedAtCommit" }) | add // {}')
+  fi
+
+  echo ""
+  echo "── Per-file scope check ──"
+  printf '%-50s %-15s %s\n' "FILE" "STATUS" "DETAIL"
+  printf '%-50s %-15s %s\n' "----" "------" "------"
+
+  while IFS= read -r path; do
+    [ -z "$path" ] && continue
+    # `has(p)` distinguishes "key absent" (not_analyzed) from
+    # "key present but value null" (unanalyzed). We emit a sentinel via jq
+    # to keep the bash-side string comparison simple:
+    #   ABSENT  → key missing
+    #   NULL    → key present, value null
+    #   <hash>  → key present, value is a commit hash
+    ANALYZED_AT=$(printf '%s' "$SCOPE_MAP" | jq -r --arg p "$path" '
+      if (.[$p] == null) and (has($p) | not) then "ABSENT"
+      elif (.[$p] == null) then "NULL"
+      else (.[$p] | tostring)
+      end
+    ')
+    PATH_TIP=$(git -C "$PROJECT_ROOT" log -1 --format=%H -- "$path" 2>/dev/null || echo "")
+
+    if [ "$ANALYZED_AT" = "ABSENT" ]; then
+      STATUS="not_analyzed"
+      DETAIL="File is in the diff but has never been analyzed. Run /grasp to populate the graph."
+    elif [ "$ANALYZED_AT" = "NULL" ]; then
+      STATUS="unanalyzed"
+      DETAIL="File exists in the graph but has no analyzedAtCommit (legacy data); treating as stale."
+    elif [ -n "$PATH_TIP" ] && [ "$ANALYZED_AT" != "$PATH_TIP" ]; then
+      STATUS="stale"
+      # Only flag stale if the analyzed commit is an ancestor of (or simply
+      # different from) the current last-modifying commit. We compare hashes
+      # directly: a File is stale when its analyzed commit != last-modifying
+      # commit, regardless of which is newer. In practice analyzedAtCommit is
+      # always the same as or earlier than the last-modifying commit because
+      # analysis can only happen against past code.
+      IS_ANCESTOR=$(git -C "$PROJECT_ROOT" merge-base --is-ancestor "$ANALYZED_AT" "$PATH_TIP" 2>/dev/null && echo "yes" || echo "no")
+      if [ "$IS_ANCESTOR" = "yes" ]; then
+        DETAIL="Graph analyzed at ${ANALYZED_AT:0:8}; file last modified at ${PATH_TIP:0:8}. Re-run /grasp to refresh."
+      else
+        # analyzedAtCommit is ahead of last-modifying commit — happens when
+        # the file is later modified but the analysis already covered a
+        # newer state via another commit. Treat as fresh.
+        STATUS="fresh"
+        DETAIL="Analyzed commit (${ANALYZED_AT:0:8}) is at or after last modification (${PATH_TIP:0:8})."
+      fi
+    else
+      STATUS="fresh"
+      DETAIL="Analyzed at ${ANALYZED_AT:0:8}; matches last modification."
+    fi
+
+    printf '%-50s %-15s %s\n' "$path" "$STATUS" "$DETAIL"
+
+    # Accumulate machine-readable result for downstream phases.
+    if [ -z "$SCOPE_RESULT" ]; then
+      SCOPE_RESULT="{\"path\":\"$path\",\"status\":\"$STATUS\"}"
+    else
+      SCOPE_RESULT="$SCOPE_RESULT,{\"path\":\"$path\",\"status\":\"$STATUS\"}"
+    fi
+
+    if [ "$STATUS" != "fresh" ]; then
+      if [ -z "$SCOPE_WARNINGS" ]; then
+        SCOPE_WARNINGS="$path: $STATUS — $DETAIL"
+      else
+        SCOPE_WARNINGS="$SCOPE_WARNINGS
+$path: $STATUS — $DETAIL"
+      fi
+    fi
+  done <<< "$CHANGED_FILES"
+
+  echo ""
+  if [ -n "$SCOPE_WARNINGS" ]; then
+    echo "── Scope check warnings (advisory — execution continues) ──"
+    printf '%s\n' "$SCOPE_WARNINGS"
+    echo ""
+  fi
+  SCOPE_RESULT="[$SCOPE_RESULT]"
+fi
+export CHANGED_FILES DELETED_FILES SCOPE_RESULT SCOPE_WARNINGS
 ```
-If `DELETED_FILES` is non-empty, these files must be removed from the knowledge graph. Proceed to Phase 2.5 to handle deleted files BEFORE analyzing changes.
+
+### Phase 2: Use precomputed changed/deleted files
+
+`$CHANGED_FILES` and `$DELETED_FILES` were computed in Phase 1.5. Use them
+directly. If `DELETED_FILES` is non-empty, these files must be removed from
+the knowledge graph. Proceed to Phase 2.5 to handle deleted files BEFORE
+analyzing changes.
 
 ### Phase 2.5: Intelligent deletion of knowledge nodes for removed files
 
