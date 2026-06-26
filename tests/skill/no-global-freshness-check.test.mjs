@@ -8,20 +8,27 @@
  * per-domain staleness, and added a Neo4j round-trip on every skill
  * invocation. It was removed as Phase 1 of the freshness refactor.
  *
+ * Task F (2026-06-26) further migrated the four Project-singleton
+ * metadata fields off the singleton entirely:
+ *   - gitCommitHash  → max(File.analyzedAtCommit) (Cypher aggregate)
+ *   - lastAnalyzedAt → max(File.analyzedAt)       (Cypher aggregate)
+ *   - version        → .grasp-it/config.json
+ *   - analyzedFiles  → count(:File)               (Cypher aggregate)
+ *   - domainCommit / domainAnalyzedAt → per-Domain analyzedAtCommit
+ *
  * This test asserts:
- *  1. The exact pattern string does NOT appear in the seven skill SKILL.md
- *     files where it was problematic (the six original plus the new
- *     `/grasp-freshness`, which uses a per-domain report instead).
- *  2. `/grasp/SKILL.md` (the legitimate incremental-update use) DOES
- *     still contain the pattern.
- *  3. `/grasp-domain/SKILL.md` STILL queries `domainCommit` (the
- *     legitimate per-domain freshness signal).
+ *  1. The original "Project.gitCommitHash" freshness pattern does NOT
+ *     appear in any skill SKILL.md (Phase 1 + Task F removed it from
+ *     /grasp too — the new pattern queries File aggregates).
+ *  2. /grasp-domain uses the per-Domain aggregate (not Project.domainCommit).
+ *  3. /grasp uses the File aggregation pattern (max(File.analyzedAtCommit)).
  *  4. None of the seven files compares to `git rev-parse HEAD` for
- *     freshness purposes. `/grasp-diff` may still reference it for
+ *     freshness purposes. /grasp-diff may still reference it for
  *     legitimate diff/base-resolution logic, but not for freshness.
- *     `/grasp-freshness` uses it to feed the staleness query, not as a
+ *     /grasp-freshness uses it to feed the staleness query, not as a
  *     freshness warning, so a targeted assertion documents the exception.
- *  5. No removed phase still references `$LAST_COMMIT`.
+ *  5. No removed phase still references `$LAST_COMMIT` outside /grasp-domain
+ *     (where it remains the baseline for the per-Domain staleness check).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -34,6 +41,9 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const SKILL_DIR = join(REPO_ROOT, 'grasp-it-plugin', 'skills');
 
 const FRESHNESS_PATTERN = "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash";
+
+// Task F replacement pattern: /grasp derives `lastCommitHash` from File aggregation
+const FILE_AGG_PATTERN = "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash";
 
 const SKILLS_WITHOUT_GLOBAL_CHECK = [
   'grasp-search',
@@ -71,17 +81,23 @@ describe('global freshness check removal', () => {
     });
   }
 
-  it('grasp-domain/SKILL.md retains the legitimate domainCommit vs gitCommitHash check', () => {
+  it('grasp-domain/SKILL.md uses per-Domain analyzedAtCommit (Task F: replaces Project.domainCommit)', () => {
     const content = readSkill('grasp-domain');
-    expect(content).toContain('RETURN p.domainCommit AS domainCommit');
-    expect(content).toMatch(/domainCommit.*gitCommitHash|gitCommitHash.*domainCommit/s);
+    // Phase 2 staleness check should query Domain nodes, not the Project singleton
+    expect(content).toContain('MATCH (d:Domain)');
+    expect(content).not.toContain("MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit");
+    expect(content).not.toContain("SET p.domainAnalyzedAt");
+  });
+
+  it('grasp-domain/SKILL.md derives gitCommitHash via max(File.analyzedAtCommit) (Task F)', () => {
+    const content = readSkill('grasp-domain');
+    expect(content).toContain('max(f.analyzedAtCommit)');
   });
 
   it('skills that referenced $LAST_COMMIT for freshness no longer have the freshness phase', () => {
-    // $LAST_COMMIT may legitimately appear in grasp-domain (it is still used as the
-    // baseline for the domainCommit comparison and as a fallback sourceCommit). All
-    // other skills in scope should no longer set or reference it as a freshness
-    // signal.
+    // $LAST_COMMIT may legitimately appear in grasp-domain (it is the baseline
+    // for the per-Domain staleness comparison). All other skills in scope should
+    // no longer set or reference it as a freshness signal.
     const skillsThatMustNotSetLastCommit = [
       'grasp-search',
       'grasp-chat',
@@ -96,11 +112,12 @@ describe('global freshness check removal', () => {
     }
   });
 
-  it('grasp/SKILL.md retains its legitimate incremental-update freshness check', () => {
+  it('grasp/SKILL.md uses File-aggregate pattern (max(File.analyzedAtCommit)) for incremental-update freshness', () => {
     const content = readSkill('grasp');
-    // The /grasp skill legitimately uses the Project.gitCommitHash for
-    // incremental-update detection. This must NOT be removed.
-    expect(content).toContain(FRESHNESS_PATTERN);
+    // Task F: /grasp's legitimate incremental-update detection now derives
+    // lastCommitHash from the File aggregation, not the Project singleton.
+    expect(content).toContain(FILE_AGG_PATTERN);
+    expect(content).not.toContain(FRESHNESS_PATTERN);
   });
 
   it('grasp-search/SKILL.md no longer has the Phase 0 Graph Freshness Check heading', () => {

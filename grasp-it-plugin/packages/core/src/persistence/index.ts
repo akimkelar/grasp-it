@@ -474,7 +474,7 @@ export async function loadGraphFromNeo4j(
  * @param _projectId (ignored — singleton anchor)
  */
 export async function saveProjectMetaToNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   _meta?: AnalysisMeta,
   _projectId: string = PROJECT_SINGLETON_ID,
@@ -491,7 +491,7 @@ export async function saveProjectMetaToNeo4j(
  * and `.grasp-it/config.json` for `version`.
  */
 export async function loadProjectMetaFromNeo4j(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _session?: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
   _projectId: string = PROJECT_SINGLETON_ID,
 ): Promise<ProjectSingletonMeta | null> {
