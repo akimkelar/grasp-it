@@ -25,7 +25,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "child_process";
 import { getNeo4jConfig, getConnectionType } from "./neo4j-config-loader.mjs";
 
@@ -36,8 +36,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * Execute a Cypher query via neo4j-driver.
  * Returns { ok: true, records } on success, { ok: false, reason } on failure.
+ *
+ * Exported for unit testing — tests inject a mocked `neo4j` module so they can
+ * capture the params bag passed to `session.run` without a live database.
+ *
+ * The optional `_neo4j` parameter is an injection seam for tests. When
+ * omitted (production path), the function dynamically imports neo4j-driver
+ * from node_modules. Tests pass a fake module that records session.run
+ * arguments so the params-bag forwarding can be asserted without a live DB.
  */
-async function runQueryViaDriver(neo4jConfig, query, params = {}) {
+export async function runQueryViaDriver(neo4jConfig, query, params = {}, _neo4j) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
 
   let driver;
@@ -46,7 +54,8 @@ async function runQueryViaDriver(neo4jConfig, query, params = {}) {
     if (process.env.NEO4J_TEST_MOCK === '1') {
       throw new Error(process.env.NEO4J_TEST_MOCK_ERR || 'Connection refused (TestMock)');
     }
-    const { default: neo4j } = await import("neo4j-driver");
+    // Resolve the neo4j module — injected (tests) or dynamic import (prod).
+    const neo4j = _neo4j || (await import("neo4j-driver")).default;
     driver = neo4j.driver(
       NEO4J_URI || "neo4j://localhost:7687",
       neo4j.auth.basic(NEO4J_USERNAME || "neo4j", NEO4J_PASSWORD || "password"),
@@ -201,58 +210,66 @@ async function runQuery(neo4jConfig, query, params) {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
-const projectRoot = process.argv[2];
-const query = process.argv[3];
-const paramsArg = process.argv[4];
+// Only run the CLI entry point when this file is executed directly. When the
+// module is imported (e.g. by tests), we expose the helpers but do not
+// auto-execute a query. This guard is the standard ES-module "is entrypoint"
+// check: compare this file's URL against process.argv[1].
+const isEntrypoint = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 
-if (!projectRoot || !query) {
-  console.error("Usage: node run-query.mjs <project-root> <cypher-query> [params-json]");
-  process.exit(1);
-}
+if (isEntrypoint) {
+  const projectRoot = process.argv[2];
+  const query = process.argv[3];
+  const paramsArg = process.argv[4];
 
-// Parse optional params bag. Empty object when missing or "{}".
-let params = {};
-if (paramsArg && paramsArg !== "{}") {
-  try {
-    const parsed = JSON.parse(paramsArg);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      params = parsed;
-    } else {
-      console.error("run-query.mjs: params-json must be a JSON object");
-      process.exit(1);
-    }
-  } catch (err) {
-    console.error(`run-query.mjs: params-json is not valid JSON: ${err.message}`);
+  if (!projectRoot || !query) {
+    console.error("Usage: node run-query.mjs <project-root> <cypher-query> [params-json]");
     process.exit(1);
   }
-}
 
-// Check for Neo4j configuration
-const neo4jConfig = getNeo4jConfig(projectRoot);
-if (!neo4jConfig) {
-  // No Neo4j configured — skip silently (graceful degradation)
-  console.log(JSON.stringify({ results: [], skipped: "no Neo4j configuration" }));
-  process.exit(0);
-}
+  // Parse optional params bag. Empty object when missing or "{}".
+  let params = {};
+  if (paramsArg && paramsArg !== "{}") {
+    try {
+      const parsed = JSON.parse(paramsArg);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        params = parsed;
+      } else {
+        console.error("run-query.mjs: params-json must be a JSON object");
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`run-query.mjs: params-json is not valid JSON: ${err.message}`);
+      process.exit(1);
+    }
+  }
 
-// Execute the query
-const result = await runQuery(neo4jConfig, query, params);
-
-if (!result.ok) {
-  // Check if this is a graceful skip (e.g., MCP not supported)
-  if (result.skipped) {
-    console.log(JSON.stringify({ results: [], skipped: result.reason }));
+  // Check for Neo4j configuration
+  const neo4jConfig = getNeo4jConfig(projectRoot);
+  if (!neo4jConfig) {
+    // No Neo4j configured — skip silently (graceful degradation)
+    console.log(JSON.stringify({ results: [], skipped: "no Neo4j configuration" }));
     process.exit(0);
   }
-  // Check if we should signal fallback to cypher-shell
-  if (result.fallback) {
-    console.error(`run-query.mjs: Query failed (signaling cypher-shell fallback): ${result.reason}`);
-    process.exit(2);
-  }
-  console.error(`run-query.mjs: Query failed: ${result.reason}`);
-  process.exit(1);
-}
 
-// Output results as JSON
-console.log(JSON.stringify({ results: result.records }));
-process.exit(0);
+  // Execute the query
+  const result = await runQuery(neo4jConfig, query, params);
+
+  if (!result.ok) {
+    // Check if this is a graceful skip (e.g., MCP not supported)
+    if (result.skipped) {
+      console.log(JSON.stringify({ results: [], skipped: result.reason }));
+      process.exit(0);
+    }
+    // Check if we should signal fallback to cypher-shell
+    if (result.fallback) {
+      console.error(`run-query.mjs: Query failed (signaling cypher-shell fallback): ${result.reason}`);
+      process.exit(2);
+    }
+    console.error(`run-query.mjs: Query failed: ${result.reason}`);
+    process.exit(1);
+  }
+
+  // Output results as JSON
+  console.log(JSON.stringify({ results: result.records }));
+  process.exit(0);
+}
