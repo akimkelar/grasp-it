@@ -229,10 +229,21 @@ Manual smoke test (requires a Neo4j instance):
 
 ## Open Questions
 
-1. **Project node fate.** The user proposed removing it as a follow-up. After exploring, I believe it still has legitimate uses (Phase 0 of `/grasp`, and `domainCommit` tracking for `/grasp-domain`). Recommendation: keep it; revisit after Phase 1 lands and Phase 2 reports. *Awaiting user confirmation.*
+1. **Project node fate.** User feedback: my initial claim that `/grasp` Phase 0 uses the Project singleton was an assertion without code reference. The actual usage is at `skills/grasp/SKILL.md:551-562` (step 6.5 — reads `gitCommitHash` from `Project`). Whether this is essential is *not yet determined*; an equivalent query (`max(File.analyzedAtCommit)`) may suffice. Resolution: defer to Phase 2 analysis sub-agent, which will enumerate every reference and classify each as essential / replaceable / orphan. **Recommendation: do not assume Project is necessary; let Phase 2's report drive the Phase 3 decision.**
 
-2. **Skill naming.** I propose `/grasp-freshness` (consistent with `/grasp-diff`, `/grasp-search`, `/grasp-domain`). Alternatives: `/grasp-staleness`, `/grasp-audit` (taken? — let me check). Defaulting to `/grasp-freshness` unless the user prefers otherwise.
+2. **Skill naming.** Approved: `/grasp-freshness`.
 
 3. **Should `/grasp-freshness` also report on the `domainCommit` vs `gitCommitHash` relationship?** Yes, as a "domain graph may be stale relative to codebase" header line. Cheap, useful.
 
-4. **Should `/grasp-chat`, `/grasp-gaps`, `/grasp-knowledge` also drop the global check?** All skills with the pattern should drop it for consistency. These changes are bundled into Sub-agent A's scope.
+4. **Should `/grasp-chat`, `/grasp-gaps`, `/grasp-knowledge` also drop the global check?** Approved: all skills with the pattern drop it for consistency. Bundled into Sub-agent A's scope.
+
+## Test Coverage
+
+All changed code must be covered by tests. Specifically:
+
+- `core/src/staleness.ts` additions (any new function added by Sub-agent C): unit tests alongside the existing `staleness.test.ts` and `domain-staleness.test.ts` style.
+- `/grasp-diff` per-file scope check (Sub-agent B): integration test that loads a mock graph with known `analyzedAtCommit` values and asserts the right files are flagged.
+- `/grasp-freshness` skill (Sub-agent D): integration test that asserts the per-domain grouping works on a graph with multiple Domains, multiple knowledge nodes per Domain, and unscoped fallback for nodes without a Domain ancestor.
+- Removed-checks regression test: verify that `/grasp-search`, `/grasp-chat`, `/grasp-gaps`, `/grasp-knowledge` no longer contain the global freshness check pattern after Sub-agent A's changes.
+
+Run `pnpm test` and `pnpm lint` after Phase 1; both must pass before Phase 2 starts.
