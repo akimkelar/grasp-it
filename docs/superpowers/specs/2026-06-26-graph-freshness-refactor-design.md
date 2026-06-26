@@ -229,13 +229,17 @@ Manual smoke test (requires a Neo4j instance):
 
 ## Open Questions
 
-1. **Project node fate.** User feedback: my initial claim that `/grasp` Phase 0 uses the Project singleton was an assertion without code reference. The actual usage is at `skills/grasp/SKILL.md:551-562` (step 6.5 — reads `gitCommitHash` from `Project`). Whether this is essential is *not yet determined*; an equivalent query (`max(File.analyzedAtCommit)`) may suffice. Resolution: defer to Phase 2 analysis sub-agent, which will enumerate every reference and classify each as essential / replaceable / orphan. **Recommendation: do not assume Project is necessary; let Phase 2's report drive the Phase 3 decision.**
+1. **Project node fate.** **RESOLVED — REMOVE.** Phase 2 analysis (`.superpowers/sdd/task-E-report.md`) confirmed 61 references across 21 files. The "multi-user sync" role of the singleton does not actually work as advertised: per-user analysis runs are scoped to subsets of files or single domains, not full project rebuilds, so a "shared canonical commit hash" provides no real coordination value. This is exactly why we needed per-node staleness rules — and why `/grasp-diff` and `/grasp-freshness` exist. The singleton's value is illusory; remove it entirely.
+
+   Two sub-tasks:
+   - **Task F** — Migrate metadata fields (steps 1-5 from Phase 2 analysis): `gitCommitHash`, `domainCommit`, `domainAnalyzedAt`, `lastAnalyzedAt`, `version`, `analyzedFiles`. Singleton node remains as a structural anchor during this task.
+   - **Task G** — Remove the singleton structurally: drop the `:Project` node, replace `[:PART_OF]->(p:Project)` with a `projectId` property on each affected node, drop the schema constraint, drop the `kind: "project"` enum value, drop "Project" from `ALLOWED_LABELS`.
 
 2. **Skill naming.** Approved: `/grasp-freshness`.
 
-3. **Should `/grasp-freshness` also report on the `domainCommit` vs `gitCommitHash` relationship?** Yes, as a "domain graph may be stale relative to codebase" header line. Cheap, useful.
+3. **Should `/grasp-freshness` also report on the `domainCommit` vs `gitCommitHash` relationship?** Resolved during Task F: per-Domain staleness replaces the global `domainCommit` check. `/grasp-freshness` continues to surface stale knowledge nodes; the per-domain aggregate replaces the singleton check.
 
-4. **Should `/grasp-chat`, `/grasp-gaps`, `/grasp-knowledge` also drop the global check?** Approved: all skills with the pattern drop it for consistency. Bundled into Sub-agent A's scope.
+4. **Should `/grasp-chat`, `/grasp-gaps`, `/grasp-knowledge` also drop the global check?** Approved and implemented in Sub-agent A.
 
 ## Test Coverage
 
