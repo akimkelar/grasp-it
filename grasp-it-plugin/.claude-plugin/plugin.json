@@ -1,7 +1,7 @@
 {
   "name": "grasp-it",
   "description": "Build a knowledge graph of your codebase and your product — then use it to implement features correctly. Grasp-It runs a multi-agent analysis pipeline and stores the result as a queryable knowledge graph in Neo4j.",
-  "version": "0.13.3",
+  "version": "0.13.4",
   "author": {
     "name": "akimkelar"
   },

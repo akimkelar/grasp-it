@@ -12,7 +12,7 @@
  * with temp directories, and place stub executables on PATH to verify:
  *
  *   1. When Claude Code is detected: plugin is copied to the correct cache path
- *   2. When Claude Code is NOT detected: build_plugin is called, .grasp-it-plugin
+ *   2. When Claude Code is NOT detected: sync_deps is called, .grasp-it-plugin
  *      symlink is created, and a message about manual installation is printed
  *   3. Upgrade case: re-copy happens even when cache already exists
  *   4. Skip case: if cache already has the same version, no copy is made
@@ -100,7 +100,7 @@ exit 0
     chmodSync(claudeStubPath, 0o755);
   }
 
-  // Bash fragment: extract and eval install_claude_plugin(), build_plugin(),
+  // Bash fragment: extract and eval install_claude_plugin(), sync_deps(),
   // and link_plugin_root() functions from install.sh, then invoke install_claude_plugin.
   const bashScript = [
     'set -euo pipefail',
@@ -111,8 +111,9 @@ exit 0
     'export PLUGIN_LINK="$HOME/.grasp-it-plugin"',
     '',
     '# Extract and eval the functions we need from install.sh.',
-    '# install_claude_plugin calls build_plugin and link_plugin_root, so we need all three.',
-    'eval "$(awk \'/^build_plugin\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
+    '# install_claude_plugin calls sync_deps and link_plugin_root, so we need all three (and fresh_pnpm_install, since sync_deps calls it).',
+    'eval "$(awk \'/^fresh_pnpm_install\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
+    'eval "$(awk \'/^sync_deps\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
     'eval "$(awk \'/^link_plugin_root\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
     'eval "$(awk \'/^install_claude_plugin\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
     '',
@@ -136,7 +137,7 @@ exit 0
 
 /**
  * Create a `pnpm` stub that logs cwd and args then exits 0.
- * Needed because build_plugin() calls pnpm when core/dist/index.js is missing.
+ * Needed because sync_deps() always calls pnpm.
  */
 function makePnpmStub(binDir, logFile) {
   const stubPath = join(binDir, 'pnpm');

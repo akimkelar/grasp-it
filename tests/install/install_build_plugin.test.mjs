@@ -1,21 +1,29 @@
 /**
- * Tests for the build_plugin() function in install.sh.
+ * Tests for the sync_deps() function in install.sh.
  *
  * Regression: pnpm --filter @grasp-it/core build was previously run OUTSIDE
  * the `cd "$REPO_DIR"` subshell, meaning it could pick up the caller's global
  * pnpm workspace instead of the cloned repo.  The fix wraps both `pnpm install`
  * and `pnpm --filter … build` inside one `(cd "$REPO_DIR" && …)` subshell.
  *
+ * Another regression: the old `build_plugin` skipped pnpm entirely when
+ * core/dist/index.js already existed — but `dist/` is gitignored and survives
+ * `git reset --hard`, so new dependencies added between pulls never got
+ * installed and skills would break with `Cannot find module`. sync_deps
+ * always runs `pnpm install` + build, regardless of whether dist/ exists.
+ *
  * Test strategy
  * ─────────────
- * We source only the build_plugin() function from install.sh (we skip `main`
+ * We source only the sync_deps() function from install.sh (we skip `main`
  * by sourcing it with a guard), override REPO_DIR with a temp directory, and
  * place a fake `pnpm` stub earlier on PATH that logs its working directory and
- * arguments to a file.  After calling build_plugin we assert:
+ * arguments to a file.  After calling sync_deps we assert:
  *
  *   1. pnpm was called at least once.
  *   2. Every pnpm invocation happened from $REPO_DIR (not the caller's cwd).
  *   3. At least one invocation contained "--filter @grasp-it/core".
+ *   4. pnpm is called even when core/dist/index.js already exists.
+ *   5. When pnpm is not on PATH, sync_deps warns and returns 0 without error.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -40,23 +48,24 @@ const __dirname = dirname(__filename);
 const INSTALL_SH = resolve(__dirname, '../../install.sh');
 
 /**
- * Run build_plugin() in a sub-bash process with mocked dependencies.
+ * Run sync_deps() in a sub-bash process with mocked dependencies.
  *
  * @param {string} repoDir   - path to use as REPO_DIR (temp dir)
  * @param {string} binDir    - directory containing stub executables on PATH
  * @param {string} logFile   - file the pnpm stub writes invocation records to
  * @param {object} opts
  * @param {boolean} opts.coreBuildExists - if true, pre-create the core/dist/index.js
- *                                         so build_plugin skips the build
+ * @param {boolean} opts.includePnpmStub - if false, do not place a pnpm stub on PATH
+ *                                         (used to test the "pnpm not found" branch)
  */
-function runBuildPlugin(repoDir, binDir, logFile, { coreBuildExists = false } = {}) {
+function runSyncDeps(repoDir, binDir, logFile, { coreBuildExists = false, includePnpmStub = true } = {}) {
   if (coreBuildExists) {
     const distDir = join(repoDir, 'grasp-it-plugin', 'packages', 'core', 'dist');
     mkdirSync(distDir, { recursive: true });
     writeFileSync(join(distDir, 'index.js'), '// pre-built\n', 'utf-8');
   }
 
-  // Bash fragment: extract only the build_plugin() function definition from
+  // Bash fragment: extract only the sync_deps() function definition from
   // install.sh using awk (avoids sourcing the whole file and triggering the
   // "main $@" call at the bottom), then invoke it.
   //
@@ -65,24 +74,32 @@ function runBuildPlugin(repoDir, binDir, logFile, { coreBuildExists = false } = 
   const bashScript = [
     'set -euo pipefail',
     '',
-    '# Override globals that install.sh reads inside build_plugin',
+    '# Override globals that install.sh reads inside sync_deps',
     'export REPO_DIR=' + JSON.stringify(repoDir),
     '',
-    '# Extract and eval only the build_plugin function from install.sh.',
-    '# We use awk to pull out lines from "^build_plugin()" to the closing "^}"',
+    '# Extract and eval only the sync_deps function from install.sh.',
+    '# We use awk to pull out lines from "^sync_deps()" to the closing "^}"',
     '# so we never execute "main $@" at the bottom of the file.',
-    'eval "$(awk \'/^build_plugin\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
+    '# fresh_pnpm_install is also pulled in because sync_deps calls it.',
+    'eval "$(awk \'/^fresh_pnpm_install\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
+    'eval "$(awk \'/^sync_deps\\(\\)/,/^}$/{print}\' ' + JSON.stringify(INSTALL_SH) + ')"',
     '',
     '# Now exercise the function under test',
-    'build_plugin',
+    'sync_deps',
   ].join('\n');
+
+  // When includePnpmStub is false, restrict PATH to system dirs only so that
+  // `command -v pnpm` fails. process.env.PATH would otherwise expose a real
+  // pnpm (e.g. via nvm), defeating the test.
+  const childPath = includePnpmStub
+    ? `${binDir}:${process.env.PATH}`
+    : '/usr/bin:/bin';
 
   return spawnSync('bash', ['-c', bashScript], {
     encoding: 'utf-8',
     env: {
       ...process.env,
-      // Put our stub bin dir first so 'pnpm' resolves to the stub
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: childPath,
       // Keep HOME so bash initialisation doesn't break
       HOME: process.env.HOME,
     },
@@ -131,7 +148,7 @@ function readLog(logFile) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('build_plugin() in install.sh', () => {
+describe('sync_deps() in install.sh', () => {
   let tmpDir;
   let repoDir;
   let binDir;
@@ -155,7 +172,7 @@ describe('build_plugin() in install.sh', () => {
   });
 
   it('calls pnpm at least once when core/dist/index.js does not exist', () => {
-    const result = runBuildPlugin(repoDir, binDir, logFile);
+    const result = runSyncDeps(repoDir, binDir, logFile);
 
     expect(result.status).toBe(0);
     const calls = readLog(logFile);
@@ -163,7 +180,7 @@ describe('build_plugin() in install.sh', () => {
   });
 
   it('runs every pnpm invocation from $REPO_DIR, not the caller working directory', () => {
-    const result = runBuildPlugin(repoDir, binDir, logFile);
+    const result = runSyncDeps(repoDir, binDir, logFile);
 
     expect(result.status).toBe(0);
     const calls = readLog(logFile);
@@ -175,7 +192,7 @@ describe('build_plugin() in install.sh', () => {
   });
 
   it('includes --filter @grasp-it/core in a pnpm invocation from $REPO_DIR', () => {
-    const result = runBuildPlugin(repoDir, binDir, logFile);
+    const result = runSyncDeps(repoDir, binDir, logFile);
 
     expect(result.status).toBe(0);
     const calls = readLog(logFile);
@@ -185,12 +202,27 @@ describe('build_plugin() in install.sh', () => {
     expect(buildCall.cwd).toBe(repoDir);
   });
 
-  it('skips pnpm entirely when core/dist/index.js already exists', () => {
-    const result = runBuildPlugin(repoDir, binDir, logFile, { coreBuildExists: true });
+  it('runs pnpm even when core/dist/index.js already exists', () => {
+    // Regression guard: the old build_plugin bailed out when dist/ existed,
+    // so new dependencies never got installed across pulls.
+    const result = runSyncDeps(repoDir, binDir, logFile, { coreBuildExists: true });
 
     expect(result.status).toBe(0);
     const calls = readLog(logFile);
-    // build_plugin bails early — pnpm must not have been called at all
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it('warns and returns 0 when pnpm is not on PATH', () => {
+    // Run with includePnpmStub: false so the stub bin is NOT on PATH and
+    // `command -v pnpm` fails. Use a PATH that only contains /usr/bin and
+    // /bin (standard system dirs) so `command -v pnpm` does not accidentally
+    // resolve to a real pnpm elsewhere on PATH.
+    const result = runSyncDeps(repoDir, binDir, logFile, { includePnpmStub: false });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('pnpm not found');
+    // And no pnpm invocation happened (the stub log file is never written to).
+    const calls = readLog(logFile);
     expect(calls.length).toBe(0);
   });
 
@@ -198,7 +230,7 @@ describe('build_plugin() in install.sh', () => {
     // The bug: `pnpm --filter @grasp-it/core build` ran outside the subshell,
     // so it would execute from wherever the installer was invoked (i.e. the
     // caller's working directory), not from $REPO_DIR.
-    const result = runBuildPlugin(repoDir, binDir, logFile);
+    const result = runSyncDeps(repoDir, binDir, logFile);
 
     expect(result.status).toBe(0);
     const calls = readLog(logFile);

@@ -87,7 +87,8 @@ function Get-SkillsRoot { Join-Path $RepoDir 'grasp-it-plugin\skills' }
 function Clone-Or-Update {
     if (Test-Path (Join-Path $RepoDir '.git')) {
         Write-Host "→ Updating existing checkout at $RepoDir"
-        git -C $RepoDir pull --ff-only
+        git -C $RepoDir fetch origin
+        git -C $RepoDir reset --hard origin/main
     } else {
         Write-Host "→ Cloning $RepoUrl → $RepoDir"
         $parent = Split-Path -Parent $RepoDir
@@ -96,24 +97,22 @@ function Clone-Or-Update {
     }
 }
 
-function Build-Plugin {
-    # Pre-build core/dist so skill scripts don't need pnpm at runtime.
-    # This runs once after clone/update; subsequent skill invocations use the cached dist/.
-    $coreDist = Join-Path $RepoDir 'grasp-it-plugin\packages\core\dist\index.js'
-    if (-not (Test-Path $coreDist)) {
-        Write-Host "→ Building @grasp-it/core (pre-computed for skill runtime)"
-        $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
-        if ($pnpm) {
-            Push-Location $RepoDir
-            try {
-                & pnpm install --frozen-lockfile 2>$null | Out-Null
-                if ($LASTEXITCODE -ne 0) { & pnpm install | Out-Null }
-                & pnpm --filter @grasp-it/core build
-            } finally { Pop-Location }
-        } else {
-            Write-Host "  warning: pnpm not found — skipping build. Skills may need Node.js ≥ 22 and pnpm ≥ 10."
-        }
+function Sync-Deps {
+    # Always (re)install + rebuild. Idempotent; safe to call after every update.
+    # gitignored dist/ survives `git reset --hard`, so a guard would skip new deps.
+    $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+    if (-not $pnpm) {
+        Write-Host '  warning: pnpm not found — skipping install. Skills may need Node.js ≥ 22 and pnpm ≥ 10.'
+        return
     }
+    Write-Host '→ Syncing dependencies and rebuilding @grasp-it/core'
+    Push-Location $RepoDir
+    try {
+        $lock = Join-Path $RepoDir 'pnpm-lock.yaml'
+        if (Test-Path $lock) { Remove-Item -Force $lock }
+        & pnpm install
+        & pnpm --filter @grasp-it/core build
+    } finally { Pop-Location }
 }
 
 function Install-ClaudePlugin {
@@ -139,14 +138,42 @@ function Install-ClaudePlugin {
         $null = New-Item -ItemType Directory -Path (Join-Path $claudeCacheBase "$pluginName\$pluginName") -Force
         if (Test-Path $cacheTarget) { Remove-Item -Recurse -Force $cacheTarget }
         Copy-Item -Path $pluginSrc -Destination $cacheTarget -Recurse
+
+        # pnpm uses symlinks in node_modules/ pointing into .pnpm/ — Copy-Item copies
+        # the symlinks but not the virtual store, leaving broken links. Re-run
+        # pnpm install to rebuild the virtual store inside the cache copy.
+        $pnpm = Get-Command pnpm -ErrorAction SilentlyContinue
+        if ($pnpm) {
+            Write-Host '→ Running pnpm install in cache (fixing symlinks)...'
+            Push-Location $cacheTarget
+            try {
+                $cacheLock = Join-Path $cacheTarget 'pnpm-lock.yaml'
+                if (Test-Path $cacheLock) { Remove-Item -Force $cacheLock }
+                & pnpm install
+            } finally { Pop-Location }
+        }
+
         Write-Host "  ✓ Plugin installed to $cacheTarget"
-        Write-Host ""
-        Write-Host "  Restart Claude Code to pick up the plugin, or run:"
-        Write-Host "    /plugin marketplace add akimkelar/Grasp-It"
-        Write-Host "    /plugin install grasp-it"
+
+        # Detect whether an older version is already active vs. first install.
+        $claudeList = & claude plugin list 2>$null
+        $alreadyActive = $false
+        foreach ($line in $claudeList) {
+            if ($line -match '^grasp-it') { $alreadyActive = $true; break }
+        }
+        if ($alreadyActive) {
+            Write-Host ''
+            Write-Host '  An older version is active. To upgrade, restart Claude Code or run:'
+            Write-Host '    /plugin update grasp-it'
+        } else {
+            Write-Host ''
+            Write-Host '  Restart Claude Code to pick up the plugin, or run:'
+            Write-Host '    /plugin marketplace add akimkelar/Grasp-It'
+            Write-Host '    /plugin install grasp-it'
+        }
     } else {
         Write-Host "→ Claude Code not detected — setting up plugin files for manual installation"
-        Build-Plugin
+        Sync-Deps
         Link-Plugin-Root
         Write-Host ""
         Write-Host "  Claude Code not found on this system."
@@ -276,7 +303,7 @@ function Cmd-Install([string]$Id) {
     if ($Id -eq 'claude') {
         Install-ClaudePlugin
     } else {
-        Build-Plugin
+        Sync-Deps
         Write-Host "→ Linking skills for $Id ($($cfg.Style) → $($cfg.Target))"
         Link-Skills $cfg.Target $cfg.Style
         Write-Host '→ Linking universal plugin root'
@@ -313,7 +340,12 @@ function Cmd-Update {
         Write-Error "No installation found at $RepoDir. Run install first."
     }
     git -C $RepoDir pull --ff-only
-    Write-Host '✓ Updated.'
+    try {
+        Sync-Deps
+    } catch {
+        Write-Warning "git pull succeeded but dependency sync failed: $_"
+    }
+    Write-Host '✓ Updated (dependencies + core rebuild).'
 }
 
 if ($Help) { Show-Usage; return }

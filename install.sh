@@ -101,18 +101,20 @@ clone_or_update() {
   fi
 }
 
-build_plugin() {
-  # Pre-build core/dist so skill scripts don't need pnpm at runtime.
-  # This runs once after clone/update; subsequent skill invocations use the cached dist/.
-  local core_dist="$REPO_DIR/grasp-it-plugin/packages/core/dist"
-  if [[ ! -f "$core_dist/index.js" ]]; then
-    printf -- '→ Building @grasp-it/core (pre-computed for skill runtime)\n'
-    if command -v pnpm >/dev/null 2>&1; then
-      (cd "$REPO_DIR" && (pnpm install --frozen-lockfile 2>/dev/null || pnpm install) && pnpm --filter @grasp-it/core build)
-    else
-      printf -- '  warning: pnpm not found — skipping build. Skills may need Node.js ≥ 22 and pnpm ≥ 10.\n'
-    fi
+fresh_pnpm_install() {
+  # No --frozen-lockfile: a stale lockfile is worse than rebuilding it.
+  (cd "$1" && rm -f pnpm-lock.yaml && pnpm install)
+}
+
+sync_deps() {
+  # Always (re)install + rebuild. Idempotent; safe to call after every update.
+  # gitignored dist/ survives `git reset --hard`, so a guard would skip new deps.
+  if ! command -v pnpm >/dev/null 2>&1; then
+    printf -- '  warning: pnpm not found — skipping install. Skills may need Node.js ≥ 22 and pnpm ≥ 10.\n'
+    return 0
   fi
+  printf -- '→ Syncing dependencies and rebuilding @grasp-it/core\n'
+  fresh_pnpm_install "$REPO_DIR" && (cd "$REPO_DIR" && pnpm --filter @grasp-it/core build)
 }
 
 install_claude_plugin() {
@@ -143,7 +145,7 @@ install_claude_plugin() {
     # pnpm install to rebuild the virtual store inside the cache copy.
     if command -v pnpm >/dev/null 2>&1; then
       printf -- '→ Running pnpm install in cache (fixing symlinks)...\n'
-      (cd "$cache_target" && rm -f pnpm-lock.yaml && pnpm install) || true
+      fresh_pnpm_install "$cache_target" || true
     fi
 
     printf -- '  ✓ Plugin installed to %s\n' "$cache_target"
@@ -161,7 +163,7 @@ install_claude_plugin() {
     fi
   else
     printf -- '→ Claude Code not detected — setting up plugin files for manual installation\n'
-    build_plugin
+    sync_deps
     link_plugin_root
     printf '\n  Claude Code not found on this system.\n'
     printf '  To use Grasp-It with Claude Code:\n'
@@ -274,7 +276,7 @@ cmd_install() {
   if [[ "$id" == "claude" ]]; then
     install_claude_plugin
   else
-    build_plugin
+    sync_deps
     printf -- '→ Linking skills for %s (%s → %s)\n' "$id" "$style" "$target"
     link_skills "$target" "$style"
     printf -- '→ Linking universal plugin root\n'
@@ -318,6 +320,13 @@ cmd_update() {
     exit 1
   fi
   git -C "$REPO_DIR" pull --ff-only
+  # Re-sync deps so newly added packages get installed (gitignored dist/ would
+  # otherwise stick around). Skills stay valid via the symlinks set up at
+  # install time; new skills added to the repo are picked up by re-running
+  # `install.sh <platform>` — we don't auto-detect the platform here since
+  # `--update` doesn't take a platform argument.
+  sync_deps
+  printf -- '→ Restart your CLI or IDE to pick up skill updates.\n'
   printf '✓ Updated.\n'
 }
 
