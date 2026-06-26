@@ -9,15 +9,18 @@
  * invocation. It was removed as Phase 1 of the freshness refactor.
  *
  * This test asserts:
- *  1. The exact pattern string does NOT appear in the six skill SKILL.md
- *     files where it was problematic.
+ *  1. The exact pattern string does NOT appear in the seven skill SKILL.md
+ *     files where it was problematic (the six original plus the new
+ *     `/grasp-freshness`, which uses a per-domain report instead).
  *  2. `/grasp/SKILL.md` (the legitimate incremental-update use) DOES
  *     still contain the pattern.
  *  3. `/grasp-domain/SKILL.md` STILL queries `domainCommit` (the
  *     legitimate per-domain freshness signal).
- *  4. None of the six files compares to `git rev-parse HEAD` for
+ *  4. None of the seven files compares to `git rev-parse HEAD` for
  *     freshness purposes. `/grasp-diff` may still reference it for
  *     legitimate diff/base-resolution logic, but not for freshness.
+ *     `/grasp-freshness` uses it to feed the staleness query, not as a
+ *     freshness warning, so a targeted assertion documents the exception.
  *  5. No removed phase still references `$LAST_COMMIT`.
  */
 
@@ -39,6 +42,7 @@ const SKILLS_WITHOUT_GLOBAL_CHECK = [
   'grasp-knowledge',
   'grasp-diff',
   'grasp-domain',
+  'grasp-freshness',
 ];
 
 function readSkill(skillName) {
@@ -107,5 +111,19 @@ describe('global freshness check removal', () => {
   it('grasp-diff/SKILL.md no longer has the Phase 1 Graph Freshness Check heading', () => {
     const content = readSkill('grasp-diff');
     expect(content).not.toMatch(/Phase 1:\s*Graph Freshness Check/);
+  });
+
+  it('grasp-freshness/SKILL.md uses git rev-parse HEAD to feed $currentCommit (not as a freshness warning)', () => {
+    // /grasp-freshness legitimately references git rev-parse HEAD in Phase 1
+    // to populate the $currentCommit parameter for the staleness query. This
+    // is the input to a per-domain report, not a HEAD-vs-stored-commit
+    // freshness comparison. The general "no git rev-parse HEAD for freshness"
+    // check above would over-flag it — document the legitimate use here.
+    const content = readSkill('grasp-freshness');
+    expect(content).toContain('rev-parse HEAD');
+    // And confirm the result is consumed by the staleness query, not compared
+    // against a stored gitCommitHash.
+    expect(content).toContain('$currentCommit');
+    expect(content).not.toContain(FRESHNESS_PATTERN);
   });
 });
