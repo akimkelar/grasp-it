@@ -221,10 +221,14 @@ function pushCodebaseGraphViaCypherShell(neo4jConfig, graphData, projectMeta) {
     }
   }
 
-  // Update Project singleton with gitCommitHash, lastAnalyzedAt, version, analyzedFiles
-  const fileCount = (graphData.nodes || []).filter(n => n.type === "file").length;
-  const updateProjectCypher = `MATCH (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = ${cypherEscape(projectMeta.gitCommitHash)}, p.lastAnalyzedAt = datetime(), p.version = ${cypherEscape(projectMeta.version || "1.0.0")}, p.analyzedFiles = ${fileCount};`;
-  runCypherShell(neo4jConfig, updateProjectCypher); // best-effort
+  // Update File nodes with analyzedAtCommit and analyzedAt — these derive
+  // the new global values that used to live on the Project singleton
+  // (gitCommitHash = max(File.analyzedAtCommit), lastAnalyzedAt = max(File.analyzedAt)).
+  // The Project singleton no longer carries these fields (it is purely a
+  // structural anchor). `version` lives in .grasp-it/config.json and
+  // `analyzedFiles` is computed at query time via `count(:File)`.
+  const updateFileStampsCypher = `MATCH (f:File) SET f.analyzedAtCommit = ${cypherEscape(projectMeta.gitCommitHash)}, f.analyzedAt = datetime()`;
+  runCypherShell(neo4jConfig, updateFileStampsCypher); // best-effort
 
   console.error("push-codebase-graph.mjs: Codebase graph pushed to Neo4j via cypher-shell successfully.");
   process.exit(0);
@@ -296,11 +300,7 @@ async function pushCodebaseGraph(projectRoot) {
   // Extract project metadata
   const projectMeta = {
     gitCommitHash: graphData.project?.gitCommitHash || "",
-    version: graphData.version || "1.0.0",
   };
-
-  // Count file nodes for analyzedFiles
-  const fileCount = (graphData.nodes || []).filter(n => n.type === "file").length;
 
   const neo4jConfig = getNeo4jConfig(projectRoot);
   if (!neo4jConfig) {
@@ -472,18 +472,17 @@ async function pushCodebaseGraph(projectRoot) {
         }
       }
 
-      // Update Project singleton with metadata
+      // Update File nodes with analyzedAtCommit and analyzedAt — these derive
+      // the new global values that used to live on the Project singleton
+      // (gitCommitHash = max(File.analyzedAtCommit), lastAnalyzedAt = max(File.analyzedAt)).
+      // The Project singleton no longer carries these fields (it is purely a
+      // structural anchor). `version` lives in .grasp-it/config.json and
+      // `analyzedFiles` is computed at query time via `count(:File)`.
       await session.run(
-        `MERGE (p:Project {id: 'project:singleton'})
-         SET p.gitCommitHash = $gitCommitHash,
-             p.lastAnalyzedAt = datetime(),
-             p.version = $version,
-             p.analyzedFiles = $analyzedFiles,
-             p.kind = "project"`,
+        `MATCH (f:File)
+         SET f.analyzedAtCommit = $gitCommitHash, f.analyzedAt = datetime()`,
         {
           gitCommitHash: projectMeta.gitCommitHash,
-          version: projectMeta.version || "1.0.0",
-          analyzedFiles: fileCount,
         }
       );
     } finally {

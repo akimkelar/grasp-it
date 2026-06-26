@@ -13,9 +13,9 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
 2. Check that a `Project` singleton exists in Neo4j.
    - If not: report "No existing knowledge graph found in Neo4j. Run `/grasp` first to create one." and **STOP**.
 
-3. Query Neo4j `Project` singleton for `gitCommitHash` using `run-query.mjs`:
+3. Derive `gitCommitHash` from `File` nodes via aggregation:
    ```bash
-   NEO4J_RESULT=$(node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash" 2>/dev/null)
+   NEO4J_RESULT=$(node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash" 2>/dev/null)
    if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty"; then
      echo "Error: Failed to query Neo4j for project metadata. Cannot proceed without Neo4j."
      echo "Ensure Neo4j is running and accessible."
@@ -23,7 +23,7 @@ Incrementally update the knowledge graph using deterministic structural fingerpr
    fi
    LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty')
    if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
-     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to create the Project singleton."
+     echo "Error: Neo4j returned no gitCommitHash. Run /grasp first to analyze at least one file."
      exit 1
    fi
    ```
@@ -251,9 +251,9 @@ Perform lightweight validation (no graph-reviewer agent):
 1. Write the final knowledge graph to Neo4j:
    ```bash
    PLUGIN_ROOT="${PLUGIN_ROOT:-$HOME/.grasp-it-plugin}"
-   node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.gitCommitHash = '$CURRENT_COMMIT', p.lastAnalyzedAt = datetime(), p.version = '1.0.0', p.analyzedFiles = $FILE_COUNT"
+   node "$PLUGIN_ROOT/skills/grasp/run-query.mjs" "$PROJECT_ROOT" "MATCH (f:File) SET f.analyzedAtCommit = '$CURRENT_COMMIT', f.analyzedAt = datetime()"
    ```
-   If Neo4j write fails, report the error and **STOP**.
+   This updates `File.analyzedAtCommit` and `File.analyzedAt` so the next read of `gitCommitHash` (now derived from `max(File.analyzedAtCommit)`) reflects this commit. If Neo4j write fails, report the error and **STOP**.
 
 2. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
 

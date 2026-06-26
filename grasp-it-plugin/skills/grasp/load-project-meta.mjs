@@ -2,8 +2,10 @@
 /**
  * load-project-meta.mjs
  *
- * Reads project-level metadata (gitCommitHash, lastAnalyzedAt) from the
- * Neo4j `Project` singleton node and prints it as JSON.
+ * Reads project-level metadata (gitCommitHash, lastAnalyzedAt, version,
+ * analyzedFiles) from Neo4j via File-node aggregation (gitCommitHash,
+ * lastAnalyzedAt, analyzedFiles) and `.grasp-it/config.json` (version).
+ * Prints the result as JSON.
  *
  * This is the canonical read path for Phase 0 staleness checks — the skill
  * queries Neo4j first to get the shared canonical hash in multi-user setups,
@@ -13,8 +15,8 @@
  *   node load-project-meta.mjs <project-root>
  *
  * Output (printed to stdout as JSON):
- *   { gitCommitHash: string, lastAnalyzedAt: string }  — on success
- *   {}                                                  — if no Neo4j or node not found
+ *   { gitCommitHash: string, lastAnalyzedAt: string, version: string, analyzedFiles: number }  — on success
+ *   {}                                                                                         — if no Neo4j or node not found
  *
  * Exit codes:
  *   0 — output written (including empty {})
@@ -27,7 +29,6 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "child_process";
 import { getNeo4jConfig, getConnectionType } from "./neo4j-config-loader.mjs";
 
-const PROJECT_SINGLETON_ID = "project:singleton";
 const GRAPH_FILE = "knowledge-graph.json";
 const UA_DIR = ".grasp-it";
 
@@ -36,10 +37,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ── Neo4j helpers ───────────────────────────────────────────────────────────────
 
 /**
- * Load project metadata from Neo4j Project singleton via neo4j-driver.
- * Returns null if Neo4j is unavailable or the node doesn't exist yet.
+ * Load project metadata from Neo4j File-node aggregation via neo4j-driver.
+ * Returns null if Neo4j is unavailable or no File nodes with analyzedAtCommit exist.
+ *
+ * Replaces the legacy Project-singleton query — the canonical `gitCommitHash`
+ * is now `max(File.analyzedAtCommit)`, `lastAnalyzedAt` is `max(File.analyzedAt)`,
+ * and `analyzedFiles` is `count(:File)`. `version` is read from `.grasp-it/config.json`.
  */
-async function loadProjectMetaViaDriver(neo4jConfig) {
+async function loadProjectMetaViaDriver(neo4jConfig, projectRoot) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
 
   let driver;
@@ -60,17 +65,25 @@ async function loadProjectMetaViaDriver(neo4jConfig) {
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'grasp' });
     const result = await session.run(
-      `MATCH (p:Project {id: $id}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`,
-      { id: PROJECT_SINGLETON_ID },
+      `MATCH (f:File) RETURN max(f.analyzedAtCommit) AS gitCommitHash, max(f.analyzedAt) AS lastAnalyzedAt, count(f) AS analyzedFiles`,
+      {},
     );
     await session.close();
     const record = result.records[0];
     if (!record) return null;
+    const gitCommitHash = record.get("gitCommitHash") ?? null;
+    const lastAnalyzedAt = record.get("lastAnalyzedAt") ?? null;
+    const analyzedFilesRaw = record.get("analyzedFiles");
+    const analyzedFiles = analyzedFilesRaw != null ? Number(analyzedFilesRaw) : 0;
+    // Empty graph → no File nodes → no gitCommitHash → caller treats as first run.
+    if (gitCommitHash == null && lastAnalyzedAt == null && analyzedFiles === 0) {
+      return null;
+    }
     return {
-      gitCommitHash: record.get("gitCommitHash") ?? null,
-      lastAnalyzedAt: record.get("lastAnalyzedAt") ?? null,
-      version: record.get("version") ?? null,
-      analyzedFiles: record.get("analyzedFiles") ?? null,
+      gitCommitHash,
+      lastAnalyzedAt,
+      version: readVersionFromConfig(projectRoot),
+      analyzedFiles,
     };
   } catch {
     return null;
@@ -80,10 +93,10 @@ async function loadProjectMetaViaDriver(neo4jConfig) {
 }
 
 /**
- * Load project metadata from Neo4j Project singleton via cypher-shell.
- * Returns null if Neo4j is unavailable or the node doesn't exist yet.
+ * Load project metadata from Neo4j File-node aggregation via cypher-shell.
+ * Returns null if Neo4j is unavailable or no File nodes exist.
  */
-function loadProjectMetaViaCypherShell(neo4jConfig) {
+function loadProjectMetaViaCypherShell(neo4jConfig, projectRoot) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
   const uri = NEO4J_URI || "neo4j://localhost:7687";
   const username = NEO4J_USERNAME || "neo4j";
@@ -94,7 +107,7 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
     .replace(/^neo4j\+s:\/\//, "bolt+s://")
     .replace(/^neo4j:\/\//, "bolt://");
 
-  const query = `MATCH (p:Project {id: '${PROJECT_SINGLETON_ID}'}) RETURN p.gitCommitHash AS gitCommitHash, p.lastAnalyzedAt AS lastAnalyzedAt, p.version AS version, p.analyzedFiles AS analyzedFiles`;
+  const query = `MATCH (f:File) RETURN max(f.analyzedAtCommit) AS gitCommitHash, max(f.analyzedAt) AS lastAnalyzedAt, count(f) AS analyzedFiles`;
 
   try {
     const output = execFileSync(
@@ -119,11 +132,17 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
     const record = {};
     keys.forEach((key, i) => { record[key] = row[i] ?? null; });
 
+    const gitCommitHash = record.gitCommitHash ?? null;
+    const lastAnalyzedAt = record.lastAnalyzedAt ?? null;
+    const analyzedFiles = record.analyzedFiles != null ? parseInt(record.analyzedFiles, 10) : 0;
+    if (gitCommitHash == null && lastAnalyzedAt == null && analyzedFiles === 0) {
+      return null;
+    }
     return {
-      gitCommitHash: record.gitCommitHash ?? null,
-      lastAnalyzedAt: record.lastAnalyzedAt ?? null,
-      version: record.version ?? null,
-      analyzedFiles: record.analyzedFiles != null ? parseInt(record.analyzedFiles, 10) : null,
+      gitCommitHash,
+      lastAnalyzedAt,
+      version: readVersionFromConfig(projectRoot),
+      analyzedFiles,
     };
   } catch (err) {
     // If cypher-shell binary not found, return null (graceful skip)
@@ -135,13 +154,27 @@ function loadProjectMetaViaCypherShell(neo4jConfig) {
 }
 
 /**
+ * Read `version` from `.grasp-it/config.json`. Falls back to "1.0.0" if missing.
+ */
+function readVersionFromConfig(projectRoot) {
+  const configPath = join(projectRoot, UA_DIR, "config.json");
+  if (!existsSync(configPath)) return "1.0.0";
+  try {
+    const parsed = JSON.parse(readFileSync(configPath, "utf-8"));
+    return typeof parsed?.version === "string" ? parsed.version : "1.0.0";
+  } catch {
+    return "1.0.0";
+  }
+}
+
+/**
  * Load project metadata from Neo4j using configured connection type.
  */
-async function loadProjectMetaFromNeo4j(neo4jConfig) {
+async function loadProjectMetaFromNeo4j(neo4jConfig, projectRoot) {
   const connectionType = getConnectionType();
 
   if (connectionType === "cypher-shell") {
-    return loadProjectMetaViaCypherShell(neo4jConfig);
+    return loadProjectMetaViaCypherShell(neo4jConfig, projectRoot);
   }
 
   if (connectionType === "mcp") {
@@ -150,7 +183,7 @@ async function loadProjectMetaFromNeo4j(neo4jConfig) {
   }
 
   // Default: driver
-  return loadProjectMetaViaDriver(neo4jConfig);
+  return loadProjectMetaViaDriver(neo4jConfig, projectRoot);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -187,9 +220,9 @@ if (!neo4jConfig) {
 }
 
 // Query Neo4j
-const meta = await loadProjectMetaFromNeo4j(neo4jConfig);
+const meta = await loadProjectMetaFromNeo4j(neo4jConfig, projectRoot);
 if (!meta) {
-  // No Project node yet — output empty, caller will treat as first run
+  // No File nodes yet — output empty, caller will treat as first run
   console.log("{}");
   process.exit(0);
 }

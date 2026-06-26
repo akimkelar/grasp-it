@@ -549,13 +549,13 @@ Determine whether to run a full analysis or incremental update.
 
  
 6.5. **Read `gitCommitHash` from Neo4j (Phase 0 staleness check):**
-   Attempt to load the canonical `gitCommitHash` from the Neo4j `Project` singleton:
+   Attempt to derive the canonical `gitCommitHash` from `File` nodes via aggregation. This is the maximum `analyzedAtCommit` across all `File` nodes that have been analyzed:
    ```bash
-   node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.gitCommitHash AS gitCommitHash"
+   node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash"
    ```
    
    - If the query returns a row with `gitCommitHash` field → use that as `lastCommitHash`
-   - If the query returns no rows (no Project node yet) → treat as first run (full analysis)
+   - If the query returns no rows (no File nodes with `analyzedAtCommit` yet) → treat as first run (full analysis)
    
    **Neo4j-only:** If Neo4j is unavailable or returns empty, the skill fails. There is no JSON fallback.
    
@@ -1103,7 +1103,7 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
    fi
    ```
    
-   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates the `Project` singleton with `gitCommitHash`, `lastAnalyzedAt`, `version`, and `analyzedFiles`.
+   The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates `File.analyzedAtCommit` and `File.analyzedAt` so the next read of `gitCommitHash` (derived from `max(File.analyzedAtCommit)`) and `lastAnalyzedAt` (derived from `max(File.analyzedAt)`) reflects this commit. The `Project` singleton is purely a structural anchor (no semantic fields). `version` lives in `.grasp-it/config.json` and `analyzedFiles` is computed at query time via `count(:File)`.
 
    **Node update strategy:** The script uses `MERGE` on node IDs to update existing nodes in place — it does NOT delete all Codebase nodes before inserting. This means:
    - Nodes in the assembled graph are created or updated (upsert behavior)
@@ -1112,8 +1112,8 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
 
    - Exit code 0 → Neo4j write succeeded
    - Exit code 1 → Neo4j write failed — the skill exits with an error
-   
-   **Note:** The `analyzedFiles` count is computed by the script as the number of nodes with type `"file"` in the assembled graph.
+
+   **Note:** `analyzedFiles` is computed at query time as `count(:File)` — no writeback is required.
 
 3. Clean up intermediate files:
    ```bash
