@@ -160,8 +160,11 @@ export interface AnalysisMeta {
 
 // Project config (for auto-update opt-in and language preference)
 // `version` is the schema version of the assembled knowledge graph (read+written here).
+// `autoUpdate` is required as the primary opt-in flag; `saveConfig` merges any
+// partial config with the defaults so callers can omit it when only writing
+// `version` or `outputLanguage`.
 export interface ProjectConfig {
-  autoUpdate: boolean;
+  autoUpdate?: boolean;
   outputLanguage?: string;
   version?: string;
 }

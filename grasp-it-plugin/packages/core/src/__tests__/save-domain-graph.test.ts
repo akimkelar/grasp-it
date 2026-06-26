@@ -124,10 +124,11 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    // Verify all 6 domain nodes were created + 1 clear + 1 project update = 8 calls total
-    expect(mockSession.run).toHaveBeenCalledTimes(8);
+    // Verify all 6 domain nodes were created + 1 clear = 7 calls total
+    // (Task F: no separate Project update — per-Domain stamps are written as part of the Domain node CREATE)
+    expect(mockSession.run).toHaveBeenCalledTimes(7);
 
-    // Verify each node type gets the correct dual-label (skip index 0 = clear, last index = project update)
+    // Verify each node type gets the correct dual-label (skip index 0 = clear)
     const expectedLabels = ["Knowledge:Domain", "Knowledge:Feature", "Knowledge:Operation", "Knowledge:Actor", "Knowledge:Entity", "Knowledge:BusinessRule"];
 
     for (let i = 0; i < domainTypes.length; i++) {
@@ -166,7 +167,7 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(params.source).toBe("concept");
   });
 
-  it("updates Project singleton with domainAnalyzedAt and domainCommit", async () => {
+  it("stamps Domain nodes with analyzedAtCommit and analyzedAt per-Domain", async () => {
     const mockSession = {
       run: vi.fn(async () => ({ records: [] })),
     };
@@ -175,16 +176,18 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
 
-    // Last call should be the Project update
-    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1] as unknown as [string, Record<string, unknown>];
-    expect(updateCall[0]).toContain("domainAnalyzedAt");
-    expect(updateCall[0]).toContain("domainCommit");
+    // Find the CREATE call for the Domain node (it carries the per-Domain stamps)
+    const calls = mockSession.run.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
+    const domainCreateCall = calls.find(([query]) => query.includes("Knowledge:Domain"));
+    expect(domainCreateCall).toBeDefined();
+    expect(domainCreateCall![0]).toContain("analyzedAtCommit");
+    expect(domainCreateCall![0]).toContain("analyzedAt");
 
-    const params = updateCall[1]!;
-    expect(params).toHaveProperty("domainAnalyzedAt");
-    expect(params).toHaveProperty("domainCommit");
-    // domainCommit should come from graph.project.gitCommitHash when not explicitly passed
-    expect(params.domainCommit).toBe("abc123def456");
+    const params = domainCreateCall![1];
+    expect(params).toHaveProperty("analyzedAtCommit");
+    expect(params).toHaveProperty("analyzedAt");
+    // analyzedAtCommit should come from graph.project.gitCommitHash when not explicitly passed
+    expect(params.analyzedAtCommit).toBe("abc123def456");
   });
 
   it("uses explicit commit parameter when provided", async () => {
@@ -196,10 +199,34 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph, "project:singleton", "explicit-commit-hash");
 
-    const updateCall = mockSession.run.mock.calls[mockSession.run.mock.calls.length - 1] as unknown as [string, Record<string, unknown>];
-    const params = updateCall[1]!;
+    const calls = mockSession.run.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
+    const domainCreateCall = calls.find(([query]) => query.includes("Knowledge:Domain"));
+    expect(domainCreateCall).toBeDefined();
+    const params = domainCreateCall![1];
+    expect(params.analyzedAtCommit).toBe("explicit-commit-hash");
+  });
 
-    expect(params.domainCommit).toBe("explicit-commit-hash");
+  it("does not stamp analyzedAtCommit on non-Domain Knowledge nodes (Feature, Operation, etc.)", async () => {
+    const mockSession = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const graph = makeDomainGraph([
+      makeDomainNode({ id: "domain:test", name: "Test", type: "domain" }),
+      makeDomainNode({ id: "feature:auth", name: "Auth", type: "feature" }),
+    ]);
+
+    await saveDomainGraphToNeo4j(mockSession as never, graph as KnowledgeGraph);
+
+    // The Feature node's CREATE call should NOT contain analyzedAtCommit
+    const calls = mockSession.run.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
+    const featureCreateCall = calls.find(([query]) => query.includes("Knowledge:Feature"));
+    expect(featureCreateCall).toBeDefined();
+    // Cypher query should not reference analyzedAtCommit for non-Domain nodes
+    expect(featureCreateCall![0]).not.toContain("analyzedAtCommit");
+    // And the params object should not carry analyzedAtCommit / analyzedAt
+    expect(featureCreateCall![1]).not.toHaveProperty("analyzedAtCommit");
+    expect(featureCreateCall![1]).not.toHaveProperty("analyzedAt");
   });
 
   it("clears existing domain elements before writing new ones", async () => {

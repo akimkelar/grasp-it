@@ -180,9 +180,22 @@ function pushDomainGraphViaCypherShell(neo4jConfig, graphData) {
     }
   }
 
-  // Update Project singleton domainCommit
-  const updateCypher = `MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash;`;
-  runCypherShell(neo4jConfig, updateCypher); // best-effort — don't fail if Project doesn't exist yet
+  // Per-Domain staleness: stamp each Domain node with analyzedAtCommit /
+  // analyzedAt so the next Phase 2 staleness check can do a per-Domain
+  // comparison. Replaces the legacy Project.domainCommit /
+  // Project.domainAnalyzedAt global stamp.
+  const currentCommit = graphData.project?.gitCommitHash || "";
+  // Collect Domain node IDs from the assembled graph and inline them into the
+  // cypher-shell query (runCypherShell takes a single string via stdin — no
+  // parameter substitution).
+  const domainIds = (graphData.nodes || [])
+    .filter((n) => (n.type === "domain" || n.id?.startsWith("domain:")))
+    .map((n) => n.id);
+  if (domainIds.length > 0) {
+    const domainIdList = domainIds.map((id) => cypherEscape(id)).join(", ");
+    const domainUpdateCypher = `UNWIND [${domainIdList}] AS did MATCH (d:Domain {id: did}) SET d.analyzedAtCommit = ${cypherEscape(currentCommit)}, d.analyzedAt = datetime();`;
+    runCypherShell(neo4jConfig, domainUpdateCypher); // best-effort
+  }
 
   // Orphan check via cypher-shell (best-effort — don't exit on failure)
   const orphanQuery = `MATCH (n:Knowledge) WHERE NOT (n:Domain OR n:Feature OR n:Operation OR n:Actor OR n:Entity OR n:BusinessRule OR n:Risk OR n:Constraint) RETURN n.id AS id, n.type AS type;`;
@@ -432,11 +445,22 @@ async function pushDomainGraph(projectRoot) {
         }
       }
 
-      // Update Project singleton domainCommit
-      await session.run(
-        `MATCH (p:Project {id: 'project:singleton'})
-         SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash`
-      );
+      // Per-Domain staleness: stamp each Domain node with analyzedAtCommit /
+      // analyzedAt. Replaces the legacy Project.domainCommit /
+      // Project.domainAnalyzedAt global stamp (the Project singleton is now
+      // a structural anchor only — Task F).
+      const currentCommit = graphData.project?.gitCommitHash || "";
+      const domainIds = (graphData.nodes || [])
+        .filter((n) => (n.type === "domain" || n.id?.startsWith("domain:")))
+        .map((n) => n.id);
+      if (domainIds.length > 0) {
+        await session.run(
+          `UNWIND $domainIds AS did
+           MATCH (d:Domain {id: did})
+           SET d.analyzedAtCommit = $commit, d.analyzedAt = datetime()`,
+          { domainIds, commit: currentCommit }
+        );
+      }
     } finally {
       await session.close();
     }

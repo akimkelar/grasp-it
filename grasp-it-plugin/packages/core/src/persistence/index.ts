@@ -567,7 +567,13 @@ export async function loadDomainGraphFromNeo4j(
 /**
  * Save domain graph to Neo4j.
  * Writes Knowledge nodes with secondary labels (Domain/Feature/etc).
- * Updates Project node with domainAnalyzedAt and domainCommit.
+ *
+ * Domain nodes carry `analyzedAtCommit` and `analyzedAt` properties for
+ * per-Domain staleness tracking — this replaces the legacy
+ * `Project.domainCommit` / `Project.domainAnalyzedAt` global stamp that was
+ * removed in Task F. The Project singleton is no longer updated with
+ * domain-analysis metadata; it remains purely a structural anchor for
+ * `:PART_OF` edges.
  *
  * @param session   Neo4j driver session
  * @param graph     Domain graph to persist
@@ -581,6 +587,11 @@ export async function saveDomainGraphToNeo4j(
   projectId: string = PROJECT_SINGLETON_ID,
   commit?: string,
 ): Promise<void> {
+  // Resolve the commit to stamp on Domain nodes. Falls back to the graph's
+  // project.gitCommitHash field (set by /grasp-domain Phase 5 in the JSON).
+  const currentCommit = commit ?? graph.project?.gitCommitHash ?? "";
+  const now = new Date().toISOString();
+
   // Clear existing domain elements for this project
   await session.run(
     `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
@@ -594,6 +605,34 @@ export async function saveDomainGraphToNeo4j(
     validateNodeKind(node);
     const secondaryLabel = toNeo4jLabel(node.type);
     const labels = `Knowledge:${secondaryLabel}`;
+
+    // Domain nodes carry per-Domain staleness properties (analyzedAtCommit,
+    // analyzedAt). Other Knowledge node types stay without these — only
+    // Domain is the staleness tracking unit (top of the domain hierarchy).
+    const isDomain = node.type === "domain";
+    const domainProps = isDomain
+      ? `analyzedAtCommit: $analyzedAtCommit, analyzedAt: $analyzedAt,`
+      : "";
+
+    const params: Record<string, unknown> = {
+      projectId,
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      summary: node.summary ?? "",
+      source: node.source ?? "code-analysis",
+      filePath: node.filePath ?? null,
+      lineRange: node.lineRange ?? null,
+      tags: node.tags ?? [],
+      complexity: node.complexity ?? "simple",
+      sourceFiles: node.sourceFiles ?? null,
+      generatedAt: node.generatedAt ?? null,
+      sourceCommit: node.sourceCommit ?? null,
+    };
+    if (isDomain) {
+      params.analyzedAtCommit = currentCommit;
+      params.analyzedAt = now;
+    }
 
     await session.run(
       `MATCH (p:Project {id: $projectId})
@@ -610,37 +649,14 @@ export async function saveDomainGraphToNeo4j(
          kind: "knowledge",
          sourceFiles: $sourceFiles,
          generatedAt: $generatedAt,
-         sourceCommit: $sourceCommit
+         sourceCommit: $sourceCommit,
+         ${domainProps}
+         projectId: $projectId
        })
        CREATE (d)-[:PART_OF]->(p)`,
-      {
-        projectId,
-        id: node.id,
-        name: node.name,
-        type: node.type,
-        summary: node.summary ?? "",
-        source: node.source ?? "code-analysis",
-        filePath: node.filePath ?? null,
-        lineRange: node.lineRange ?? null,
-        tags: node.tags ?? [],
-        complexity: node.complexity ?? "simple",
-        sourceFiles: node.sourceFiles ?? null,
-        generatedAt: node.generatedAt ?? null,
-        sourceCommit: node.sourceCommit ?? null,
-      },
+      params,
     );
   }
-
-  // Update Project with domain analysis metadata
-  const now = new Date().toISOString();
-  const domainCommit = commit ?? graph.project?.gitCommitHash ?? "";
-
-  await session.run(
-    `MATCH (p:Project {id: $projectId})
-     SET p.domainAnalyzedAt = $domainAnalyzedAt,
-         p.domainCommit = $domainCommit`,
-    { projectId, domainAnalyzedAt: now, domainCommit },
-  );
 }
 
 // Note: The following functions were removed in the Neo4j-first migration.

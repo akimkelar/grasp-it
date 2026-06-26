@@ -147,10 +147,10 @@ Use `$PLUGIN_ROOT` for every reference to agent definitions in subsequent phases
 
 Before deriving domain knowledge, check whether Neo4j is reachable and what graph state exists:
 
-1. Query Neo4j `Project` singleton for the codebase `gitCommitHash` (used by the domainCommit comparison in Phase 2 and as a `sourceCommit` fallback in Phase 6):
+1. Query Neo4j for the codebase `gitCommitHash` (derived from `max(File.analyzedAtCommit)` — Task F migration) and for the count of `:Domain` nodes (used in Phase 2 to detect "no domain graph yet"):
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p { .gitCommitHash } AS meta" 2>/dev/null)
+   NEO4J_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash, count{(d:Domain)} AS domainCount" 2>/dev/null)
    EXIT_CODE=$?
 
    # Exit code 2 means driver was unavailable — fall back to cypher-shell
@@ -167,7 +167,7 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
        URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p { .gitCommitHash } AS meta" 2>/dev/null)
+       NEO4J_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RETURN max(f.analyzedAtCommit) AS gitCommitHash, count{(d:Domain)} AS domainCount" 2>/dev/null)
        EXIT_CODE=$?
      else
        echo "Error: neo4j-driver is unavailable and cypher-shell is not installed."
@@ -183,7 +183,7 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
      exit 1
    fi
 
-   # Empty result means no Project singleton — /grasp has never run
+   # Empty result means no File nodes with analyzedAtCommit — /grasp has never run
    if [ -z "$NEO4J_RESULT" ] || echo "$NEO4J_RESULT" | grep -q "null\|empty\|\[\]"; then
      echo "[grasp-domain] No existing knowledge graph found in Neo4j."
      echo "[grasp-domain] Will run in standalone mode — IMPLEMENTED_BY edges will not be produced."
@@ -191,7 +191,7 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
      HAS_CODEBASE_GRAPH="false"
      LAST_COMMIT=""
    else
-     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.meta.gitCommitHash // empty' 2>/dev/null)
+     LAST_COMMIT=$(echo "$NEO4J_RESULT" | jq -r '.gitCommitHash // empty' 2>/dev/null)
      if [ -z "$LAST_COMMIT" ] || [ "$LAST_COMMIT" = "null" ]; then
        echo "[grasp-domain] No existing knowledge graph found (no gitCommitHash)."
        echo "[grasp-domain] Will run in standalone mode — IMPLEMENTED_BY edges will not be produced."
@@ -203,12 +203,12 @@ Before deriving domain knowledge, check whether Neo4j is reachable and what grap
      fi
    fi
    ```
-2. **Continue execution regardless** of codebase-graph staleness — the per-domain staleness check below uses `domainCommit` vs `gitCommitHash` to determine whether the domain graph is current, which subsumes the global "is the graph stale relative to HEAD" question.
+2. **Continue execution regardless** of codebase-graph staleness — the per-domain staleness check below (Phase 2) compares each `:Domain.analyzedAtCommit` against `$LAST_COMMIT` to determine which domains are stale, which subsumes the global "is the graph stale relative to HEAD" question.
 
 > **Three-way decision logic:**
 > - Neo4j connection error → **STOP** (cannot proceed)
-> - Neo4j reachable but no `Project` singleton → **continue to Phase 2 standalone mode** (HAS_CODEBASE_GRAPH=false)
-> - Neo4j has `Project.gitCommitHash` → **continue to Phase 2** (HAS_CODEBASE_GRAPH=true)
+> - Neo4j reachable but no `File` nodes with `analyzedAtCommit` → **continue to Phase 2 standalone mode** (HAS_CODEBASE_GRAPH=false)
+> - Neo4j has File nodes with `analyzedAtCommit` → **continue to Phase 2** (HAS_CODEBASE_GRAPH=true)
 
 5. **Apply Neo4j schema if needed:** Before any writes to Neo4j, ensure the schema constraints and indexes are in place. This prevents `MERGE` operations and unique-constraint-dependent queries from failing.
    ```bash
@@ -290,14 +290,14 @@ fi
 
 **Path A — Staleness check for existing graph:**
 
-1. Query Neo4j for the `Project` singleton's `domainCommit`:
+1. Query Neo4j for the per-Domain staleness state. Each `:Domain` node carries `analyzedAtCommit` (the commit at which it was last derived). A domain is "stale" if its `analyzedAtCommit` does not match the current commit (`$LAST_COMMIT` from Phase 1):
    ```bash
    GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   DOMAIN_COMMIT_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
-   DOMAIN_COMMIT_EXIT=$?
+   STALE_DOMAINS_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:Domain) WHERE d.analyzedAtCommit IS NOT NULL AND d.analyzedAtCommit <> \$currentCommit RETURN d.id AS domainId, d.name AS domainName, d.analyzedAtCommit AS analyzedAtCommit" --params "{\"currentCommit\":\"$LAST_COMMIT\"}" 2>/dev/null)
+   STALE_DOMAINS_EXIT=$?
 
    # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
-   if [ $DOMAIN_COMMIT_EXIT -eq 2 ]; then
+   if [ $STALE_DOMAINS_EXIT -eq 2 ]; then
      echo "[grasp-domain] neo4j-driver unavailable — falling back to cypher-shell..."
      if command -v cypher-shell >/dev/null 2>&1; then
        NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
@@ -310,54 +310,27 @@ fi
        URI_PORT="${URI_PORT%%/*}"
        [ -z "$URI_HOST" ] && URI_HOST="localhost"
        [ -z "$URI_PORT" ] && URI_PORT="7687"
-       DOMAIN_COMMIT_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) RETURN p.domainCommit AS domainCommit" 2>/dev/null)
+       STALE_DOMAINS_RESULT=$(cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (d:Domain) WHERE d.analyzedAtCommit IS NOT NULL AND d.analyzedAtCommit <> '$LAST_COMMIT' RETURN d.id AS domainId, d.name AS domainName, d.analyzedAtCommit AS analyzedAtCommit" 2>/dev/null)
      fi
    fi
 
-   if [ $? -ne 0 ]; then
-     echo "Error: Failed to query Neo4j for domainCommit."
+   if [ $STALE_DOMAINS_EXIT -ne 0 ]; then
+     echo "Error: Failed to query Neo4j for stale domains."
      exit 1
    fi
    ```
 2. If `--full` was passed:
    - Force a fresh domain analysis — proceed to Phase 4
 3. If `--full` was NOT passed:
-   - Parse `domainCommit` from the result
-   - Compare `domainCommit` against `Project.gitCommitHash` (already in `LAST_COMMIT` from Phase 1) — if they match, the domain graph is current
-   - If domain graph is current: report "Domain graph is up to date" and **STOP**
+   - Parse `staleDomains` from the result (an array of domain records)
+   - If `staleDomains` is empty AND at least one `:Domain` exists in Neo4j, the domain graph is fully current — report "Domain graph is up to date at all domains" and **STOP**.
+   - If there are no `:Domain` nodes in the graph at all, treat this as "domain graph has never been built" — proceed to Phase 4 to do a fresh build.
+   - If `staleDomains` is non-empty: report the list of stale domains and proceed to Phase 4 (re-derive the stale ones only).
 4. Proceed to Phase 4 to derive/update domain knowledge
 
-5. After successful derivation, update `Project.domainCommit` in Neo4j to match `Project.gitCommitHash`:
-   ```bash
-   GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
-   DOMAIN_UPDATE_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash" 2>/dev/null)
-   DOMAIN_UPDATE_EXIT=$?
+5. After successful derivation, the push script (`push-domain-graph.mjs`) automatically stamps each newly created `:Domain` node with `analyzedAtCommit = $currentCommit` and `analyzedAt = datetime()`. This is what `push-domain-graph.mjs` writes — there is no separate writeback step in the SKILL. The writeback happens as part of the node creation step.
 
-   # Handle exit code 2 (driver unavailable — fall back to cypher-shell)
-   if [ $DOMAIN_UPDATE_EXIT -eq 2 ]; then
-     if command -v cypher-shell >/dev/null 2>&1; then
-       NEO4J_URI="${NEO4J_URI:-neo4j://localhost:7687}"
-       NEO4J_USERNAME="${NEO4J_USERNAME:-neo4j}"
-       NEO4J_PASSWORD="${NEO4J_PASSWORD:-password}"
-       NEO4J_DATABASE="${NEO4J_DATABASE:-grasp}"
-       _after_neo4j="${NEO4J_URI#neo4j*://}"
-       URI_HOST="${_after_neo4j%%:*}"
-       URI_PORT="${_after_neo4j#*:}"
-       URI_PORT="${URI_PORT%%/*}"
-       [ -z "$URI_HOST" ] && URI_HOST="localhost"
-       [ -z "$URI_PORT" ] && URI_PORT="7687"
-       cypher-shell -a "bolt://${URI_HOST}:${URI_PORT}" -u "$NEO4J_USERNAME" -p "$NEO4J_PASSWORD" -d "$NEO4J_DATABASE" --format plain "MATCH (p:Project {id: 'project:singleton'}) SET p.domainAnalyzedAt = datetime(), p.domainCommit = p.gitCommitHash" 2>/dev/null && DOMAIN_UPDATE_EXIT=0 || DOMAIN_UPDATE_EXIT=1
-     fi
-   fi
-
-   if [ $DOMAIN_UPDATE_EXIT -ne 0 ]; then
-     echo "Error: Failed to update Project.domainCommit in Neo4j."
-     echo "Domain graph consistency depends on this write succeeding."
-     exit 1
-   fi
-   ```
-
-> **Staleness rule:** Domain graph staleness is determined by comparing `Project.gitCommitHash` (the commit when full analysis ran) against `Project.domainCommit` (the commit when domain analysis last ran). If they differ, the domain graph is stale. The `domainGraphStale` flag from `meta.json` is deprecated and no longer used.
+> **Staleness rule (Task F):** Domain graph staleness is determined per-Domain. Each `:Domain` node carries `analyzedAtCommit` (the commit at which it was last derived). A domain is "stale" if its `analyzedAtCommit` does not match the current codebase commit. The legacy global stamp `Project.domainCommit` (and `Project.domainAnalyzedAt`) was removed in Task F. The `domainGraphStale` flag from `meta.json` is deprecated and no longer used.
 
 ### Phase 3: Lightweight Scan (Path B — HAS_CODEBASE_GRAPH=false)
 

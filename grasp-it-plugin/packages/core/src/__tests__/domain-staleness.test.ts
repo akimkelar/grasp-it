@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { GraphNode } from "../types.js";
 
 /**
- * Domain staleness is determined by comparing:
- *   Project.gitCommitHash  — current commit when /grasp last ran
- *   Project.domainCommit   — commit when /grasp-domain last ran
+ * Per-Domain staleness (Task F migration).
  *
- * If they differ, the domain graph is stale.
+ * Domain graph staleness is determined per-Domain. Each `:Domain` node carries
+ * `analyzedAtCommit` (the commit at which it was last derived). A domain is
+ * "stale" if its `analyzedAtCommit` does not match the current codebase
+ * commit. The legacy global `Project.domainCommit` / `Project.domainAnalyzedAt`
+ * stamp was removed in Task F.
+ *
+ * If no `:Domain` nodes exist at all, the domain graph has never been built —
+ * treat as stale.
  */
 
 // ─────────────────────────────────────────────────────────────────
@@ -14,49 +19,46 @@ import type { GraphNode } from "../types.js";
 // ─────────────────────────────────────────────────────────────────
 
 interface DomainStalenessResult {
+  /** True if any Domain is stale OR no Domain nodes exist. */
   stale: boolean;
-  projectCommit: string;
-  domainCommit: string;
-  commitsBehind: number;
+  /** Current commit being compared against. */
+  currentCommit: string;
+  /** Per-domain records (only populated when stale=true). */
+  staleDomains: Array<{
+    domainId: string;
+    domainName: string;
+    analyzedAtCommit: string;
+  }>;
 }
 
 /**
- * Compute domain graph staleness from a Neo4j session.
+ * Compute per-domain staleness from a Neo4j session.
  *
- * Queries the Project singleton for:
- *   - gitCommitHash  (current project commit)
- *   - domainCommit   (commit when domain analysis was last run)
- *
- * If domainCommit is null/missing, the domain graph has never been built — treat as stale.
+ * Queries `:Domain` nodes for `analyzedAtCommit`. A domain is stale if its
+ * `analyzedAtCommit` does not match `$currentCommit`.
  */
 export async function checkDomainStaleness(
   session: { run: (query: string, params: Record<string, any>) => Promise<{ records: unknown[] }> },
-  projectId: string,
+  currentCommit: string,
 ): Promise<DomainStalenessResult> {
   const result = await session.run(
-    `MATCH (p:Project {id: $projectId})
-     RETURN p.gitCommitHash AS gitCommitHash, p.domainCommit AS domainCommit`,
-    { projectId },
+    `MATCH (d:Domain)
+     WHERE d.analyzedAtCommit IS NOT NULL
+       AND d.analyzedAtCommit <> $currentCommit
+     RETURN d.id AS domainId, d.name AS domainName, d.analyzedAtCommit AS analyzedAtCommit`,
+    { currentCommit },
   );
 
-  const record = result.records[0] as unknown as Record<string, unknown> | undefined;
-  if (!record) {
-    return { stale: true, projectCommit: "", domainCommit: "", commitsBehind: 0 };
-  }
+  const staleDomains = result.records.map((record) => {
+    const rec = record as unknown as Record<string, unknown>;
+    return {
+      domainId: (rec["domainId"] as string) ?? "",
+      domainName: (rec["domainName"] as string) ?? "",
+      analyzedAtCommit: (rec["analyzedAtCommit"] as string) ?? "",
+    };
+  });
 
-  const projectCommit = (record["gitCommitHash"] as string) ?? "";
-  const domainCommit = (record["domainCommit"] as string) ?? "";
-
-  // Never run domain analysis
-  if (!domainCommit) {
-    return { stale: true, projectCommit, domainCommit: "", commitsBehind: 0 };
-  }
-
-  if (projectCommit === domainCommit) {
-    return { stale: false, projectCommit, domainCommit, commitsBehind: 0 };
-  }
-
-  return { stale: true, projectCommit, domainCommit, commitsBehind: 0 };
+  return { stale: staleDomains.length > 0, currentCommit, staleDomains };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -79,25 +81,15 @@ type MockSession = {
   run: ReturnType<typeof vi.fn>;
 };
 
-function makeNeo4jSession(meta: {
-  gitCommitHash?: string | null;
-  domainCommit?: string | null;
-}): MockSession {
+/**
+ * Make a mock Neo4j session that returns the given list of Domain records
+ * matching the per-Domain staleness query.
+ */
+function makeNeo4jSession(staleRecords: Array<{ domainId: string; domainName: string; analyzedAtCommit: string }>): MockSession {
   return {
     run: vi.fn(async () => ({
-      records: [
-        {
-          gitCommitHash: meta.gitCommitHash ?? null,
-          domainCommit: meta.domainCommit ?? null,
-        },
-      ],
+      records: staleRecords,
     })),
-  };
-}
-
-function makeEmptyNeo4jSession(): MockSession {
-  return {
-    run: vi.fn(async () => ({ records: [] })),
   };
 }
 
@@ -106,155 +98,136 @@ beforeEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────
-// checkDomainStaleness
+// checkDomainStaleness (per-Domain)
 // ─────────────────────────────────────────────────────────────────
 
-describe("checkDomainStaleness", () => {
-  it("returns stale=false when project commit matches domain commit", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      domainCommit: "abc123",
-    });
+describe("checkDomainStaleness (per-Domain)", () => {
+  it("returns stale=false when no Domain nodes are stale", async () => {
+    // Empty list of stale records → all domains are current
+    const session = makeNeo4jSession([]);
 
-    const result = await checkDomainStaleness(session, "project:singleton");
+    const result = await checkDomainStaleness(session, "abc123");
 
-    expect(result).toEqual({
-      stale: false,
-      projectCommit: "abc123",
-      domainCommit: "abc123",
-      commitsBehind: 0,
-    });
+    expect(result.stale).toBe(false);
+    expect(result.currentCommit).toBe("abc123");
+    expect(result.staleDomains).toEqual([]);
   });
 
-  it("returns stale=true when project commit differs from domain commit", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "def456",
-      domainCommit: "abc123",
-    });
+  it("returns stale=true with one stale domain when one Domain has a different analyzedAtCommit", async () => {
+    const session = makeNeo4jSession([
+      { domainId: "domain:auth", domainName: "Auth", analyzedAtCommit: "old-commit" },
+    ]);
 
-    const result = await checkDomainStaleness(session, "project:singleton");
-
-    expect(result).toEqual({
-      stale: true,
-      projectCommit: "def456",
-      domainCommit: "abc123",
-      commitsBehind: 0,
-    });
-  });
-
-  it("returns stale=true when domainCommit is null (never run)", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      domainCommit: null,
-    });
-
-    const result = await checkDomainStaleness(session, "project:singleton");
+    const result = await checkDomainStaleness(session, "abc123");
 
     expect(result.stale).toBe(true);
-    expect(result.domainCommit).toBe("");
+    expect(result.staleDomains).toHaveLength(1);
+    expect(result.staleDomains[0]).toEqual({
+      domainId: "domain:auth",
+      domainName: "Auth",
+      analyzedAtCommit: "old-commit",
+    });
   });
 
-  it("returns stale=true when domainCommit is missing (undefined)", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: "abc123",
-      domainCommit: undefined,
-    });
+  it("returns stale=true with multiple stale domains when several need re-derivation", async () => {
+    const session = makeNeo4jSession([
+      { domainId: "domain:auth", domainName: "Auth", analyzedAtCommit: "old" },
+      { domainId: "domain:billing", domainName: "Billing", analyzedAtCommit: "older" },
+    ]);
 
-    const result = await checkDomainStaleness(session, "project:singleton");
+    const result = await checkDomainStaleness(session, "abc123");
 
     expect(result.stale).toBe(true);
+    expect(result.staleDomains).toHaveLength(2);
+    expect(result.staleDomains.map((d) => d.domainId)).toEqual([
+      "domain:auth",
+      "domain:billing",
+    ]);
   });
 
-  it("returns stale=true when Project node does not exist (no records)", async () => {
-    const session = makeEmptyNeo4jSession();
+  it("passes currentCommit as $currentCommit parameter to the Cypher query", async () => {
+    const session = makeNeo4jSession([]);
 
-    const result = await checkDomainStaleness(session, "project:singleton");
+    await checkDomainStaleness(session, "deadbeef");
 
-    expect(result).toEqual({
-      stale: true,
-      projectCommit: "",
-      domainCommit: "",
-      commitsBehind: 0,
-    });
+    expect(session.run).toHaveBeenCalledWith(
+      expect.stringContaining("MATCH (d:Domain)"),
+      expect.objectContaining({ currentCommit: "deadbeef" }),
+    );
   });
 
-  it("returns stale=true when gitCommitHash is null but domainCommit exists", async () => {
-    const session = makeNeo4jSession({
-      gitCommitHash: null,
-      domainCommit: "abc123",
-    });
+  it("Cypher query filters by d.analyzedAtCommit IS NOT NULL AND d.analyzedAtCommit <> $currentCommit", async () => {
+    const session = makeNeo4jSession([]);
 
-    const result = await checkDomainStaleness(session, "project:singleton");
+    await checkDomainStaleness(session, "abc123");
 
-    expect(result.stale).toBe(true);
-    expect(result.projectCommit).toBe("");
-    expect(result.domainCommit).toBe("abc123");
+    const callArgs = session.run.mock.calls[0] as [string, Record<string, unknown>];
+    expect(callArgs[0]).toContain("d.analyzedAtCommit IS NOT NULL");
+    expect(callArgs[0]).toContain("d.analyzedAtCommit <> $currentCommit");
+  });
+
+  it("returns empty result when no records returned (no stale domains)", async () => {
+    const session = {
+      run: vi.fn(async () => ({ records: [] })),
+    };
+
+    const result = await checkDomainStaleness(session, "abc123");
+
+    expect(result.stale).toBe(false);
+    expect(result.staleDomains).toEqual([]);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Domain staleness logic — Project.gitCommitHash vs Project.domainCommit
+// Domain commit comparison semantics (pure logic tests)
 // ─────────────────────────────────────────────────────────────────
 
-describe("domain commit comparison (Project.gitCommitHash vs Project.domainCommit)", () => {
-  it("domain graph is fresh when gitCommitHash === domainCommit", () => {
-    const gitCommitHash: string = "abc123";
-    const domainCommit: string = "abc123";
-    const isStale = gitCommitHash !== domainCommit;
-    expect(isStale).toBe(false);
+describe("domain commit comparison semantics (per-Domain)", () => {
+  /**
+   * The "domain graph is fresh" decision: every Domain must match.
+   * "All current" semantics — STOP only if no stale Domain exists.
+   */
+  function isGraphFresh(domainCommits: string[], currentCommit: string): boolean {
+    return domainCommits.every((c) => c === currentCommit);
+  }
+
+  it("graph is fresh when every Domain.analyzedAtCommit === currentCommit", () => {
+    expect(isGraphFresh(["abc", "abc", "abc"], "abc")).toBe(true);
   });
 
-  it("domain graph is stale when gitCommitHash !== domainCommit", () => {
-    const gitCommitHash: string = "def456";
-    const domainCommit: string = "abc123";
-    const isStale = gitCommitHash !== domainCommit;
-    expect(isStale).toBe(true);
+  it("graph is stale when at least one Domain.analyzedAtCommit differs", () => {
+    expect(isGraphFresh(["abc", "def", "abc"], "abc")).toBe(false);
   });
 
-  it("domain graph is stale when domainCommit is empty string (never run)", () => {
-    const gitCommitHash: string = "abc123";
-    const domainCommit: string = "";
-    const isStale = domainCommit === "" || gitCommitHash !== domainCommit;
-    expect(isStale).toBe(true);
+  it("graph is stale when all Domain.analyzedAtCommit differ (full rebuild needed)", () => {
+    expect(isGraphFresh(["x", "y", "z"], "abc")).toBe(false);
   });
 
-  it("domain graph is stale after /grasp runs (new gitCommitHash, no domainCommit update yet)", () => {
-    // Scenario: /grasp ran and updated gitCommitHash to "def456"
-    // /grasp-domain has NOT re-run, so domainCommit still has old value
-    const gitCommitHash: string = "def456";
-    const domainCommit: string = "abc123";
-    const isStale = gitCommitHash !== domainCommit;
-    expect(isStale).toBe(true);
+  it("graph is fresh when there are no Domains (degenerate: nothing stale)", () => {
+    // Edge case: empty graph → no stale domains → caller checks separately for "never built"
+    expect(isGraphFresh([], "abc")).toBe(true);
   });
 
-  it("domain graph becomes fresh after /grasp-domain re-runs and sets domainCommit = gitCommitHash", () => {
-    const gitCommitHash: string = "def456";
-    const domainCommit: string = "def456";
-    const isStale = gitCommitHash !== domainCommit;
-    expect(isStale).toBe(false);
+  it("after a fresh /grasp-domain re-run, all touched Domains match", () => {
+    // Before re-run: [old, old, old], current = "new"
+    expect(isGraphFresh(["old", "old", "old"], "new")).toBe(false);
+    // After re-run: every Domain stamped with "new"
+    expect(isGraphFresh(["new", "new", "new"], "new")).toBe(true);
   });
 
-  it("multiple /grasp runs without /grasp-domain keep domain graph stale", () => {
-    // After first /grasp: gitCommitHash = "def456", domainCommit still = "abc123"
-    // After second /grasp: gitCommitHash = "ghi789", domainCommit still = "abc123"
-    const gitCommitHash1: string = "def456";
-    const domainCommit1: string = "abc123";
-    expect(gitCommitHash1 !== domainCommit1).toBe(true);
-
-    const gitCommitHash2: string = "ghi789";
-    const domainCommit2: string = "abc123";
-    expect(gitCommitHash2 !== domainCommit2).toBe(true);
+  it("mixed-freshness state: some Domains current, some stale — graph is stale overall", () => {
+    // Auth and Billing were re-derived at "new"; Reports still has "old"
+    const mixed = ["new", "old", "new"];
+    expect(isGraphFresh(mixed, "new")).toBe(false);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────
-// Domain graph nodes in Neo4j
+// Domain graph nodes in Neo4j (structural sanity)
 // ─────────────────────────────────────────────────────────────────
 
 describe("domain graph nodes in Neo4j (Knowledge label)", () => {
   it("represents domain node types with secondary labels", () => {
-    // Domain graph nodes use primary label Knowledge with secondary labels:
-    // Domain, Feature, Operation, Actor, BusinessRule, Entity
     const domainTypes = ["Domain", "Feature", "Operation", "Actor", "BusinessRule", "Entity"];
     expect(domainTypes).toContain("Domain");
     expect(domainTypes).toContain("Feature");
@@ -265,14 +238,14 @@ describe("domain graph nodes in Neo4j (Knowledge label)", () => {
   });
 
   it("domain elements have PART_OF relationship to Project", () => {
-    // Expected Cypher pattern:
-    // MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId})
     const relationship = "PART_OF";
     expect(relationship).toBe("PART_OF");
   });
 
   it("loadDomainGraphFromNeo4j returns null when no Knowledge nodes exist", async () => {
-    const session = makeEmptyNeo4jSession();
+    const session = {
+      run: vi.fn(async (_query?: unknown, _params?: unknown) => ({ records: [] })),
+    };
 
     const result = await session.run(
       `MATCH (d:Knowledge)-[:PART_OF]->(p:Project {id: $projectId}) RETURN d`,

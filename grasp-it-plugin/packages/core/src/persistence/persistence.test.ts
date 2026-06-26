@@ -210,7 +210,7 @@ describe("saveDomainGraphToNeo4j", () => {
     expect(nodeCalls[1]![1]).toMatchObject({ id: "feature:create-order", name: "Create Order" });
   });
 
-  it("updates Project with domainAnalyzedAt and domainCommit", async () => {
+  it("stamps Domain nodes with analyzedAtCommit per-Domain (replaces Project singleton domainCommit)", async () => {
     const sampleGraph: KnowledgeGraph = {
       version: "1.0.0",
       project: {
@@ -221,7 +221,16 @@ describe("saveDomainGraphToNeo4j", () => {
         analyzedAt: "2026-04-01T00:00:00.000Z",
         gitCommitHash: "abc123",
       },
-      nodes: [],
+      nodes: [
+        {
+          id: "domain:orders",
+          type: "domain",
+          name: "Orders",
+          summary: "Orders domain",
+          tags: [],
+          complexity: "simple",
+        },
+      ],
       edges: [],
       layers: [],
       tour: [],
@@ -237,14 +246,19 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton", "def456");
 
-    // Last call should be the SET query for domainAnalyzedAt and domainCommit
-    const lastCall = calls[calls.length - 1]!;
-    expect(lastCall[0]).toContain("SET p.domainAnalyzedAt");
-    expect(lastCall[0]).toContain("domainCommit");
-    expect(lastCall[1].domainCommit).toBe("def456");
+    // Find the Domain CREATE call (carries the per-Domain stamps)
+    const domainCall = calls.find(([q]) => q.includes("Knowledge:Domain"));
+    expect(domainCall).toBeDefined();
+    expect(domainCall![0]).toContain("analyzedAtCommit");
+    expect(domainCall![0]).toContain("analyzedAt");
+    expect(domainCall![1].analyzedAtCommit).toBe("def456");
+
+    // There should be NO separate Project SET p.domainAnalyzedAt / SET p.domainCommit call
+    const projectStampCall = calls.find(([q]) => q.includes("SET p.domainAnalyzedAt") || q.includes("SET p.domainCommit"));
+    expect(projectStampCall).toBeUndefined();
   });
 
-  it("uses graph.project.gitCommitHash as domainCommit when commit not provided", async () => {
+  it("uses graph.project.gitCommitHash as analyzedAtCommit when commit not provided", async () => {
     const sampleGraph: KnowledgeGraph = {
       version: "1.0.0",
       project: {
@@ -255,7 +269,16 @@ describe("saveDomainGraphToNeo4j", () => {
         analyzedAt: "2026-04-01T00:00:00.000Z",
         gitCommitHash: "abc123",
       },
-      nodes: [],
+      nodes: [
+        {
+          id: "domain:orders",
+          type: "domain",
+          name: "Orders",
+          summary: "Orders domain",
+          tags: [],
+          complexity: "simple",
+        },
+      ],
       edges: [],
       layers: [],
       tour: [],
@@ -271,8 +294,9 @@ describe("saveDomainGraphToNeo4j", () => {
 
     await saveDomainGraphToNeo4j(mockSession as never, sampleGraph, "project:singleton");
 
-    const lastCall = calls[calls.length - 1]!;
-    expect(lastCall[1].domainCommit).toBe("abc123");
+    const domainCall = calls.find(([q]) => q.includes("Knowledge:Domain"));
+    expect(domainCall).toBeDefined();
+    expect(domainCall![1].analyzedAtCommit).toBe("abc123");
   });
 
   it("correctly sets kind = \"knowledge\" for domain nodes", async () => {
