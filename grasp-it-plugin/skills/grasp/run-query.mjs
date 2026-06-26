@@ -5,11 +5,13 @@
  * Executes an arbitrary Cypher query against Neo4j and prints results as JSON.
  *
  * Usage:
- *   node run-query.mjs <project-root> <cypher-query>
+ *   node run-query.mjs <project-root> <cypher-query> [params-json]
  *
  * Arguments:
  *   project-root  — root of the project being analyzed
- *   cypher-query  — the Cypher query to execute
+ *   cypher-query  — the Cypher query to execute (use $paramName for placeholders)
+ *   params-json   — optional JSON object with Cypher parameters, e.g. '{"currentCommit":"abc123"}'.
+ *                   Pass "{}" or omit entirely to execute with no parameters.
  *
  * Environment:
  *   NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD — credentials (or .env in project root)
@@ -35,7 +37,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * Execute a Cypher query via neo4j-driver.
  * Returns { ok: true, records } on success, { ok: false, reason } on failure.
  */
-async function runQueryViaDriver(neo4jConfig, query) {
+async function runQueryViaDriver(neo4jConfig, query, params = {}) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
 
   let driver;
@@ -55,7 +57,7 @@ async function runQueryViaDriver(neo4jConfig, query) {
 
   try {
     const session = driver.session({ database: neo4jConfig.NEO4J_DATABASE || 'grasp' });
-    const result = await session.run(query);
+    const result = await session.run(query, params);
     await session.close();
     // Convert records to plain objects
     const records = result.records.map((record) => {
@@ -97,7 +99,7 @@ async function runQueryViaDriver(neo4jConfig, query) {
  * Execute a Cypher query via cypher-shell.
  * Returns { ok: true, records } on success, { ok: false, reason } on failure.
  */
-function runQueryViaCypherShell(neo4jConfig, query) {
+function runQueryViaCypherShell(neo4jConfig, query, params = {}) {
   const { NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD } = neo4jConfig;
   const uri = NEO4J_URI || "neo4j://localhost:7687";
   const username = NEO4J_USERNAME || "neo4j";
@@ -109,6 +111,15 @@ function runQueryViaCypherShell(neo4jConfig, query) {
     .replace(/^neo4j:\/\//, "bolt://");
 
   try {
+    // Build --param flags from the params bag. cypher-shell supports
+    //   --param "name => 'value'"
+    // Numbers, booleans, and arrays must be JSON-encoded into the value.
+    // Strings get single-quoted and any embedded single quote is escaped.
+    const paramArgs = [];
+    for (const [name, value] of Object.entries(params || {})) {
+      paramArgs.push("--param", formatCypherParam(name, value));
+    }
+
     const output = execFileSync(
       "cypher-shell",
       [
@@ -117,6 +128,7 @@ function runQueryViaCypherShell(neo4jConfig, query) {
         "-p", password,
         "-d", neo4jConfig.NEO4J_DATABASE || "grasp",
         "--format", "json",
+        ...paramArgs,
       ],
       { input: query, encoding: "utf-8", timeout: 10_000 },
     );
@@ -145,13 +157,31 @@ function runQueryViaCypherShell(neo4jConfig, query) {
 }
 
 /**
+ * Format a Cypher parameter for cypher-shell --param flag.
+ * Strings → single-quoted with embedded quotes escaped.
+ * Numbers / booleans → toString.
+ * Arrays / objects → JSON-encoded.
+ */
+function formatCypherParam(name, value) {
+  if (typeof value === "string") {
+    return `${name} => '${value.replace(/'/g, "\\'")}'`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `${name} => ${value}`;
+  }
+  // Arrays / objects — JSON-encode. cypher-shell accepts JSON literal syntax
+  // for arrays (e.g. [1, 2, 3]) and strings via the same single-quote rule.
+  return `${name} => ${JSON.stringify(value)}`;
+}
+
+/**
  * Execute a Cypher query using the configured connection type.
  */
-async function runQuery(neo4jConfig, query) {
+async function runQuery(neo4jConfig, query, params) {
   const connectionType = getConnectionType();
 
   if (connectionType === "cypher-shell") {
-    return runQueryViaCypherShell(neo4jConfig, query);
+    return runQueryViaCypherShell(neo4jConfig, query, params);
   }
 
   if (connectionType === "mcp") {
@@ -160,7 +190,7 @@ async function runQuery(neo4jConfig, query) {
   }
 
   // Default: driver
-  const result = await runQueryViaDriver(neo4jConfig, query);
+  const result = await runQueryViaDriver(neo4jConfig, query, params);
   if (!result.ok && result.fallback) {
     // Driver failed with connection error — signal caller to use cypher-shell
     console.error(`run-query.mjs: Query failed (signaling cypher-shell fallback): ${result.reason}`);
@@ -173,10 +203,28 @@ async function runQuery(neo4jConfig, query) {
 
 const projectRoot = process.argv[2];
 const query = process.argv[3];
+const paramsArg = process.argv[4];
 
 if (!projectRoot || !query) {
-  console.error("Usage: node run-query.mjs <project-root> <cypher-query>");
+  console.error("Usage: node run-query.mjs <project-root> <cypher-query> [params-json]");
   process.exit(1);
+}
+
+// Parse optional params bag. Empty object when missing or "{}".
+let params = {};
+if (paramsArg && paramsArg !== "{}") {
+  try {
+    const parsed = JSON.parse(paramsArg);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      params = parsed;
+    } else {
+      console.error("run-query.mjs: params-json must be a JSON object");
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`run-query.mjs: params-json is not valid JSON: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 // Check for Neo4j configuration
@@ -188,7 +236,7 @@ if (!neo4jConfig) {
 }
 
 // Execute the query
-const result = await runQuery(neo4jConfig, query);
+const result = await runQuery(neo4jConfig, query, params);
 
 if (!result.ok) {
   // Check if this is a graceful skip (e.g., MCP not supported)
