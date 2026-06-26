@@ -207,15 +207,12 @@ export async function saveGraphToNeo4j(
     { projectId },
   );
 
-  // Project-level metadata is now stored inline on the first graph node's
-  // project-meta sentinel — but actually, we keep this simpler: the project
-  // name/languages/frameworks/description live on the KnowledgeGraph.project
-  // payload but are not duplicated in Neo4j. The persisted nodes each carry
-  // their own properties; project meta is reconstructed at load time by
-  // scanning any nodes (the first one is used). For now we don't persist
-  // project meta to Neo4j at all — `/grasp` already writes it to
-  // .grasp-it/knowledge-graph.json. (Task G removed the Project singleton;
-  // project meta lives in JSON + .grasp-it/config.json.)
+  // Project-level metadata (name/languages/frameworks/description/analyzedAt/gitCommitHash)
+  // is no longer persisted to Neo4j. The `:Project` singleton and its `:PART_OF` edges
+  // were removed in Task G. Consumers that need project meta must read it from
+  // `.grasp-it/knowledge-graph.json` directly. The four derived fields
+  // (gitCommitHash, lastAnalyzedAt, version, analyzedFiles) come from File-node
+  // aggregations and `.grasp-it/config.json` — see staleness.ts and the config helpers.
 
   // Write nodes with projectId property
   for (const node of graph.nodes) {

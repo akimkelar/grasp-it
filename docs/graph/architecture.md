@@ -482,7 +482,7 @@ The codebase subgraph is wiped and rebuilt on every `/grasp` run:
 MATCH (n) WHERE n.kind = "codebase" DETACH DELETE n
 ```
 
-Knowledge nodes (`kind: "knowledge"`) and the `Project` singleton (`kind: "project"`) survive because the wipe is scoped by `kind`.
+Knowledge nodes (`kind: "knowledge"`) survive because the wipe is scoped to `kind = "knowledge"`.
 `IMPLEMENTED_BY` relationships are rewritten after each rebuild.
 
 **Preserving freshness metadata during rebuilds:** When a knowledge node is re-derived, its `generatedAt` is updated to the current timestamp and `sourceCommit` is set to the new HEAD commit. When a knowledge node is unchanged (not re-derived), its `generatedAt` and `sourceCommit` are preserved — they are never cleared by the rebuild.

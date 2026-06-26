@@ -60,6 +60,7 @@ const SKILLS_WITHOUT_GLOBAL_CHECK = [
   'grasp-knowledge',
   'grasp-diff',
   'grasp-domain',
+  'grasp-explain',
   'grasp-freshness',
 ];
 

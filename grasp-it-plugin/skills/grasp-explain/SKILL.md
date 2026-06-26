@@ -87,11 +87,11 @@ GRASP_SKILL_DIR="$PLUGIN_ROOT/skills/grasp"
 
 ### Phase 1: Verify Graph Exists
 
-1. Query Neo4j for the `Project` singleton:
+1. Query Neo4j to confirm any Codebase node exists for this project:
    ```bash
-   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (p:Project {id: 'project:singleton'}) RETURN p"
+   node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Codebase) WHERE n.projectId = 'project:singleton' RETURN count(n) > 0 AS hasGraph"
    ```
-2. If Neo4j returns no results, tell the user to run `/grasp` first.
+2. If Neo4j returns no rows (or `hasGraph` is false), tell the user to run `/grasp` first.
 
 ### Phase 2: Find the Target Node
 
