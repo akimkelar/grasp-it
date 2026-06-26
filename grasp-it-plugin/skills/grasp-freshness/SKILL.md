@@ -154,9 +154,13 @@ RUN_EXIT=$?
 if [ $RUN_EXIT -eq 2 ] && command -v cypher-shell >/dev/null 2>&1; then
   echo "[grasp-freshness] neo4j-driver unavailable — falling back to cypher-shell..."
   set -a; . "$HOME/.grasp-it/neo4j.env" 2>/dev/null || . "$PROJECT_ROOT/.env" 2>/dev/null; set +a
+  # cypher-shell needs --param for placeholders. Format mirrors run-query.mjs:
+  # strings get single-quoted, embedded single quotes are escaped.
+  CURR_PARAM="currentCommit => '$(echo "$CURRENT_COMMIT" | sed "s/'/\\\\'/g")'"
   STALE_RESULT=$(cypher-shell -a "${NEO4J_URI:-bolt://localhost:7687}" \
     -u "${NEO4J_USERNAME:-neo4j}" -p "${NEO4J_PASSWORD:-password}" \
     -d "${NEO4J_DATABASE:-grasp}" --format plain \
+    --param "$CURR_PARAM" \
     "$CYPHER_TEXT" 2>/dev/null)
   RUN_EXIT=$?
 fi
@@ -184,11 +188,13 @@ echo "[grasp-freshness] Found $STALE_COUNT stale IMPLEMENTED_BY edge(s)."
 
 ### Phase 3: Resolve Domain for each stale knowledge node
 
-For each stale knowledge node, walk the graph backwards from `IMPLEMENTED_BY` to find its `Domain` ancestor. The graph structure (per `docs/architecture/neo4j-schema.md`):
+For each stale knowledge node, walk the graph upwards to find its `Domain` ancestor. The graph structure (per `docs/architecture/neo4j-schema.md`):
 
-- `Feature` is reached via `(:Domain)-[:HAS_FEATURE]->(:Feature)`.
-- `Operation` is reached via `(:Domain)-[:HAS_FEATURE]->(:Feature)-[:HAS_OPERATION]->(:Operation)`.
-- For `BusinessRule`, `Entity`, `Constraint`, `Risk`, `Concept`: same traversal — they hang off `Feature` / `Operation` via the same backbone. The single Cypher below uses a variable-length path to handle any depth.
+- `Feature` is reached from `Domain` via `(:Domain)-[:HAS_FEATURE]->(:Feature)`.
+- `Operation` is reached from `Feature` via `(:Feature)-[:HAS_OPERATION]->(:Operation)`.
+- Most other knowledge types (`BusinessRule`, `Entity`, `Constraint`, `Risk`, `Concept`) hang off `Feature` or `Operation` via `related`, `performed_by`, or `governed_by` edges. We allow any relationship direction so we don't have to enumerate the full set.
+
+The traversal uses a variable-length path bounded at 6 hops — Domain → Feature → Operation is 2 hops; real graphs rarely exceed 4–5 in either direction. `OPTIONAL MATCH` keeps nodes with no Domain in the result set (they fall through to Phase 4).
 
 ```bash
 # Collect unique node IDs from Phase 2.
@@ -197,15 +203,17 @@ NODE_IDS=$(echo "$STALE_ROWS" | jq -r '[.[].nodeId] | unique | .[]')
 # Build a JSON list literal: ['feature:auth','operation:login',...]
 NODE_IDS_LITERAL=$(echo "$STALE_ROWS" | jq -c '[.[].nodeId] | unique')
 
-# Query for Domain ancestors. Returns one row per (stale node, Domain) pair.
+# Query for Domain ancestors. For each stale node, find the nearest :Domain
+# reachable by traversing any relationship (max 6 hops). Use collect(DISTINCT
+# ...) and take [0] — multiple Domain hits collapse to one row per node.
 DOMAIN_QUERY="
 UNWIND ${NODE_IDS_LITERAL} AS nodeId
 MATCH (k) WHERE k.id = nodeId
-OPTIONAL MATCH path = (k)-[*0..6]-(f:Feature)-[:HAS_FEATURE|Domain*0..1]-(d:Domain)
-WHERE d IS NOT NULL
+OPTIONAL MATCH (k)-[*0..6]-(d:Domain)
+WITH nodeId, k, collect(DISTINCT d) AS domains
 RETURN nodeId AS nodeId,
-       collect(DISTINCT d.id)[0] AS domainId,
-       collect(DISTINCT d.name)[0] AS domainName
+       head([dom IN domains WHERE dom IS NOT NULL | dom.id]) AS domainId,
+       head([dom IN domains WHERE dom IS NOT NULL | dom.name]) AS domainName
 "
 
 DOMAIN_RESULT=$(node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "$DOMAIN_QUERY" 2>/dev/null)
