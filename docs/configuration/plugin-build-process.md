@@ -59,7 +59,7 @@ pnpm --filter @grasp-it/core test
 pnpm test
 ```
 
-Expected counts: **912 core tests** in 41 files (`pnpm --filter @grasp-it/core test`); **601 skill / installer tests** in 35 files across the `tests/` tree (`pnpm test`). The skill count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern. A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
+Expected counts: **918 core tests** in 41 files (`pnpm --filter @grasp-it/core test`); **688 skill / installer tests** in 40 files across the `tests/` tree (`pnpm test`). The skill count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern. A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
 
 A small number of skill tests rely on real-network DNS probes or large synthetic file trees and have historically been slow. The two known offenders (`tests/skill/grasp/test_silent_exit_bugs.test.mjs > ENOTFOUND` and `tests/skill/grasp/test_scan_project.test.mjs > 501 files -> very-large`) hit vitest's default 30s ceiling intermittently under load. If they fail on a release cut, re-run just the affected files (`pnpm test -- tests/skill/grasp/test_silent_exit_bugs.test.mjs`) before blocking the release.
 
