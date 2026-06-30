@@ -17,7 +17,7 @@ The plan never ends because the specialist says "that's everything." It ends whe
 - When planning a new feature or significant change
 - When migrating or re-implementing behavior that was never formally documented
 - When the graph has `source: "code-analysis"` nodes about a feature but lacks the business intent behind them
-- Use `/grasp-chat` when querying existing knowledge; use `/grasp-concept` when building new knowledge
+- Use `/grasp-search` when querying existing knowledge; use `/grasp-concept` when building new knowledge
 
 ---
 

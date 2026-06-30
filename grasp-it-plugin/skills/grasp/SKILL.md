@@ -374,7 +374,7 @@ Determine whether to run a full analysis or incremental update.
 
      if (role === 'non-developer') {
        console.log('\n[grasp-it] You are set up for graph-query mode.');
-       console.log('[grasp-it] Use grasp-search, grasp-chat, grasp-knowledge, or grasp-concept to explore the graph.');
+       console.log('[grasp-it] Use grasp-search, grasp-knowledge, or grasp-concept to explore the graph.');
        console.log('[grasp-it] ROLE=non-developer');
      } else {
        console.log('\n[grasp-it] You are set up as a developer. Run /grasp to build or update the knowledge graph.');
@@ -425,8 +425,7 @@ Determine whether to run a full analysis or incremental update.
      echo "[grasp-it] Skipping codebase scanning — no local codebase is needed."
      echo ""
      echo "[grasp-it] To explore the knowledge graph, use:"
-     echo "  /grasp-search  — search nodes and relationships"
-     echo "  /grasp-chat    — ask questions about the codebase"
+     echo "  /grasp-search — search nodes, ask questions, get context, surface constraints"
      echo "  /grasp-knowledge — explore knowledge articles"
      echo "  /grasp-concept — plan concepts and extract requirements against the graph"
      echo ""

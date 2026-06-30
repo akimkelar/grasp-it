@@ -1,6 +1,6 @@
 ---
 name: grasp-search
-description: Query the Neo4j knowledge graph to get context, constraints, and code references before reading code. Use at the start of new tasks and before implementing modifications to avoid costly full-codebase searches.
+description: Use when investigating the codebase or its domain — code structure, features, operations, business rules, constraints, or architecture — or when answering any non-trivial question about how the system works. Query the Neo4j knowledge graph to get context, constraints, and code references before reading code or running expensive searches. The graph is the cheapest source of business context, so consult it first.
 allowed-tools: Bash
 ---
 

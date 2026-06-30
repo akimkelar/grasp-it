@@ -1,10 +1,4 @@
 export {
-  buildChatContext,
-  formatContextForPrompt,
-  type ChatContext,
-} from "./context-builder.js";
-export { buildChatPrompt } from "./grasp-chat.js";
-export {
   buildDiffContext,
   formatDiffAnalysis,
   type DiffContext,

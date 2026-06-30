@@ -55,7 +55,6 @@ const FILE_AGG_PATTERN = "MATCH (f:File) WHERE f.analyzedAtCommit IS NOT NULL RE
 
 const SKILLS_WITHOUT_GLOBAL_CHECK = [
   'grasp-search',
-  'grasp-chat',
   'grasp-gaps',
   'grasp-knowledge',
   'grasp-diff',
@@ -116,7 +115,6 @@ describe('global freshness check removal', () => {
     // no longer set or reference it as a freshness signal.
     const skillsThatMustNotSetLastCommit = [
       'grasp-search',
-      'grasp-chat',
       'grasp-gaps',
       'grasp-knowledge',
       'grasp-diff',
