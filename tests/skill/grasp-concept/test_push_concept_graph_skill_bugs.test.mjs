@@ -362,10 +362,11 @@ describe("BUG-03: SKILL.md defines a topic-driven fallback trigger", () => {
     expect(content).toMatch(/pause and write|capture what we.*established/i);
   });
 
-  it("fallback trigger is positioned in the 'Writing to the Graph After Each Aspect' section", () => {
-    // Locate the "Writing to the Graph After Each Aspect" section.
+  it("fallback trigger is positioned in the 'Writing to the Graph' section", () => {
+    // Locate the "Writing to the Graph" section (section name updated in v0.13.7
+    // to reflect the new issue-driven, non-aspect-gated write protocol).
     const sectionMatch = content.match(
-      /### Writing to the Graph After Each Aspect([\s\S]*?)(?=\n### |\n## )/,
+      /### Writing to the Graph([\s\S]*?)(?=\n### |\n## )/,
     );
     expect(sectionMatch).not.toBeNull();
     const section = sectionMatch[1];

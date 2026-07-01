@@ -1,21 +1,25 @@
 ---
 name: grasp-concept
-description: Use when planning a new feature or concept before implementation — designing a feature, scoping requirements, deciding what something should do, or starting implementation work without a clear spec. Triggers when the user asks "what should this feature do", "how should X work", "let's plan Y", or describes a feature with no existing knowledge graph coverage.
+description: Use when planning a new feature or concept before implementation — designing a feature, scoping requirements, deciding what something should do, or starting implementation work without a clear spec. Also use when investigating a design to expose gaps, pitfalls, and contradictions before they reach code. Triggers when the user asks "what should this feature do", "how should X work", "let's plan Y", "help me design Z", "let's investigate this concept", or describes a feature with no existing knowledge graph coverage.
 argument-hint: [concept or feature to plan]
 ---
 
 # /grasp-concept
 
-Plan a concept with a specialist until both of you hold exactly the same understanding. The goal is not to collect what the specialist volunteers — it is to excavate what they know, challenge what they assume, expose what they haven't considered, and produce a knowledge graph that is **complete, consistent, and unambiguous**.
+Build a complete, unambiguous concept — one that a developer could implement without making silent assumptions. The goal is not to collect what the specialist volunteers; it is to excavate what they know, challenge what they assume, expose what they haven't considered, and produce a knowledge graph that is **complete, consistent, and unambiguous**.
 
-The plan never ends because the specialist says "that's everything." It ends when you have analyzed the captured knowledge, found no gaps or contradictions, and confirmed the specialist agrees with your synthesis.
+This skill is a **concept architect**, not an interviewer. You drive toward a complete specification by identifying gaps and resolving them one issue at a time. You don't work through a fixed list of topics in order — you use analytical lenses to find what's missing and pursue those gaps until the concept is solid.
+
+The session ends not because the specialist said "that's everything", but because you analyzed the captured knowledge, found no remaining gaps or contradictions, and the specialist confirmed your synthesis.
 
 ---
 
 ## When to Use
 
 - When planning a new feature or significant change
+- When the concept should replace a planning document or feature spec
 - When migrating or re-implementing behavior that was never formally documented
+- When you need to uncover all gaps, pitfalls, and unaddressed edge cases before implementation begins
 - When the graph has `source: "code-analysis"` nodes about a feature but lacks the business intent behind them
 - Use `/grasp-search` when querying existing knowledge; use `/grasp-concept` when building new knowledge
 
@@ -150,22 +154,24 @@ echo '{"edges":[]}' > "$PROJECT_ROOT/.grasp-it/intermediate/pr-edges.json"
 
 ---
 
-## Phase 1: Topic Orientation
+## Phase 1: Entry & Orientation
 
-### 1a. Determine the topic and author
+### 1a. Determine the topic
 
 The topic comes from:
 1. `$ARGUMENTS` — if provided directly with the skill call
 2. The current conversation context — if a concept was just described or is being discussed
-3. Ask — if neither is available: *"What concept or feature should we plan together?"*
+3. Ask — if neither is available: *"What should we design?"*
 
-If the topic is vague (e.g. "the invoicing thing" or "the new flow"), do not proceed. First establish a precise name and a one-sentence description: *"Before we go deep, I want to make sure we're talking about the same thing. Can you give it a name and describe it in one sentence — what does it do and who benefits from it?"*
+**Do not give a preamble about how the session will work.** If the topic and context are already present, start building the concept immediately — go straight to querying the graph and then engaging with the substance.
 
-**Capture the author's identity** — use the system username (from `$USER` or `whoami`). This is stored on every concept plan node as `author` and enables tracing knowledge back to its source. If the specialist is different from the system user, note it in the concept plan context.
+If the topic name is genuinely ambiguous (two different things could reasonably be meant), ask for a precise name and one-sentence description before proceeding. Do not ask this if the topic is clear.
+
+**Capture the author's identity** — use the system username (from `$USER` or `whoami`). This is stored on every concept plan node as `author` and enables tracing knowledge back to its source.
 
 ### 1b. Check existing graph knowledge
 
-Query Neo4j across all three subgraph regions to get a complete picture of existing knowledge about the topic before building new nodes:
+Query Neo4j across all three subgraph regions to get a complete picture before building:
 
 **Codebase elements** (what code exists related to the topic):
 ```bash
@@ -182,29 +188,17 @@ node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "WITH ['$TOPIC'] AS terms 
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "WITH ['$TOPIC'] AS terms MATCH (seed) WHERE seed.kind = 'knowledge' AND seed.source = 'concept' AND any(t IN terms WHERE toLower(seed.name) CONTAINS t OR toLower(seed.summary) CONTAINS t OR toLower(coalesce(seed.rationale, '')) CONTAINS t) RETURN labels(seed)[0] AS type, seed.name AS name, seed.summary AS summary, seed.status AS status, seed.confidence AS confidence LIMIT 10"
 ```
 
-If Neo4j query fails, report the error and **STOP**.
-
-Surface findings to the specialist: *"The graph already has [X]. Should we build on it, replace it, or treat this as something separate?"*
-
-**Also query for existing actors and domains** — well-known domain actors may already exist in the graph from prior `/grasp-domain` or `/grasp-concept` runs:
+**Also query existing actors and domains** — these may already exist from prior planning or domain analysis:
 ```bash
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge) WHERE n:Actor OR n:Domain RETURN n.id, n.name, labels(n)[1] AS type LIMIT 50"
 ```
-Before creating any new actor node, check whether one with the same `id` already exists and reuse it instead of creating a duplicate.
-
-**Also check for existing domain nodes** — the feature may belong to an existing domain:
 ```bash
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (d:Domain) RETURN d.id, d.name LIMIT 20"
 ```
-If the feature belongs to an existing domain, create a `HAS_FEATURE` edge from the domain to the new feature node.
 
-**For deeper exploration**, use `/grasp-search` with Approaches A, B, and C — these provide subgraph-scoped search with relevance scoring and neighbor expansion, which is more powerful than the basic queries above.
+If Neo4j query fails, report the error and **STOP**.
 
-### 1c. State the contract
-
-Tell the specialist:
-
-> "We're going to plan [topic] together. I'll ask you one question at a time — mostly open questions so you can describe things in your own words. At the end of each topic I'll paraphrase what I understood and you correct me. We'll keep going until we both agree the picture is complete and correct. I'll save what we agree on to the knowledge graph as we go."
+If existing knowledge is found, surface only what's directly relevant: *"The graph already has [X] — I'll build on that."* If whether to extend or replace is genuinely unclear, ask. If it's obvious, proceed.
 
 Create `$PROJECT_ROOT/.grasp-it/intermediate/concept-context.json`:
 
@@ -215,302 +209,164 @@ Create `$PROJECT_ROOT/.grasp-it/intermediate/concept-context.json`:
   "featureId": "feature:<kebab-name>",
   "startedAt": "<ISO timestamp>",
   "status": "in-progress",
-  "aspects": {
-    "identity": "pending",
-    "actors": "pending",
-    "operations": "pending",
-    "entities": "pending",
-    "rules": "pending",
-    "decisions": "pending",
-    "risks": "pending",
-    "integration": "pending"
-  }
+  "lensesExplored": []
 }
 ```
 
 ---
 
-## Phase 2: Aspect-by-Aspect Deep Planning
+## Phase 2: Concept Building
 
-The plan is divided into **eight standard aspects** plus **topic-specific deep dives** (Phase 2.9). Work through each aspect completely before moving to the next. After completing each aspect, write what was learned to the intermediate graph files before continuing.
+This is the core of the skill. Build a complete, consistent, unambiguous specification by finding and closing gaps — not by conducting a structured interview.
 
-**The question lists below are not scripts — they are examples of the kinds of questions that expose gaps in each aspect.** For every topic, think about what is specific to THIS domain: its terminology, its risk profile, its unusual rules. Ask the questions that would surface inconsistencies in the concept as described — not a generic checklist. The goal is to find contradictions, undefined terms, unmitigated risks, and silent assumptions before anything is built.
+### Issue-driven, not question-driven
 
-**The per-aspect "write to the graph" hints below are pointers, not restrictions.** Any aspect can produce any node type — if a rules discussion surfaces a Risk, write the Risk node. Aspects are analytical lenses, not silos. The cross-aspect checklist near the end of this phase is the binding source of what to write.
+**Drive toward completeness by identifying and resolving gaps.** An issue is anything that, left unresolved, would cause a developer to make a silent assumption. Each exchange should close one issue: a gap in understanding, a contradiction, an undefined term, an unhandled edge case, an actor whose permissions are unclear.
 
-Questions must be asked **one at a time**. Within each aspect: **open questions come first** — let the specialist establish their own framing before you impose yours. Hypothesis and paraphrase questions close each block, synthesizing what you heard and getting explicit confirmation before writing to the graph. **Never open a block with a hypothesis** — that leads the witness and suppresses knowledge that doesn't fit your current frame.
+An issue may involve 1–3 tightly related questions if they're inseparable — for example, *"Who initiates the approval, and what happens if they're not available?"* is one issue, not two. What you're avoiding is broadcasting five unrelated questions at once — that fragments the conversation and prevents depth.
 
-### Question Modes
+**After every answer, ask: what is the most dangerous thing I still don't know about this concept? What assumption would a developer most likely make that could be wrong?** That becomes the next issue.
 
-Use all five modes throughout the plan — vary them to maintain pace and ensure accuracy:
+### Analytical Lenses
 
-**Open question** — requires a free-text description. Use to open each block. Let the specialist use their own words and framing.
-> "Walk me through X. Describe it as if I know nothing about it yet."
+These eight lenses are **internal analytical tools** — not steps the specialist walks through. Use them to find gaps. Jump between them freely depending on what the concept needs, what the specialist is describing, and what would best expose inconsistencies in the current understanding.
 
-**Concrete scenario** — name a specific situation and ask what happens. Use after the specialist has established their view, to probe edge cases and expose assumptions.
-> "If actor A performs operation B while actor C is doing D — what should happen?"
+**Identity and Scope** — What is this feature? What is it NOT? What does "done" look like?
+- Find: vague scope, undefined success criteria, unstated exclusions, confusion with an existing feature
 
-**Quick confirmation** — a binary or short-option check. Use to verify specific details rapidly after an open answer.
-> "Just to confirm: is this rule always in effect, or only in [specific context]?"
+**Actors and Permissions** — Who interacts with this feature? What can each actor do or not do?
+- An actor is a role, user type, system agent, or external party — name them at the precision the business uses. "User" is rarely precise enough.
+- Find: actors who can see but not act, temporary or contextual permissions, enforcement gaps (policy vs. product-enforced), missing restrictions
 
-**Hypothesis question** — state your assumption, ask for correction. Use **near the end of a block** to surface misunderstandings before you write to the graph. Not as an opener.
-> "My current understanding is that X does Y. Is that right?"
+**Operations and Flow** — What actions does the feature perform? In what sequence? Under what conditions?
+- Find: operations with no trigger, unstated preconditions, parallel vs. sequential not established, skippable steps with no detection, branches not described
 
-**Paraphrase check** — summarize what you understood and ask for explicit confirmation. **Always the last step** before writing nodes for an aspect.
-> "Let me make sure I have this right: [your precise synthesis]. Is that accurate? What did I miss or get wrong?"
+**Entities and Data** — What business objects does this feature create, read, modify, or destroy?
+- Find: entities with no lifecycle, fields that drive behavior but weren't identified, state transitions not mapped, cross-feature data dependencies
 
----
+**Business Rules and Policies** — What must always be true? What must never happen?
+- Find: rules that conflict, rules with unnamed exceptions, policies not enforced in code, rules that apply differently per actor
 
-### Aspect 1: Identity and Scope
+**Decisions and Rationale** — What design choices were made, and why? What alternatives were rejected?
+- Find: decisions without rationale, provisional decisions not flagged, choices made under constraints that no longer apply
 
-Goal: establish what the feature IS, what it is NOT, and what "done" looks like.
+**Risks and Hazards** — What could go wrong in implementation, in production, or for the customer?
+- Find: high-severity risks without mitigation, calculation edge cases, concurrent write hazards, assumptions baked into the design that would break if an external factor changed
 
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What is [topic]? Describe it as if I've never heard of it — what it does, who benefits from it, and why it exists."* [OPEN]
-2. *"What problem does this feature solve for the user? What would they have to do without it?"* [OPEN]
-3. *"What is explicitly OUT of scope for this feature — things someone might expect but we're not doing?"* [OPEN]
-4. *"What does a successful outcome look like? If I came back in three months and this was working perfectly, what would I observe?"* [OPEN / scenario]
-5. *"Is there an existing feature this replaces, extends, or competes with?"* [OPEN]
-6. *[HYPOTHESIS]* *"My current understanding of [topic] is: [your synthesis]. Is that right, or does it also / instead / never do [X]?"*
-7. *[PARAPHRASE CHECK]* *"Let me make sure I have the shape of this right: [feature] is about [synthesis]. The problem it solves is [X]. It is specifically NOT [out-of-scope items]. Is that accurate?"*
+**Integration and Dependencies** — What does this feature depend on? What depends on it?
+- Find: single points of failure, uncoordinated cross-team changes, unsafe intermediate deployment states
 
-**Likely nodes:** `Feature`, `Concept`, `Claim` (hedged), and the `HAS_FEATURE` edge from the existing `Domain` to the new `Feature`.
+### When to use which lens
 
-### Aspect 2: Actors and Permissions
+Start wherever the concept is richest. If the specialist has described a flow, Operations and Entities are the natural entry. If they've described actors and rules, go there first. The goal is to get something concrete into the graph quickly, then use the lenses as a gap-finding checklist: *"I have operations — do I have actors for each? I have actors — do I have restrictions? I have rules — do any conflict?"*
 
-Goal: identify every role that interacts with this feature and what each can and cannot do.
+When a specialist describes things that span multiple lenses at once (actors, operations, and rules together), don't interrupt to restructure — absorb it, write it, then use the lenses to check what's still missing.
 
-An **actor** is a user role, user type, organizational unit, external party, or system agent that performs or is restricted from actions. Name actors at the level of precision the business uses — generic names like "user" are not precise enough.
+### Audience Adaptation
 
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"Who uses this feature? List every type of person, role, or system that interacts with it in any way."* [OPEN]
-2. For each actor: *"What exactly can [actor] do with this feature? Be specific — not just 'use it' but what actions they initiate."* [OPEN]
-3. *"Is there any role that can see this feature but cannot use it, or can use it but with restrictions?"* [OPEN]
-4. *"Who is explicitly blocked from this? Is that enforced in the product or just a policy?"* [OPEN]
-5. *[SCENARIO]* *"If [actor A] tries to do [operation] — which should only be for [actor B] — what happens? An error? Silent failure? Redirect?"*
-6. *"Are there any temporary or contextual permissions — roles that gain or lose access based on state?"* [OPEN]
-7. *[HYPOTHESIS]* *"Based on what you described and what I see in the graph, I believe the actors are: [list]. Is there anyone I missed or incorrectly included?"*
-8. *[PARAPHRASE CHECK]* *"Let me confirm the permission picture: [actor A] can [actions]; [actor B] can [actions] but NOT [restrictions]. Is that accurate?"*
+**Observe the specialist's vocabulary and match it.** Do they use technical terms (class names, API paths, database tables, enum values)? Engage at that level. Do they use business terms (invoices, customers, approval flows, pricing tiers)? Stay there. Never force a product owner to reason about implementation details in order to answer a business question.
 
-**Likely nodes:** `Actor`, `Constraint` (permission invariant), `Claim` (uncertain rule), `Risk` (unclear enforcement).
+**Always write graph nodes in English**, regardless of the language of the conversation. If the discussion happens in another language, translate concepts to English when writing `name`, `summary`, `rationale`, and other text fields to the graph. The discussion can continue in the specialist's language.
 
-### Aspect 3: Operations and Flow
+**When codebase cross-references reveal a conflict**, translate it to the specialist's level. Instead of *"the `InvoiceStatus` enum has no `PENDING_APPROVAL` value"*, say *"the system currently doesn't have an approval-pending state for invoices — is this something new, or should it already exist somewhere?"*
 
-Goal: name every action the feature performs and understand their sequence, triggers, and conditions.
+### Writing to the Graph
 
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"Walk me through this feature step by step as if I'm the user. What happens first?"* [OPEN]
-2. For each step: *"You said '[step]'. Give that a name — what would you call this operation in plain business language?"* [OPEN]
-3. *"What must have happened before [operation] can run? Are there preconditions?"* [OPEN]
-4. *"Can any of these operations run in parallel, or must they be sequential? What breaks if they run out of order?"* [OPEN]
-5. *"What triggers each operation — a user action, a time schedule, another system, an event?"* [OPEN]
-6. *[SCENARIO]* *"What happens if [operation A] is skipped — either by accident or by an actor who bypasses the UI? Does the system detect it? Does it matter?"*
-7. *"Are there operations that only happen on certain paths — for example, only on first use, or only if a certain condition is met?"* [OPEN]
-8. *[PARAPHRASE CHECK]* *"The flow I have is: [ordered list of operations with triggers and preconditions]. Is the sequence right? Did I miss any branches or optional paths?"*
+**Write whenever something is settled** — not at topic boundaries, not after every question, but when enough is known to create valid, useful nodes. Specific triggers:
 
-**Likely nodes:** `Operation`, `Concept` (named state/trigger), `Claim` (uncertain precondition), `Risk` (skippable operation).
+- An actor is named and their basic permissions are established
+- An operation's trigger, preconditions, and responsible actor are known
+- A business rule is stated with its conditions and scope
+- A decision is made with its rationale (even if status is still `"draft"`)
+- A risk is identified with a severity estimate
+- 3 or more substantive exchanges have happened since the last write — pause and write what has been established so far
 
-### Aspect 4: Entities and Data
+**Do not batch writes to the end of a discussion block.** Incremental writes let the specialist see the graph grow and catch misunderstandings before they propagate. The session can be interrupted at any time — what hasn't been written hasn't been saved.
 
-Goal: identify every business object this feature creates, reads, modifies, or destroys, and what matters about each.
+**Before each write — pre-write graph sync:**
 
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What data does this feature work with? Name every object type involved — not database tables, but business concepts."* [OPEN]
-2. For each entity: *"When is a [entity] created? What gives it life? When does it end?"* [OPEN]
-3. *"Which fields on [entity] are significant for this feature's logic? Not all fields — just the ones that drive behavior."* [OPEN]
-4. *"Are there states or statuses that [entity] moves through? What are the valid transitions?"* [OPEN]
-5. *[SCENARIO]* *"If [entity] is in state X and [operation] runs — does it succeed, fail, or behave differently than when it's in state Y?"*
-6. *"Is there any data this feature produces that other features consume? Or data it depends on that's produced elsewhere?"* [OPEN]
-7. *[PARAPHRASE CHECK]* *"The entities I have are: [list with lifecycle summary]. For each one, does the lifecycle I described match what actually happens?"*
-
-**Likely nodes:** `Entity`, `Concept` (lifecycle state), `BusinessRule` (transition rule), `Claim` (uncertain transition), `Risk` (exploitable transition).
-
-### Aspect 5: Business Rules and Policies
-
-Goal: surface the "must", "must not", and "must always" statements that govern this feature.
-
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What are the non-negotiable rules for this feature? Things that must always be true, no matter what?"* [OPEN]
-2. For each rule: *"When exactly does this rule apply? Is it always, or only in certain conditions?"* [OPEN]
-3. *"What rules have exceptions? Name the exception and when it applies."* [OPEN]
-4. *"Is there anything this feature must never do, even if asked to? Things that would be wrong regardless of who requests it?"* [OPEN]
-5. *"Are any of these rules enforced today in code, or are they just policy? Which ones could theoretically be violated?"* [OPEN]
-6. *"Are there rules that apply differently to different actors — the same action is allowed for one role but forbidden for another?"* [OPEN]
-7. *[CHALLENGE — ask when contradictions emerge]* *"You said [rule A] earlier and now [rule B]. These seem to conflict in [scenario]. Which wins, or are they both right but in different contexts?"*
-8. *[PARAPHRASE CHECK]* *"The rules I have are: [list with conditions]. Do any of these conflict with each other? Are there any I didn't capture?"*
-
-**Likely nodes:** `BusinessRule`, `Constraint` (technical invariants), `Decision` (deliberate choice over alternatives), `Claim` (uncertain rule).
-
-### Aspect 6: Decisions and Rationale
-
-Goal: capture every "we chose X over Y" commitment so future implementors understand why things are the way they are.
-
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What design choices were made for this feature that someone implementing it later might question?"* [OPEN]
-2. For each decision: *"What were the alternatives you considered? Why did you reject them?"* [OPEN]
-3. *"Are there any decisions that were made because of external constraints — time, technology, another team's API, a regulatory requirement?"* [OPEN]
-4. *"Is there anything that's done a certain way for historical reasons that no longer apply — a legacy choice that lives on?"* [OPEN]
-5. *"If the team revisited this feature in a year, what decision would they most likely want to change?"* [OPEN]
-6. *"Are there any decisions that were made provisionally — 'for now' choices that need to be revisited?"* [OPEN]
-7. *[PARAPHRASE CHECK]* *"The decisions I captured are: [list with rationale]. Are any of these still open, or are they all settled?"*
-
-**Likely nodes:** `Decision` (with `rationale`, `scope[]`, `status`), `Concept` (rationale abstraction), `Claim` (provisional decision).
-
-### Aspect 7: Risks and Hazards
-
-Goal: capture what the specialist knows could go wrong — in implementation, in production, or for the customer.
-
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What worries you most about implementing this feature? What could go wrong?"* [OPEN]
-2. *"Where are the tricky edge cases in this feature's logic? Places where a developer could make an honest mistake that would be hard to detect?"* [OPEN]
-3. For any calculation or financial logic: *"How does [calculation] work when [edge case — zero values, rounding, overflow, currency conversion, concurrent writes]?"* [OPEN / scenario]
-4. *"What would a customer experience if this feature had a subtle bug? What would they see or lose?"* [OPEN]
-5. *"Has anything like this gone wrong before — either with this feature in a previous version, or with a similar feature elsewhere in the product?"* [OPEN]
-6. *"What assumptions are baked into this design that would break if [external factor] changed?"* [OPEN]
-7. For each risk identified: *"How likely is this to happen? (low / medium / high) How bad is it if it does? (low / medium / high / critical)"* [OPEN]
-8. *"Is there already a safeguard for this risk — a decision that prevents it, or a constraint that catches it?"* [OPEN]
-9. *[PARAPHRASE CHECK]* *"The risks I have, ordered by severity: [list]. For the high/critical ones — which have no mitigation yet?"*
-
-**Likely nodes:** `Risk` (with `severity`, `probability`, `scope[]`), `Claim` (estimated severity), `Decision`/`Constraint` (mitigation links).
-
-### Aspect 8: Integration and Dependencies
-
-Goal: understand what this feature depends on and what depends on it.
-
-Key questions (open first, hypothesis/paraphrase at end):
-1. *"What other features or systems does this depend on? What would break if [dependency] changed or became unavailable?"* [OPEN]
-2. *"What does this feature expose to the rest of the product? What do other features rely on it for?"* [OPEN]
-3. *"Are there any external services, APIs, or third parties involved? What happens to this feature if that integration fails?"* [OPEN]
-4. *"Is there anything about this feature that needs to be coordinated with another team or system owner?"* [OPEN]
-5. *[SCENARIO]* *"If this feature is deployed but [downstream feature] hasn't been updated yet — what breaks? Is that a safe intermediate state?"*
-6. *[PARAPHRASE CHECK]* *"The dependencies I have: this feature requires [X, Y, Z] to work. If any of those are unavailable, [consequence]. Other features depend on this for [what]. Is that complete?"*
-
-**Likely nodes:** `Constraint` (dependency invariant), `Concept` (shared integration point), `Risk` (integration failure).
-
-The knowledge schema has no direct feature-to-feature edge type. Cross-feature dependencies live in Constraints and shared Concepts.
-
-### Phase 2.9: Topic-Specific Deep Dives
-
-After all eight standard aspects, analyze what was discussed and identify topics that deserve a dedicated deep dive. **These are not optional** — they are the most important part of planning for finding inconsistencies. The standard eight aspects give you breadth; these blocks give you depth where the concept is most fragile.
-
-Create a topic-specific block for any topic where:
-- A domain-specific term or concept was mentioned but not fully defined (e.g., "pricing formula", "assignment workflow", "approval chain")
-- A calculation, state machine, or business process was described but you can see edge cases that weren't addressed
-- Two rules or decisions seem potentially inconsistent — the block is to resolve the contradiction
-- The answers felt thin, hedged, or non-specific — the block is to extract what wasn't volunteered
-- Any topic where a developer could make a reasonable but wrong assumption
-
-For each topic block, **design your questions specifically for that topic** — don't apply a generic template. Think: what would a developer get wrong about this? What would a bug look like? Where do the rules interact in unexpected ways? Ask the questions that expose those failure modes.
-
-Structure of each topic block (same open-first principle):
-1. Open with the topic and ask the specialist to describe it completely [OPEN]
-2. Probe the edge cases and boundary conditions specific to this topic [OPEN / SCENARIO]
-3. Surface the rules, constraints, and actors that apply [OPEN]
-4. Test any apparent inconsistency with a concrete scenario [SCENARIO]
-5. Synthesize and confirm [HYPOTHESIS → PARAPHRASE CHECK]
-
-After each topic block, write the appropriate nodes — see the cross-aspect checklist below for the full vocabulary.
-
----
-
-### Cross-Aspect Checklist (run after every aspect write, before moving on)
-
-The graph should be dense. A single aspect typically produces **5–15 nodes** across multiple types — not one or two. Use the full vocabulary: Feature, Operation, Actor, Entity, BusinessRule, Decision, Constraint, Concept, Claim, Risk. Every named abstraction the specialist introduced becomes a Concept node. Every uncertain statement becomes a Claim. Every deliberate choice becomes a Decision. Do not wait for a "natural" node — create them proactively.
-
-Before moving to the next aspect, scan the conversation since the last write and create nodes you may have missed. These are not optional — the graph is incomplete without them.
-
-- **Operation nodes** — for every named action (a verb the system performs), create an `Operation` node, plus a `HAS_OPERATION` edge from the Feature (or a `SEQUENCE` edge from the previous Operation in the flow). Operations can surface in any aspect.
-- **Actor nodes** — for every actor mentioned (a role, a person type, a system agent, an external party), create an `Actor` node (reuse from the graph if one already exists with the same `id`). Add a `PERFORMED_BY` edge from any operation this actor initiates, plus a `RESTRICTED_FOR` edge if the actor is blocked from an action.
-- **Claim nodes** — for every hedged or uncertain statement ("maybe", "I think", "we'd have to verify", "depends on"), create a `Claim` node with `confidence: "tentative"`. A claim is the place to park something unresolved until the specialist confirms or corrects it.
-- **Constraint nodes** — for every "must always be true" / "must never" / "this is non-negotiable" invariant, create a `Constraint` node with `condition` and `invariant` populated. Distinguish Constraints from `business-rule` nodes: constraints are technical invariants the implementation must enforce; business-rules are policy statements. Both can be present in the same aspect.
-- **Risk nodes** — for every hazard surfaced, with `severity`, `probability`, and `scope[]`; link via `HAS_RISK` and `MITIGATED_BY` to the relevant Decision or Constraint.
-- **Decision nodes** — for every deliberate choice, with `rationale`, `scope[]`, and `status: "accepted"` or `"draft"`; link via `DECIDES`, `IMPLEMENTS`, `SUPPORTS` as appropriate.
-
-Skipping this checklist is the most common reason the first push produces a sparse graph. Run it every time.
-
-### Writing to the Graph After Each Aspect
-
-After each aspect is completed and you have paraphrase-checked the key findings with the specialist:
-
-**0. Pre-write graph sync** — before touching the intermediate files, read the current graph state for all knowledge nodes related to this topic. This catches duplicates and property conflicts introduced by parallel planning on the same topic since Phase 1b. Substitute `$TOPIC` (lowercased topic name) from `concept-context.json`:
+Read the current graph state to catch duplicates or conflicts before modifying the intermediate files:
 
 ```bash
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge) WHERE toLower(coalesce(n.name, n.summary, '')) CONTAINS '$TOPIC' RETURN n.id AS id, labels(n)[1] AS type, properties(n) AS props ORDER BY type LIMIT 60"
 ```
 
 For each node returned:
-- **Same `id`, same properties** → already present; skip — no update to `pr-nodes.json` needed
-- **Same `id`, conflicting property value** → do NOT overwrite; create a `Claim` node: `{id: "claim:conflict-<node-id>-<field>", summary: "Parallel plan conflict on <field> for <node-id>: graph has '<existing>', current plan says '<incoming>'", confidence: "tentative", source: "concept"}`; queue a question for the next block: *"A teammate recorded [field] as [existing value] for [node]. You described it as [incoming value]. Which is right, or do both apply in different contexts?"*. When the specialist resolves the conflict: write the agreed value to the node, then delete the conflict `Claim` node from both `pr-nodes.json` and Neo4j (`MATCH (n:Claim {id: "claim:conflict-..."}) DETACH DELETE n`).
-- **No matching `id`** → new node; proceed with creation
+- **Same `id`, same properties** → already present; skip — no update needed
+- **Same `id`, conflicting property value** → do NOT overwrite; create a `Claim` node: `{id: "claim:conflict-<node-id>-<field>", summary: "Conflict on <field> for <node-id>: graph has '<existing>', current plan says '<incoming>'", confidence: "tentative", source: "concept"}`. Queue it as the next issue to resolve with the specialist. When resolved, write the agreed value and delete the conflict Claim: `MATCH (n:Claim {id: "claim:conflict-..."}) DETACH DELETE n`
+- **No matching `id`** → new node; proceed
+
+**Write sequence:**
 
 1. Update `pr-nodes.json` — append new nodes, update existing ones (by matching `id`)
 2. Update `pr-edges.json` — append new edges (deduplicate by `(source, target, type)`)
-3. **Push the updated graph to Neo4j** by running `push-concept-graph.mjs`:
+3. Push to Neo4j:
    ```bash
    node "$PLUGIN_ROOT/skills/grasp-concept/push-concept-graph.mjs" "$PROJECT_ROOT"
    ```
-4. **Verify the push succeeded** by reading back from Neo4j:
+4. Verify — count returned nodes must match `pr-nodes.json`:
    ```bash
    node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n:Knowledge {source: 'concept'}) RETURN labels(n)[1] AS type, n.name AS name, n.id AS id ORDER BY type, name"
    ```
-   Count the nodes returned. If the count does not match the number of nodes in `pr-nodes.json`, report the discrepancy to the specialist and investigate before continuing.
-5. Mark the aspect complete in `concept-context.json`
-6. Say briefly what was captured: *"I've recorded [N] nodes — [breakdown by type: X features, Y concepts, Z rules, etc.]. Moving on to [next aspect]."*
+   If counts don't match, report the discrepancy and investigate before continuing.
+5. Update `concept-context.json`
+6. Report what was captured: *"Recorded [N] nodes — [breakdown by type]. Continuing."*
 
-Do not batch graph writes to the end — capturing incrementally (including the Neo4j push and read-back) allows the specialist to see the graph grow and correct misunderstandings before they propagate.
+**After every write, immediately scan for the next gap** (see below) and raise the most critical one as the next issue.
 
-**Topic-driven fallback (when the specialist leads the conversation):** The eight aspects are a default shape, not a sequence gate. When the specialist volunteers rich context up front — describing actors, entities, rules, decisions, and risks across multiple aspects in a single answer — the formal aspect-by-aspect traversal doesn't happen. In this mode, do NOT wait for an aspect paraphrase-check to fire before writing. **If the specialist has answered 3 or more substantive questions without a graph write, pause and write what has been established so far, even if the current aspect is not formally complete.** Use a partial paraphrase to confirm understanding before the push: *"Before I write — let me capture what I've understood so far: [summary]. Is that right, or should I correct anything before we continue?"* Then run the full write pipeline (pre-write sync → nodes → edges → push → verify). This keeps the graph growing in topic-driven sessions the same way it does in aspect-by-aspect sessions.
+### Graph Density
+
+The graph should be dense. A single substantive exchange typically produces **5–15 nodes** across multiple types. Use the full vocabulary — don't wait for a "natural" node, create them proactively when the concept warrants it.
+
+After each write, scan the conversation since the last write for nodes that were missed:
+
+- Every named abstraction the specialist introduced → `Concept` node
+- Every uncertain or hedged statement ("maybe", "I think", "we'd have to verify", "it depends") → `Claim` node with `confidence: "tentative"`
+- Every deliberate choice ("we decided to", "we went with X because") → `Decision` node with `rationale` and `scope[]`
+- Every "must always be true" / "must never" / "non-negotiable" invariant → `Constraint` node with `condition` and `invariant`
+- Every named action the system or actor performs → `Operation` node with `HAS_OPERATION` edge from Feature
+- Every actor mentioned → `Actor` node (reuse from graph if same `id` exists)
+- Every hazard surfaced → `Risk` node with `severity`, `probability`, `scope[]`; link via `HAS_RISK`, and `MITIGATED_BY` if a mitigation was stated
+
+### Continuous Gap Detection
+
+After every graph write, scan for these gaps and raise the most critical unresolved one as the next issue. This replaces a separate "gap analysis phase" — gaps are caught and resolved continuously.
+
+| Gap | Check | Question form |
+|-----|-------|--------------|
+| Undefined term | `concept` nodes with vague `summary`, entities without lifecycle | *"You mentioned [X] — what exactly is it? Can you define it precisely?"* |
+| Dangling operation | `operation` with no `performed_by` edge | *"Who initiates [operation]?"* |
+| Unscoped rule | `business-rule`, `constraint`, `decision`, or `risk` without `scope[]` | *"Does [rule] apply everywhere, or only within [feature/context]?"* |
+| Unmitigated high risk | `risk` with `severity: "high"` or `"critical"` and no `mitigated_by` | *"Is there any safeguard for [risk], or is it currently an open hazard?"* |
+| Orphan decision | `decision` with no `rationale` | *"Why was [decision] made? What alternative was rejected?"* |
+| Open decision | `decision` still at `status: "draft"` | *"Is [decision] settled, or is it still being worked out?"* |
+| Contradiction | Two claims or rules that can't both be true | *"You said [A] earlier and now [B]. These conflict in [scenario]. Which wins, or are both right in different contexts?"* |
+| Missing entity lifecycle | entity with no status or state transition info | *"When does a [entity] cease to exist or become invalid?"* |
+| Actor without restriction | restricted operation with no `restricted_for` edge | *"Who cannot do [operation]? Is it open to all actors by default?"* |
+
+**Termination safeguard:** If the same gap persists after 3 attempts to resolve it, create a `Claim` with `confidence: "tentative"` and `summary: "open question: [the unresolved issue]"` and move on.
 
 ---
 
-## Phase 3: Gap Analysis Loop
+## Phase 3: Final Gap Pass
 
-After all eight aspects are complete, analyze the intermediate graph files (`pr-nodes.json` + `pr-edges.json`) for the following problems. For each problem found, ask targeted follow-up questions before accepting the plan as complete.
+When the concept feels substantially complete — the specialist confirms there's nothing major left to cover — do one comprehensive sweep across the full `pr-nodes.json` and `pr-edges.json`.
 
-### Gap categories to check
+Run every check in the gap detection table above. For any gap found at this stage, ask targeted follow-up questions and write updated nodes before continuing.
 
-**Undefined terms** — are there `concept` nodes with a `summary` that is still vague, or entity nodes whose lifecycle was never described? Ask: *"Earlier you mentioned [concept]. I captured it as [summary]. Is that precise enough, or is there a more exact definition?"*
-
-**Dangling operations** — are there `operation` nodes with no `performed_by` edge? Ask: *"Who initiates [operation]? I don't have that recorded."*
-
-**Unscoped rules** — are there `business-rule`, `constraint`, `decision`, or `risk` nodes without a `scope[]`? Ask: *"Does [rule/decision/risk] apply everywhere in the product, or only within [feature]?"*
-
-**Unmitigated high risks** — are there `risk` nodes with `severity: "high"` or `"critical"` and no `mitigated_by` edge? Ask: *"For [risk] — is there currently any safeguard, plan, or design decision that addresses it? Or is it an open hazard?"*
-
-**Orphan decisions** — are there `decision` nodes with no `rationale`? Ask: *"Why was [decision] made? What would have been the alternative?"*
-
-**Missing status on decisions** — are there decisions still at `status: "draft"`? Ask: *"Is [decision] settled, or is it still being worked out?"*
-
-**Contradictions** — are there two claims or rules that cannot both be true? Surface them: *"You said [A] earlier, and just now [B]. These seem to conflict when [scenario]. Which is right, or are they both right but in different contexts?"*
-
-**Missing entity transitions** — are there entity nodes with no status/lifecycle information? Ask: *"When does a [entity] cease to exist or become invalid?"*
-
-**Actors without restrictions** — does the feature have restricted operations but no `restricted_for` edges? Ask: *"Who cannot do [operation]? Is it open to all actors by default?"*
-
-### Loop condition
-
-After each gap analysis pass, if any problems were found and new questions were asked:
-- Write updated nodes/edges to the intermediate files
-- Run the gap analysis again on the updated graph
-- Continue until a full pass finds no gaps
-
-**Termination safeguard:** If the same gap category is still present after 3 consecutive passes (the specialist cannot or will not resolve it), stop looping on that category. Record a `claim` node with `confidence: "tentative"` and `summary: "open question: [the unresolved issue]"`. Move on.
-
-A clean pass means:
+A clean sweep means:
 - All concepts have a non-vague `summary`
 - All operations have at least one `performed_by` edge
-- All rules have a `scope`
+- All rules, decisions, constraints, and risks have a `scope`
 - All high/critical risks have either a `mitigated_by` edge or an explicit note that no mitigation exists yet
-- All decisions have `rationale` and `status: "accepted"` or `"draft"` with a reason
+- All decisions have `rationale` and `status: "accepted"` or `"draft"` with a stated reason
 - No unresolved contradictions between claims
 
 ---
 
 ## Phase 4: Final Consensus Check
 
-When the gap analysis passes cleanly, do a final synthesis check with the specialist.
-
-Present a structured summary — this is not a question, it is a statement for them to correct:
+When the gap pass is clean, present a structured synthesis for the specialist to correct:
 
 > "Here is what I've recorded about [topic]. Please tell me anything that's wrong, missing, or described in a way you wouldn't recognize.
 >
@@ -528,9 +384,9 @@ Present a structured summary — this is not a question, it is a statement for t
 >
 > **What it depends on / exposes:** [integration summary]"
 
-Then ask: *"Is there anything I've misrepresented, or anything important that isn't there?"*
+Then ask: *"Is there anything I've misrepresented, or anything important that isn't here?"*
 
-If corrections are given, update the graph and repeat the synthesis summary for the corrected sections only.
+If corrections are given, update the graph and repeat the synthesis for the corrected sections only.
 
 When the specialist confirms the synthesis is correct:
 - Mark all `claim` nodes with `confidence: "agreed"`
@@ -553,7 +409,7 @@ Report to the specialist:
 - **Open questions:** any items left at `status: "draft"` or `confidence: "tentative"`
 - **Graph:** Stored in Neo4j
 
-If any open questions remain, offer to continue: *"There are [N] open items. Should we resolve them now, or revisit later?"*
+If open questions remain, offer to continue: *"There are [N] open items. Should we resolve them now, or revisit later?"*
 
 Offer to launch the dashboard:
 
