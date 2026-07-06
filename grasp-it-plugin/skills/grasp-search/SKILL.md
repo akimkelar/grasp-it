@@ -38,7 +38,9 @@ Credentials are loaded automatically by `run-query.mjs` in this priority order:
 Run this before broader graph exploration when using the skill in a fresh environment:
 
 ```bash
-GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+PROJECT_ROOT="${PWD}"
+# shellcheck source=/dev/null
+source "<plugin>/skills/_lib/resolve-plugin-root.sh"
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 3"
 QUERY_EXIT=$?
 
@@ -52,6 +54,8 @@ if [ $QUERY_EXIT -eq 2 ]; then
 fi
 ```
 
+> **Why `source` instead of `dirname "$0"/../grasp`?** In Claude Code's bash tool, `$0` is the shell name (e.g. `bash`), not the SKILL.md path — `dirname` returns `.`, and the relative path resolves to a non-existent location. Always source the shared resolver instead.
+
 If this fails:
 - permission or connection-denied style failures: rerun with the required network approval / permissions
 - auth or database errors: verify `~/.grasp-it/neo4j.env` values (or project `.env`)
@@ -61,9 +65,13 @@ If this fails:
 Basic query execution:
 
 ```bash
-GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+PROJECT_ROOT="${PWD}"
+# shellcheck source=/dev/null
+source "<plugin>/skills/_lib/resolve-plugin-root.sh"
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN n.name LIMIT 5"
 ```
+
+> Use the same `source "<plugin>/skills/_lib/resolve-plugin-root.sh"` step at the top of every Bash tool call that needs `$GRASP_SKILL_DIR` or `$PLUGIN_ROOT`. The resolver caches `$LATEST_CACHE` and checks `~/.claude/plugins/cache/grasp-it/grasp-it/*` first, so marketplace-updated versions win over older local checkouts.
 
 For multi-line queries, pass a single-line query or use a temporary `.cypher` file with `cypher-shell -f`.
 

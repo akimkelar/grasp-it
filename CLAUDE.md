@@ -86,25 +86,27 @@ Claude Code caches installed plugins at `~/.claude/plugins/cache/grasp-it/grasp-
    pnpm --filter @grasp-it/skill build
    ```
 
-2. **Find the installed version** (must match what the marketplace currently serves):
+2. **Sync your local plugin into the cache** (also installs prod deps including the optional `neo4j-driver`):
    ```bash
-   ls ~/.claude/plugins/cache/grasp-it/grasp-it/
+   ./grasp-it-plugin/scripts/sync-to-cache.sh
    ```
+   This copies `./grasp-it-plugin` into `~/.claude/plugins/cache/grasp-it/grasp-it/<current-version>/` and runs `pnpm install --prod --frozen-lockfile --ignore-scripts` inside the cache, which is required because `cp -R` alone does not produce a usable `node_modules` from a pnpm tree (pnpm uses symlinks that break outside the original location). Pass `--skip-install` to copy only, or a version argument to sync to a specific cache version.
 
-3. **Copy your local plugin into the cache**, replacing `<VERSION>` with the version from step 2:
-   ```bash
-   rm -rf ~/.claude/plugins/cache/grasp-it/grasp-it/<VERSION>
-   cp -R ./grasp-it-plugin ~/.claude/plugins/cache/grasp-it/grasp-it/<VERSION>
-   ```
+3. **Start a fresh Claude Code session** (existing sessions cache the old prompts in context).
 
-4. **Start a fresh Claude Code session** (existing sessions cache the old prompts in context).
-
-5. **Run `/grasp --full`** in the target project to verify.
+4. **Run `/grasp --full`** in the target project to verify.
 
 **Re-sync after further changes:**
 ```bash
 pnpm --filter @grasp-it/core build && \
-cp -R ./grasp-it-plugin/* ~/.claude/plugins/cache/grasp-it/grasp-it/<VERSION>/
+./grasp-it-plugin/scripts/sync-to-cache.sh
 ```
+
+**If `node_modules` is missing in the cache for any other reason** (e.g. a marketplace install that didn't run pnpm), fix it without re-copying:
+```bash
+cd ~/.claude/plugins/cache/grasp-it/grasp-it/<VERSION> && pnpm install --prod --frozen-lockfile --ignore-scripts
+```
+
+**Fallback when `neo4j-driver` is unavailable:** the `neo4j-driver` package is declared as an `optionalDependencies` entry and can fail to install on some platforms (e.g. Apple Silicon when its native bindings are not published for your Node ABI). In that case, `run-query.mjs` will exit with code 2 and signal cypher-shell fallback. Either install cypher-shell and set `NEO4J_CONNECTION_TYPE=cypher-shell` in your env, or reinstall with a Node/pnpm combination that builds the bindings.
 
 **To revert to upstream:** Uninstall and reinstall the plugin from the marketplace — it repopulates the cache from the upstream repo.

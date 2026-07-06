@@ -101,7 +101,9 @@ Do not hardcode graph paths up front.
 Start with a small health check:
 
 ```bash
-GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+PROJECT_ROOT="${PWD}"
+# shellcheck source=/dev/null
+source "<plugin>/skills/_lib/resolve-plugin-root.sh"
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) RETURN labels(n)[0] AS label LIMIT 10"
 QUERY_EXIT=$?
 
@@ -118,7 +120,9 @@ fi
 Then inspect the live schema shape:
 
 ```bash
-GRASP_SKILL_DIR="$(cd "$(dirname "$0")/../grasp" && pwd)"
+PROJECT_ROOT="${PWD}"
+# shellcheck source=/dev/null
+source "<plugin>/skills/_lib/resolve-plugin-root.sh"
 node "$GRASP_SKILL_DIR/run-query.mjs" "$PROJECT_ROOT" "MATCH (n) UNWIND labels(n) AS label RETURN DISTINCT label ORDER BY label"
 SCHEMA_EXIT=$?
 if [ $SCHEMA_EXIT -eq 2 ]; then
