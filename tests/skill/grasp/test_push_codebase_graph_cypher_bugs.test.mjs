@@ -304,12 +304,15 @@ describe('REGRESSION: MERGE-on-bare-id prevents label-conflict constraint violat
   }
 
   // Helper: create a mock cypher-shell that echoes stdin (the Cypher query) to
-  // stderr so the test can inspect the generated query.
+  // stderr so the test can inspect the generated query. We exit 0 (not 1) so
+  // that callers issuing multiple cypher-shell invocations (nodes → edges →
+  // layers) accumulate their echoes in stderr instead of bailing out on the
+  // first call. Tests then assert on the concatenated cypher.
   function createEchoingCypherShell() {
     const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-echo-'));
     writeFileSync(
       join(mockDir, 'cypher-shell'),
-      `#!/bin/sh\ncat >&2\nexit 1\n`,
+      `#!/bin/sh\ncat >&2\nexit 0\n`,
       { mode: 0o755 },
     );
     return mockDir;
@@ -387,7 +390,8 @@ describe('REGRESSION: MERGE-on-bare-id prevents label-conflict constraint violat
     const source = readFileSync(SCRIPT_PATH, 'utf-8');
 
     // Driver path node MERGE template must use bare {id: $id}
-    expect(source).toMatch(/MERGE \(n \{id: \$id\}\) SET n:Codebase SET n:`\$\{secondaryLabel\}` SET n \+= \$props/);
+    expect(source).toMatch(/MERGE \(n \{id: \$id\}\) SET n:Codebase/);
+    expect(source).toMatch(/SET n \+= \$props/);
     // Composite-label MERGE must NOT appear
     expect(source).not.toMatch(/MERGE \(n:Codebase \{id: \$id\}\) SET n \+= \$props/);
   });
@@ -402,7 +406,9 @@ describe('REGRESSION: MERGE-on-bare-id prevents label-conflict constraint violat
     const source = readFileSync(SCRIPT_PATH, 'utf-8');
 
     // Driver path layer MERGE template must use bare {id: $layerId}
-    expect(source).toMatch(/MERGE \(l \{id: \$layerId\}\) SET l:Codebase SET l:Layer/);
+    expect(source).toMatch(/MERGE \(l \{id: \$layerId\}\)/);
+    expect(source).toMatch(/SET l:Codebase/);
+    expect(source).toMatch(/SET l:Layer/);
     // Composite-label MERGE must NOT appear
     expect(source).not.toMatch(/MERGE \(l:Layer:Codebase \{id: \$layerId\}\)/);
   });

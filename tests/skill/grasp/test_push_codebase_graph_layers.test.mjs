@@ -53,8 +53,9 @@ describe('buildLayersCypher', () => {
       ],
     });
 
-    // Should MERGE on id
-    expect(cypher).toContain('MERGE (l:Layer:Codebase {id: \'layer:core\'})');
+    // Should MERGE on bare id, then set labels separately
+    expect(cypher).toContain('MERGE (l {id: \'layer:core\'})');
+    expect(cypher).toContain('SET l:Codebase SET l:Layer');
     // Should SET name and description
     expect(cypher).toContain('name: \'Core\'');
     expect(cypher).toContain('description: \'Core application code\'');
@@ -111,8 +112,9 @@ describe('buildLayersCypher', () => {
       ],
     });
 
-    // Should still emit the Layer MERGE
-    expect(cypher).toContain('MERGE (l:Layer:Codebase {id: \'layer:empty\'})');
+    // Should still emit the Layer MERGE (bare id pattern)
+    expect(cypher).toContain('MERGE (l {id: \'layer:empty\'})');
+    expect(cypher).toContain('SET l:Codebase SET l:Layer');
     // But no IN_LAYER edges since nodeIds is empty
     expect(cypher).not.toContain('IN_LAYER');
   });
@@ -198,10 +200,10 @@ exit 0
 
     rmSync(mockDir, { recursive: true, force: true });
 
-    // Should succeed and see Layer:Codebase MERGE in stderr (from mock echo)
+    // Should succeed and see bare-id MERGE in stderr (from mock echo)
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain('Layer:Codebase');
-    expect(result.stderr).toContain('MERGE (l:Layer:Codebase');
+    expect(result.stderr).toContain('MERGE (l {id:');
+    expect(result.stderr).toContain('SET l:Codebase SET l:Layer');
     expect(result.stderr).toContain('kind: "codebase"');
   });
 
