@@ -131,9 +131,11 @@ function buildNodesCypher(graphData, neo4jConfig) {
         })
         .join(", ");
 
-      // Dual-label pattern: MERGE Codebase base label, then add secondary label
+      // Merge on bare {id: ...} so pre-existing nodes (with or without the
+      // Codebase label) are matched and upgraded in place. SET n:Codebase
+      // and SET n:`<secondaryLabel>` are idempotent label assignments.
       lines.push(
-        `MERGE (n:Codebase {id: ${cypherEscape(node.id)}}) SET n += {${setParts}} SET n:\`${secondaryLabel}\`;`
+        `MERGE (n {id: ${cypherEscape(node.id)}}) SET n:Codebase SET n:\`${secondaryLabel}\` SET n += {${setParts}};`
       );
     }
   }
@@ -171,7 +173,7 @@ export function buildLayersCypher(graphData) {
   if (graphData.layers && Array.isArray(graphData.layers)) {
     for (const layer of graphData.layers) {
       lines.push(
-        `MERGE (l:Layer:Codebase {id: ${cypherEscape(layer.id)}}) SET l += {name: ${cypherEscape(layer.name || "")}, description: ${cypherEscape(layer.description || "")}, kind: "codebase"};`
+        `MERGE (l {id: ${cypherEscape(layer.id)}}) SET l:Codebase SET l:Layer SET l += {name: ${cypherEscape(layer.name || "")}, description: ${cypherEscape(layer.description || "")}, kind: "codebase"};`
       );
       if (layer.nodeIds && Array.isArray(layer.nodeIds)) {
         for (const nodeId of layer.nodeIds) {
@@ -418,9 +420,10 @@ async function pushCodebaseGraph(projectRoot) {
           if (node.languageNotes) props.languageNotes = node.languageNotes;
           if (node.sourceCommit) props.sourceCommit = node.sourceCommit;
 
-          // Dual-label pattern: MERGE Codebase base label, then add secondary label
+          // Merge on bare {id: $id} so pre-existing nodes (with or without
+          // the Codebase label) are matched and upgraded in place.
           await session.run(
-            `MERGE (n:Codebase {id: $id}) SET n += $props SET n:\`${secondaryLabel}\``,
+            `MERGE (n {id: $id}) SET n:Codebase SET n:\`${secondaryLabel}\` SET n += $props`,
             { id: node.id, props }
           );
         }
@@ -448,9 +451,12 @@ async function pushCodebaseGraph(projectRoot) {
       // Push Layer nodes and :IN_LAYER edges
       if (graphData.layers && Array.isArray(graphData.layers)) {
         for (const layer of graphData.layers) {
-          // MERGE the Layer node with dual labels: Layer + Codebase
+          // Merge on bare {id: $layerId} so pre-existing nodes (with or
+          // without the Codebase or Layer labels) are matched and upgraded
+          // in place.
           await session.run(
-            `MERGE (l:Layer:Codebase {id: $layerId})
+            `MERGE (l {id: $layerId})
+             SET l:Codebase SET l:Layer
              SET l += {name: $name, description: $description, kind: "codebase"}`,
             {
               layerId: layer.id,
