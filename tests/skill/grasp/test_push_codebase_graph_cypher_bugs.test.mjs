@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from 'node:os';
 import { join } from "node:path";
 import { spawnSync } from 'node:child_process';
@@ -265,5 +265,145 @@ describe('push-codebase-graph.mjs — cypher-shell path bugs', () => {
       // The error should mention installation — not just a raw ENOENT
       expect(result.stderr).toMatch(/install|brew|apt|neo4j\.com/i);
     });
+  });
+});
+
+// ── REGRESSION: MERGE-on-bare-id prevents constraint violation on upgrade ─────
+//
+// Push script previously used `MERGE (n:Codebase {id: $id})`. When a pre-existing
+// node with the same `id` lacked the `Codebase` label, the MERGE created a new
+// node, then SET n:Class violated the unique index on Class.id. The fix merges
+// on bare {id: $id} and sets labels separately. These tests verify both the
+// cypher-shell path and the Bolt driver path use the bare-id pattern.
+
+describe('REGRESSION: MERGE-on-bare-id prevents label-conflict constraint violation', () => {
+  let root;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'push-merge-bare-'));
+    mkdirSync(join(root, '.grasp-it', 'intermediate'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true });
+  });
+
+  // Local writeGraph — accepts layers too. The outer describe's writeGraph
+  // is closure-scoped and not visible from this sibling describe.
+  function writeGraph(nodes = [], edges = [], layers = []) {
+    writeFileSync(
+      join(root, '.grasp-it', 'intermediate', 'assembled-graph.json'),
+      JSON.stringify({
+        project: { gitCommitHash: 'abc123' },
+        version: '1.0.0',
+        nodes,
+        edges,
+        layers,
+      }),
+    );
+  }
+
+  // Helper: create a mock cypher-shell that echoes stdin (the Cypher query) to
+  // stderr so the test can inspect the generated query.
+  function createEchoingCypherShell() {
+    const mockDir = mkdtempSync(join(tmpdir(), 'mock-cypher-echo-'));
+    writeFileSync(
+      join(mockDir, 'cypher-shell'),
+      `#!/bin/sh\ncat >&2\nexit 1\n`,
+      { mode: 0o755 },
+    );
+    return mockDir;
+  }
+
+  // ── Cypher-shell path ───────────────────────────────────────────────────────
+
+  it('node MERGE on cypher-shell path uses bare {id: ...} (not :Codebase {id: ...})', () => {
+    writeGraph([
+      { id: 'class:src/Foo.groovy:Foo', name: 'Foo', type: 'class', summary: 's', tags: [] },
+    ]);
+
+    const mockDir = createEchoingCypherShell();
+
+    const result = runPushCodebaseGraph(root, {
+      NEO4J_URI: 'neo4j://localhost:7687',
+      NEO4J_USERNAME: 'neo4j',
+      NEO4J_PASSWORD: 'password',
+      NEO4J_DATABASE: 'grasp',
+      NEO4J_CONNECTION_TYPE: 'cypher-shell',
+      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+    });
+
+    rmSync(mockDir, { recursive: true, force: true });
+
+    // The MERGE for the node must be on bare {id: '...'}, not :Codebase {id: ...}
+    expect(result.stderr).toMatch(/MERGE \(n \{id: 'class:src\/Foo\.groovy:Foo'\}\)/);
+    expect(result.stderr).not.toMatch(/MERGE \(n:Codebase \{id:/);
+    // SET n:Codebase and SET n:`Class` must appear as separate SET clauses
+    expect(result.stderr).toMatch(/SET n:Codebase/);
+    expect(result.stderr).toMatch(/SET n:`Class`/);
+  });
+
+  it('layer MERGE on cypher-shell path uses bare {id: ...} (not :Layer:Codebase {id: ...})', () => {
+    writeGraph(
+      [{ id: 'class:src/Foo.groovy:Foo', name: 'Foo', type: 'class', summary: 's', tags: [] }],
+      [],
+      [{ id: 'layer:domain', name: 'Domain', description: '', nodeIds: [] }],
+    );
+
+    const mockDir = createEchoingCypherShell();
+
+    const result = runPushCodebaseGraph(root, {
+      NEO4J_URI: 'neo4j://localhost:7687',
+      NEO4J_USERNAME: 'neo4j',
+      NEO4J_PASSWORD: 'password',
+      NEO4J_DATABASE: 'grasp',
+      NEO4J_CONNECTION_TYPE: 'cypher-shell',
+      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+    });
+
+    rmSync(mockDir, { recursive: true, force: true });
+
+    expect(result.stderr).toMatch(/MERGE \(l \{id: 'layer:domain'\}\)/);
+    expect(result.stderr).not.toMatch(/MERGE \(l:Layer:Codebase \{id:/);
+    expect(result.stderr).not.toMatch(/MERGE \(l:Codebase:Layer \{id:/);
+    // SET l:Codebase and SET l:Layer must appear as separate SET clauses
+    expect(result.stderr).toMatch(/SET l:Codebase/);
+    expect(result.stderr).toMatch(/SET l:Layer/);
+  });
+
+  // ── Bolt driver path ────────────────────────────────────────────────────────
+  //
+  // The driver path runs the same MERGE templates via session.run(). Because
+  // the templates are inline in the source file, we verify them by reading
+  // the source and asserting the literal template substrings.
+
+  it('node MERGE on Bolt driver path uses bare {id: $id} (not :Codebase {id: $id})', () => {
+    writeGraph([
+      { id: 'class:src/Bar.groovy:Bar', name: 'Bar', type: 'class', summary: 's', tags: [] },
+    ]);
+
+    // readFileSync is imported at the top of the file (added by the implementer
+    // alongside the existing imports from "node:fs").
+    const source = readFileSync(SCRIPT_PATH, 'utf-8');
+
+    // Driver path node MERGE template must use bare {id: $id}
+    expect(source).toMatch(/MERGE \(n \{id: \$id\}\) SET n:Codebase SET n:`\$\{secondaryLabel\}` SET n \+= \$props/);
+    // Composite-label MERGE must NOT appear
+    expect(source).not.toMatch(/MERGE \(n:Codebase \{id: \$id\}\) SET n \+= \$props/);
+  });
+
+  it('layer MERGE on Bolt driver path uses bare {id: $layerId} (not :Layer:Codebase {id: $layerId})', () => {
+    writeGraph(
+      [{ id: 'class:src/Baz.groovy:Baz', name: 'Baz', type: 'class', summary: 's', tags: [] }],
+      [],
+      [{ id: 'layer:app', name: 'App', description: '', nodeIds: [] }],
+    );
+
+    const source = readFileSync(SCRIPT_PATH, 'utf-8');
+
+    // Driver path layer MERGE template must use bare {id: $layerId}
+    expect(source).toMatch(/MERGE \(l \{id: \$layerId\}\) SET l:Codebase SET l:Layer/);
+    // Composite-label MERGE must NOT appear
+    expect(source).not.toMatch(/MERGE \(l:Layer:Codebase \{id: \$layerId\}\)/);
   });
 });
