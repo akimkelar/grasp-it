@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { toRelType, buildEdgesCypher } from "../../skills/grasp/push-codebase-graph.mjs";
+import {
+  toRelType,
+  buildEdgesCypher,
+  CYPHER_SHELL_TIMEOUT_MS,
+} from "../../skills/grasp/push-codebase-graph.mjs";
 
 // ── toRelType ──────────────────────────────────────────────────────────────────
 
@@ -170,5 +174,32 @@ describe("buildEdgesCypher", () => {
     const cypher = buildEdgesCypher(graphData);
     const mergeCount = (cypher.match(/MERGE/g) || []).length;
     expect(mergeCount).toBe(2);
+  });
+});
+
+// ── cypher-shell timeout configuration ────────────────────────────────────────
+//
+// Bulk pushes send ALL nodes + edges as a single cypher-shell invocation. For
+// 200+ statements against a remote Neo4j, the cypher-shell child process runs
+// for 10-30s. A 10s execFileSync timeout kills the child mid-transaction and
+// the push fails with no useful error. The push script must use a timeout
+// large enough to let a real bulk push complete.
+
+describe("CYPHER_SHELL_TIMEOUT_MS", () => {
+  it("is exported and is a positive number", () => {
+    expect(typeof CYPHER_SHELL_TIMEOUT_MS).toBe("number");
+    expect(CYPHER_SHELL_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+
+  it("is large enough for a bulk push of hundreds of statements (>= 60s)", () => {
+    // A push of ~280 statements (107 nodes + 175 edges) takes 10-30s against
+    // a remote Neo4j. We need headroom for larger projects and slower links.
+    expect(CYPHER_SHELL_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000);
+  });
+
+  it("is not the legacy 10s value", () => {
+    // Guard against accidental revert. If this fires, the push script will
+    // time out on any non-trivial graph against a remote database.
+    expect(CYPHER_SHELL_TIMEOUT_MS).not.toBe(10_000);
   });
 });
