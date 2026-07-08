@@ -47,6 +47,16 @@ const TYPE_TO_LABEL = {
 
 const VALID_SECONDARY_LABELS = new Set(Object.values(TYPE_TO_LABEL));
 
+// cypher-shell child-process timeout for a single invocation.
+//
+// Bulk pushes send ALL nodes + edges as a single cypher-shell call. For 200+
+// MERGE statements against a remote Neo4j, the child process runs for
+// 10-30s end-to-end. The previous 10s timeout killed cypher-shell
+// mid-transaction and the push failed with no useful error.
+//
+// Exported so tests can assert the value without spawning real cypher-shell.
+export const CYPHER_SHELL_TIMEOUT_MS = 120_000;
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
@@ -88,7 +98,7 @@ function runCypherShell(neo4jConfig, query) {
         "-d", database,
         "--format", "plain",
       ],
-      { input: query, encoding: "utf-8", timeout: 10_000 }
+      { input: query, encoding: "utf-8", timeout: CYPHER_SHELL_TIMEOUT_MS }
     );
     return { ok: true };
   } catch (err) {
