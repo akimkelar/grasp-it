@@ -41,6 +41,20 @@ Throughout execution, report progress to the user at each phase transition and d
 
 ---
 
+## Hard Rules
+
+These rules apply to every phase, every run mode (full and scoped), and override any "faster" shortcut.
+
+**Destructive graph operations.** Before any `DELETE` or `DETACH DELETE` — at any phase, in any run mode (full or scoped) — the skill must:
+1. Print the exact list of node `id` values that will be deleted.
+2. Display the count and a one-line summary (e.g., "210 nodes across 18 files").
+3. Wait for explicit user confirmation ("yes, proceed").
+4. Proceed only after confirmation. If unsure, abort and ask.
+
+If a constraint error or other failure occurs, the correct response is to fix the underlying issue (typically by upgrading the existing node in place via `MERGE` or `SET`), not to delete nodes.
+
+---
+
 ## Phase 0 — Pre-flight
 
 Determine whether to run a full analysis or incremental update.
@@ -571,6 +585,8 @@ Determine whether to run a full analysis or incremental update.
    | `--files` scope + existing graph | Targeted analysis of the listed files only. Uses the full analysis path (Phases 1–7), but only analyzes the specified files. The `push-codebase-graph.mjs` script uses `MERGE` (not delete-then-insert) so existing nodes outside the `--files` scope are preserved. |
 
    **Note on `--files` scope:** The `--files` option overrides file discovery to analyze only the listed paths. It does NOT change the decision-logic branch — a `--files` run with an existing graph still follows the table above. However, when `--files` is combined with an existing graph, the analysis is treated as a targeted update of only the listed files; the `push-codebase-graph.mjs` script updates nodes in place via `MERGE` rather than deleting all Codebase nodes first.
+
+   **Hard rule on `--files` scope:** **NEVER issue `DELETE` or `DETACH DELETE` during a `--files`-scoped run.** A scoped run may only `MERGE` or `SET` on the exact node IDs present in the assembled graph. Any node not in the assembled graph — including nodes inside the same directory tree as a scoped file — must be left completely untouched. If a constraint error occurs, fix it by upgrading the existing node in place (e.g., `MATCH (n {id: ...}) SET n:Codebase SET n:\`Class\` SET n += ...`), never by deleting.
 
    **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.grasp-it/intermediate/assembled-graph.json`, then jump directly to Phase 5 step 3.
 
@@ -1103,6 +1119,10 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
    ```
    
    The script reads `assembled-graph.json` from `.grasp-it/intermediate/`, writes all nodes with the `Codebase:` grouping label (e.g., `Codebase:File`, `Codebase:Function`), creates named relationship type edges (e.g., `:CONTAINS`, `:CALLS`, `:IMPORTS`), and updates `File.analyzedAtCommit` and `File.analyzedAt` so the next read of `gitCommitHash` (derived from `max(File.analyzedAtCommit)`) and `lastAnalyzedAt` (derived from `max(File.analyzedAt)`) reflects this commit. Each node carries a `projectId` property (Task G removed the `:Project` singleton — there is no Project node or `:PART_OF` edges any more). `version` lives in `.grasp-it/config.json` and `analyzedFiles` is computed at query time via `count(:File)`.
+
+   **Before any `DELETE` operation in Phase 6:** print the exact node IDs to be deleted, the count, and require explicit user confirmation (see the top-level Hard Rules). If the user does not confirm, abort the push and leave the graph untouched.
+
+   **Scope of any `DELETE` query:** match exclusively on the exact set of `id` values from the assembled graph. NEVER use `STARTS WITH` prefix patterns, directory paths, or any wildcard. A single prefix match can destroy hundreds of unrelated nodes.
 
    **Node update strategy:** The script uses `MERGE` on node IDs to update existing nodes in place — it does NOT delete all Codebase nodes before inserting. This means:
    - Nodes in the assembled graph are created or updated (upsert behavior)
