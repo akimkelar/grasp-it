@@ -188,7 +188,7 @@ export function buildLayersCypher(graphData) {
       if (layer.nodeIds && Array.isArray(layer.nodeIds)) {
         for (const nodeId of layer.nodeIds) {
           lines.push(
-            `MATCH (l:Layer:Codebase {id: ${cypherEscape(layer.id)}}), (n:Codebase {id: ${cypherEscape(nodeId)}}) WHERE n.kind = "codebase" MERGE (l)-[r:IN_LAYER]->(n) SET r += {weight: 1.0};`
+            `MATCH (l {id: ${cypherEscape(layer.id)}}), (n {id: ${cypherEscape(nodeId)}}) WHERE n.kind = "codebase" MERGE (l)-[r:IN_LAYER]->(n) SET r += {weight: 1.0};`
           );
         }
       }
@@ -478,7 +478,7 @@ async function pushCodebaseGraph(projectRoot) {
           if (layer.nodeIds && Array.isArray(layer.nodeIds)) {
             for (const nodeId of layer.nodeIds) {
               await session.run(
-                `MATCH (l:Layer:Codebase {id: $layerId}), (n:Codebase {id: $nodeId})
+                `MATCH (l {id: $layerId}), (n {id: $nodeId})
                  WHERE n.kind = "codebase"
                  MERGE (l)-[r:IN_LAYER]->(n)
                  SET r += {weight: 1.0}`,

@@ -413,3 +413,4 @@ describe('REGRESSION: MERGE-on-bare-id prevents label-conflict constraint violat
     expect(source).not.toMatch(/MERGE \(l:Layer:Codebase \{id: \$layerId\}\)/);
   });
 });
+

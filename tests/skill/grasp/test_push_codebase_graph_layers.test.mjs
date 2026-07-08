@@ -76,9 +76,9 @@ describe('buildLayersCypher', () => {
       ],
     });
 
-    // Should MATCH both Layer and Codebase nodes
-    expect(cypher).toContain('MATCH (l:Layer:Codebase {id: \'layer:core\'}), (n:Codebase {id: \'file:src/index.ts\'})');
-    expect(cypher).toContain('MATCH (l:Layer:Codebase {id: \'layer:core\'}), (n:Codebase {id: \'file:src/app.ts\'})');
+    // Should MATCH on bare {id: ...} (labels may have drifted; SET restores them)
+    expect(cypher).toContain('MATCH (l {id: \'layer:core\'}), (n {id: \'file:src/index.ts\'})');
+    expect(cypher).toContain('MATCH (l {id: \'layer:core\'}), (n {id: \'file:src/app.ts\'})');
     // Should MERGE :IN_LAYER relationship with weight
     expect(cypher).toContain('MERGE (l)-[r:IN_LAYER]->(n)');
     expect(cypher).toContain('weight: 1.0');
@@ -319,7 +319,7 @@ exit 0
 
     // Should succeed and emit the Layer node MERGE
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain('Layer:Codebase');
+    expect(result.stderr).toContain('SET l:Codebase SET l:Layer');
     // The edge for nonExistent.ts is silently dropped — no assertion needed
     // since Neo4j MERGE with MATCH on non-existent node produces no row, not an error
   });
