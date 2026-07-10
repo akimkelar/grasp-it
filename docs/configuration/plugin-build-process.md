@@ -59,7 +59,7 @@ pnpm --filter @grasp-it/core test
 pnpm test
 ```
 
-Expected counts: **918 core tests** in 41 files (`pnpm --filter @grasp-it/core test`); **679 skill / installer tests** in 40 files across the `tests/` tree (`pnpm test`). The skill count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern. A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
+Expected counts: **918 core tests** in 41 files (`pnpm --filter @grasp-it/core test`); **758 skill / installer tests** in 43 files across the `tests/` tree (`pnpm test`). The skill count grows as new bug-fix regression tests land — see `tests/skill/grasp-concept/test_push_concept_graph_skill_bugs.test.mjs` for the pattern. A handful of skill tests exercise the real Neo4j driver and are skipped when `NEO4J_*` env vars are absent (the test files strip these via the `tests/setup.ts` bootstrap).
 
 **Test-count history (skill/installer totals across recent releases):**
 
@@ -71,6 +71,7 @@ Expected counts: **918 core tests** in 41 files (`pnpm --filter @grasp-it/core t
 | v0.13.7 | 671 | 39 | No test-surface changes; dependency bump + bug fixes |
 | v0.13.8 | 671 | 39 | No test-surface changes; doc + release plumbing |
 | v0.13.9 | 679 | 40 | Added MERGE-on-bare-id regression suite (4 tests in `test_push_codebase_graph_cypher_bugs.test.mjs`) + 1 new behavioural timeout test (`test_push_codebase_graph_timeout.test.mjs`) + IN_LAYER MATCH fixes; 3 pre-existing layer tests in `test_push_codebase_graph_layers.test.mjs` updated to match the new bare-id MERGE pattern |
+| v0.13.10 | 758 | 43 | BUG-01–04 fixes from `~/.grasp-it/bug-reports/2026-07-10_11-16_grasp-report-bug.md`: cypher-shell `--format json` → `--format plain` with parser + 11 integration / 36 unit tests; concept-node SKILL.md schema-truth fix + 26 `buildNodesCypher` regression tests; `--files` scope and verbatim-file-analyzer wording + 4 `file-analyzer.md` invariant tests; post-push orphan-detection step in Phase 6 + 7 bash-regression tests; also fixed the latent Python `IndentationError` in the orphan-check bash block (silent `2>/dev/null` fallback had masked it — replaced with `grep -oE` extraction); also fixed env-var leak in 6 `runPush*Graph` test helpers (was treating `NEO4J_URI=''` as a real value, causing parallel-test flakes) |
 
 A small number of skill tests rely on real-network DNS probes or large synthetic file trees and have historically been slow. The two known offenders (`tests/skill/grasp/test_silent_exit_bugs.test.mjs > ENOTFOUND` and `tests/skill/grasp/test_scan_project.test.mjs > 501 files -> very-large`) hit vitest's default 30s ceiling intermittently under load. If they fail on a release cut, re-run just the affected files (`pnpm test -- tests/skill/grasp/test_silent_exit_bugs.test.mjs`) before blocking the release.
 
