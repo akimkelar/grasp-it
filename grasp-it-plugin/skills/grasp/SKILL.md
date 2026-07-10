@@ -1156,6 +1156,28 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
 
    **Note:** `analyzedFiles` is computed at query time as `count(:File)` — no writeback is required.
 
+2.5. **Detect orphan nodes.**
+   Scoped runs (e.g., `--files`) preserve pre-existing nodes via MERGE, so stale nodes from prior runs can accumulate as degree-0 orphans. After a successful push, query for `:Codebase` nodes that have no relationships. Best-effort: if Neo4j is unavailable the check is silently skipped.
+   ```bash
+   ORPHAN_JSON=$(node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" \
+     "MATCH (n:Codebase) WHERE NOT EXISTS { (n)-[]-() } RETURN count(n) AS orphanCount" 2>/dev/null)
+   ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | python3 -c "import json,sys
+   try:
+       d = json.load(sys.stdin)
+       print(int(d.get('results', [{}])[0].get('orphanCount', 0)))
+   except Exception:
+       print(0)
+   " 2>/dev/null || echo "0")
+
+   if [ "$ORPHAN_COUNT" -gt 0 ]; then
+     echo ""
+     echo "⚠ $ORPHAN_COUNT orphan node(s) have no edges (stale from prior runs)."
+     echo "  Run '/grasp --full' to rebuild, or query and delete them manually:"
+     echo "  MATCH (n:Codebase) WHERE NOT EXISTS { (n)-[]-() } RETURN n.id, n.type"
+     echo ""
+   fi
+   ```
+
 3. Clean up intermediate files:
    ```bash
    rm -rf $PROJECT_ROOT/.grasp-it/intermediate
@@ -1170,6 +1192,7 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
    - Layers identified (with names)
    - Any warnings from the reviewer
    - Confirmation that the graph was saved to Neo4j
+   - Orphan nodes (degree-0): {orphanCount} — see warning above if non-zero
 
 5. Only automatically launch the dashboard by invoking the `/grasp-dashboard` skill if final graph validation passed after normalization/review fixes.
    If final validation did not pass, report that the graph was saved with warnings and dashboard launch was skipped.
