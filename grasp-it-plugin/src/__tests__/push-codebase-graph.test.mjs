@@ -1,9 +1,33 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   toRelType,
   buildEdgesCypher,
   CYPHER_SHELL_TIMEOUT_MS,
 } from "../../skills/grasp/push-codebase-graph.mjs";
+
+const __dirname_test = dirname(fileURLToPath(import.meta.url));
+const SCRIPT_PATH_test = resolve(__dirname_test, "../../skills/grasp/push-codebase-graph.mjs");
+
+function runPushCodebaseGraph_test(projectRoot, extraEnv = {}) {
+  const env = { ...process.env };
+  for (const [key, val] of Object.entries(extraEnv)) {
+    if (val === undefined) {
+      delete env[key];
+    } else {
+      env[key] = val;
+    }
+  }
+  return spawnSync("node", [SCRIPT_PATH_test, projectRoot], {
+    encoding: "utf-8",
+    env,
+    timeout: 30_000,
+  });
+}
 
 // ── toRelType ──────────────────────────────────────────────────────────────────
 
@@ -201,5 +225,192 @@ describe("CYPHER_SHELL_TIMEOUT_MS", () => {
     // Guard against accidental revert. If this fires, the push script will
     // time out on any non-trivial graph against a remote database.
     expect(CYPHER_SHELL_TIMEOUT_MS).not.toBe(10_000);
+  });
+});
+
+// ── BUG-02: buildNodesCypher — TYPE_TO_LABEL coverage ──────────────────────
+//
+// BUG-02 was a schema-truth mismatch: SKILL.md Reference listed `concept` as
+// a Codebase node type, but `concept` is actually a Knowledge node (handled by
+// push-concept-graph.mjs). push-codebase-graph.mjs's TYPE_TO_LABEL map
+// correctly omits `concept`, so `concept` nodes are silently dropped. These
+// regression tests pin that behavior down so future code changes cannot
+// silently reintroduce the schema mismatch.
+//
+// The 12 codebase types listed in TYPE_TO_LABEL (file, function, class,
+// module, config, document, service, table, endpoint, pipeline, schema,
+// resource) must each produce a MERGE line. Knowledge-only types
+// (concept, domain, feature, operation, actor, business-rule, entity, risk,
+// constraint, decision, claim) must NOT produce any MERGE.
+//
+// buildNodesCypher is not exported, so we invoke the push script as a
+// subprocess and capture the generated Cypher query via a mock cypher-shell
+// that echoes its stdin to stderr.
+
+describe("buildNodesCypher — TYPE_TO_LABEL coverage (BUG-02 regression)", () => {
+  let root;
+  let mockDir;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "push-cbg-bug02-"));
+    mkdirSync(join(root, ".grasp-it", "intermediate"), { recursive: true });
+
+    // Mock cypher-shell that echoes stdin (the Cypher query) to stderr so
+    // tests can inspect the generated query. exit 0 so multi-call flows
+    // (nodes → edges → layers) accumulate their echoes.
+    mockDir = mkdtempSync(join(tmpdir(), "mock-cypher-bug02-"));
+    writeFileSync(
+      join(mockDir, "cypher-shell"),
+      `#!/bin/sh\ncat >&2\nexit 0\n`,
+      { mode: 0o755 },
+    );
+  });
+
+  afterEach(() => {
+    if (root) rmSync(root, { recursive: true, force: true });
+    if (mockDir) rmSync(mockDir, { recursive: true, force: true });
+  });
+
+  function writeGraph(nodes = [], edges = [], layers = []) {
+    writeFileSync(
+      join(root, ".grasp-it", "intermediate", "assembled-graph.json"),
+      JSON.stringify({
+        project: { gitCommitHash: "abc123" },
+        version: "1.0.0",
+        nodes,
+        edges,
+        layers,
+      }),
+    );
+  }
+
+  function push(graph, neo4jConfig = {}) {
+    writeGraph(graph.nodes || [], graph.edges || [], graph.layers || []);
+    return runPushCodebaseGraph_test(root, {
+      NEO4J_URI: neo4jConfig.NEO4J_URI || "neo4j://localhost:7687",
+      NEO4J_USERNAME: neo4jConfig.NEO4J_USERNAME || "neo4j",
+      NEO4J_PASSWORD: neo4jConfig.NEO4J_PASSWORD || "password",
+      NEO4J_DATABASE: neo4jConfig.NEO4J_DATABASE || "grasp",
+      NEO4J_CONNECTION_TYPE: "cypher-shell",
+      PATH: `${mockDir}:/usr/local/bin:/usr/bin:/bin`,
+    });
+  }
+
+  // The lowercase type → PascalCase label mapping that the push script
+  // hard-codes in TYPE_TO_LABEL. Kept here as a single source of truth for
+  // the sanity test below.
+  const CODEBASE_TYPE_TO_LABEL = {
+    file: "File",
+    function: "Function",
+    class: "Class",
+    module: "Module",
+    config: "Config",
+    document: "Document",
+    service: "Service",
+    table: "Table",
+    endpoint: "Endpoint",
+    pipeline: "Pipeline",
+    schema: "Schema",
+    resource: "Resource",
+  };
+
+  describe("sanity: each of the 12 codebase types produces a MERGE line", () => {
+    for (const [type, label] of Object.entries(CODEBASE_TYPE_TO_LABEL)) {
+      it(`codebase type '${type}' is mapped to label \`${label}\` and produces a MERGE`, () => {
+        const result = push({
+          nodes: [
+            { id: `${type}:foo`, name: "Foo", type, summary: "x", tags: [] },
+          ],
+        });
+
+        // Stub cypher-shell echoes stdin to stderr; assert on the echoed query
+        expect(result.stderr).toContain(`SET n:\`${label}\``);
+        expect(result.stderr).toMatch(/MERGE \(n \{id: '[^']*'\}\)/);
+      });
+    }
+  });
+
+  describe("knowledge-only types are silently dropped (BUG-02 regression)", () => {
+    const knowledgeTypes = [
+      "concept",        // ← the original offender (BUG-02)
+      "domain",
+      "feature",
+      "operation",
+      "actor",
+      "business-rule",
+      "entity",
+      "risk",
+      "constraint",
+      "decision",
+      "claim",
+    ];
+
+    for (const type of knowledgeTypes) {
+      it(`concept-class type '${type}' produces no MERGE line (silently skipped)`, () => {
+        // Mirror the BUG-02 off-by-one: even when only knowledge nodes are
+        // passed in, the push script must produce empty output for the node
+        // push phase. No MERGE line should contain the node id.
+        const result = push({
+          nodes: [
+            { id: `${type}:orphan-1`, name: "Orphan", type, summary: "s", tags: [] },
+          ],
+        });
+
+        // No MERGE for the node — it must be silently skipped.
+        expect(result.stderr).not.toMatch(/MERGE \(n \{id: 'orphan-1'\}\)/);
+        // The orphan id should never appear in any MERGE at all
+        expect(result.stderr).not.toContain("'orphan-1'");
+      });
+    }
+
+    it("BUG-02 specifically: pushing only `concept` nodes produces no MERGE cypher", () => {
+      // Direct pin-down of the BUG-02 case: a graph containing only `concept`
+      // nodes must produce no MERGE cypher for those node ids. This guards
+      // against someone re-adding `concept: "Concept"` to TYPE_TO_LABEL.
+      const result = push({
+        nodes: [
+          { id: "concept:invoice-assignment", name: "Invoice Assignment", type: "concept", summary: "Specialist abstraction", tags: [] },
+          { id: "concept:auth", name: "Auth", type: "concept", summary: "Another concept", tags: [] },
+        ],
+      });
+
+      // No MERGE should be generated for either concept id
+      expect(result.stderr).not.toContain("MERGE (n {id: 'concept:invoice-assignment'})");
+      expect(result.stderr).not.toContain("MERGE (n {id: 'concept:auth'})");
+      // The Concept label must not appear (no `SET n:\`Concept\``)
+      expect(result.stderr).not.toContain("SET n:`Concept`");
+    });
+  });
+
+  it("empty graph produces empty node cypher (only UPDATE statement on File nodes)", () => {
+    // With no nodes, the only cypher emitted should be the trailing
+    // `MATCH (f:File) SET f.analyzedAtCommit = ... UPDATE` plus the
+    // `MATCH (f:File) SET f.analyzedAt = ...` best-effort calls.
+    // There must be NO MERGE for any node or edge.
+    const result = push({ nodes: [], edges: [] });
+
+    expect(result.stderr).not.toContain("MERGE (n");
+    expect(result.stderr).not.toContain("MERGE (a)-[r");
+    // Empty graph still emits the trailing File-stamp update — that is
+    // the only cypher we expect.
+    expect(result.stderr).toMatch(/MATCH \(f:File\) SET f\.(analyzedAtCommit|analyzedAt)/);
+  });
+
+  it("mixed graph: valid codebase types written, knowledge types dropped", () => {
+    // One valid codebase node + one knowledge-only node. The valid one must
+    // produce a MERGE, the knowledge one must be silently dropped.
+    const result = push({
+      nodes: [
+        { id: "file:src/main.ts", name: "main.ts", type: "file", summary: "Entry", tags: [] },
+        { id: "concept:auth", name: "Auth", type: "concept", summary: "Specialist concept", tags: [] },
+      ],
+    });
+
+    // The file node must produce a MERGE with SET n:`File`
+    expect(result.stderr).toContain("MERGE (n {id: 'file:src/main.ts'})");
+    expect(result.stderr).toContain("SET n:`File`");
+    // The concept node must NOT produce a MERGE
+    expect(result.stderr).not.toContain("MERGE (n {id: 'concept:auth'})");
+    expect(result.stderr).not.toContain("SET n:`Concept`");
   });
 });
