@@ -1161,13 +1161,8 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
    ```bash
    ORPHAN_JSON=$(node <SKILL_DIR>/run-query.mjs "$PROJECT_ROOT" \
      "MATCH (n:Codebase) WHERE NOT EXISTS { (n)-[]-() } RETURN count(n) AS orphanCount" 2>/dev/null)
-   ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | python3 -c "import json,sys
-   try:
-       d = json.load(sys.stdin)
-       print(int(d.get('results', [{}])[0].get('orphanCount', 0)))
-   except Exception:
-       print(0)
-   " 2>/dev/null || echo "0")
+   ORPHAN_COUNT=$(printf '%s' "$ORPHAN_JSON" | grep -oE '"orphanCount":"[0-9]+"' | grep -oE '[0-9]+' | head -1)
+   [ -z "$ORPHAN_COUNT" ] && ORPHAN_COUNT=0
 
    if [ "$ORPHAN_COUNT" -gt 0 ]; then
      echo ""
