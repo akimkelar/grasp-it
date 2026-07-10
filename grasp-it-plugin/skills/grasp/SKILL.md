@@ -673,7 +673,25 @@ Pass these parameters in the dispatch prompt:
 > Project root: `$PROJECT_ROOT`
 > Write output to: `$PROJECT_ROOT/.grasp-it/intermediate/scan-result.json`
 
-**`--files` scope constraint:** If `--files <comma-list>` was passed to `/grasp`, include ONLY the files from that list in the output `files[]` array. The bundled scanner still walks the full project (to build the complete `importMap` for cross-file edge detection), but the `files` array in `scan-result.json` must contain only the paths from `--files`. Do NOT invent files not in the `--files` list.
+**`--files` scope constraint:** If `--files <comma-list>` was passed to `/grasp`, you MAY skip the `project-scanner` agent entirely and construct a minimal `$PROJECT_ROOT/.grasp-it/intermediate/scan-result.json` directly. Dispatching the full project-scanner for a scoped run is wasteful, and improvising ad-hoc output produces inconsistent results. Build the synthetic `scan-result.json` with at least these fields:
+
+- `files[]` — array of `{path, sizeLines, fileCategory, language}` for each path in `--files`. `sizeLines` from `wc -l`, `fileCategory` and `language` inferred from extension/path.
+- `importMap` — empty arrays per file are acceptable (cross-batch edges are not relevant for scoped runs; batch construction can proceed without pre-resolved imports).
+- `projectName` and `languages` — derived from `$PROJECT_ROOT` context (README, package manifest).
+
+Minimal JSON skeleton:
+```json
+{
+  "projectName": "<derived from $PROJECT_ROOT>",
+  "languages": ["<detected>"],
+  "files": [
+    { "path": "<relative path from --files>", "sizeLines": <int>, "fileCategory": "<code|config|docs|infra|data|script|markup>", "language": "<ext-derived>" }
+  ],
+  "importMap": { "<path>": [] }
+}
+```
+
+Do NOT invent files not in the `--files` list — every entry in `files[]` must correspond to a path actually passed via `--files`.
 
 After the subagent completes, read `$PROJECT_ROOT/.grasp-it/intermediate/scan-result.json` to get:
 - Project name, description
@@ -730,7 +748,11 @@ Load `.grasp-it/intermediate/batches.json` (produced by Phase 1.5). Iterate the 
 
 Report: `[Phase 2/6] Analyzing files — <totalFiles> files in <totalBatches> batches (up to 5 concurrent)...`
 
-For each batch, dispatch a subagent using the `file-analyzer` agent definition (at `agents/file-analyzer.md`). Run up to **5 subagents concurrently**. Append the following additional context:
+For each batch, dispatch a subagent using the `file-analyzer` agent definition (at `agents/file-analyzer.md`). Run up to **5 subagents concurrently**.
+
+**Use the file-analyzer agent definition verbatim. Do NOT paraphrase — paraphrasing loses load-bearing constraints like the scope restriction at `agents/file-analyzer.md:311` (which forbids `module:` and `concept:` node types).** Read `agents/file-analyzer.md` in full and pass it as the agent prompt; the additional context below is appended, not a replacement.
+
+Append the following additional context:
 
 > **Additional context from main session:**
 >
