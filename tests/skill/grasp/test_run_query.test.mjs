@@ -248,16 +248,22 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
     });
   });
 
-  describe('cypher-shell --format json parsing', () => {
-    // These tests use a mock cypher-shell script that outputs JSON to verify
-    // the JSON parsing logic handles all cypher-shell output shapes correctly.
+  describe('cypher-shell --format plain parsing', () => {
+    // These tests use a mock cypher-shell script that outputs plain text to
+    // verify the plain-text parser handles all cypher-shell output shapes
+    // correctly. Plain format:
+    //   key1,key2
+    //   val1,val2
+    //
+    // cypher-shell 2026.x removed the `json` output format, so run-query.mjs
+    // now always uses --format plain and parses the result.
 
     let root;
     let mockDir;
     let origPath;
 
     beforeEach(() => {
-      root = mkdtempSync(join(tmpdir(), 'rq-json-'));
+      root = mkdtempSync(join(tmpdir(), 'rq-plain-'));
       initGitRepo(root);
       mockDir = mkdtempSync(join(tmpdir(), 'rq-mock-cypher-'));
       origPath = process.env.PATH;
@@ -269,9 +275,19 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
       process.env.PATH = origPath;
     });
 
-    function runWithMockCypher(scriptContent, extraEnv = {}) {
+    // Mock cypher-shell that prints the given plain output to stdout.
+    // The first arg is the plain output body (with literal \n newlines).
+    function runWithMockCypherPlain(plainOutput, extraEnv = {}) {
+      // Encode the plain output into a here-doc to preserve newlines exactly.
+      // The plain body must not contain the sentinel "PLAIN_EOF_END".
+      const safe = plainOutput.replace(/PLAIN_EOF_END/g, 'PLAIN_EOF_END_ESCAPED');
+      const script = `#!/bin/sh
+cat <<'PLAIN_EOF_END'
+${safe}
+PLAIN_EOF_END
+`;
       const mockCypherPath = join(mockDir, 'cypher-shell');
-      writeFileSync(mockCypherPath, scriptContent, { mode: 0o755 });
+      writeFileSync(mockCypherPath, script, { mode: 0o755 });
       // Prepend mock dir to PATH so mock cypher-shell is found, but other commands (node) still work
       process.env.PATH = mockDir + ':' + origPath;
       return runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], {
@@ -283,49 +299,33 @@ describe.each(SCRIPTS)('run-query.mjs [$name]', ({ path: RUN_QUERY_SCRIPT }) => 
       });
     }
 
-    it('parses cypher-shell JSON output correctly — single record, multiple columns', () => {
-      const result = runWithMockCypher(`#!/bin/sh
-echo '[{"keys":["name","kind"],"fields":[{"row":["UserService","service"]}]}]'
-`);
+    it('parses cypher-shell plain output — single record, multiple columns', () => {
+      const result = runWithMockCypherPlain('name,kind\nUserService,service\n');
       expect(result.status).toBe(0);
       const parsed = JSON.parse(result.stdout);
+      // Plain format: values come through as strings (cypher-shell toString).
       expect(parsed.results).toEqual([{ name: 'UserService', kind: 'service' }]);
     });
 
-    it('parses cypher-shell JSON output correctly — multiple records', () => {
-      const result = runWithMockCypher(`#!/bin/sh
-echo '[{"keys":["id","score"],"fields":[{"row":["node:1",42]},{"row":["node:2",87]}]}]'
-`);
+    it('parses cypher-shell plain output — multiple records', () => {
+      const result = runWithMockCypherPlain('id,score\nnode:1,42\nnode:2,87\n');
       expect(result.status).toBe(0);
       const parsed = JSON.parse(result.stdout);
       expect(parsed.results).toEqual([
-        { id: 'node:1', score: 42 },
-        { id: 'node:2', score: 87 },
+        { id: 'node:1', score: '42' },
+        { id: 'node:2', score: '87' },
       ]);
     });
 
-    it('parses cypher-shell JSON output correctly — array values', () => {
-      const result = runWithMockCypher(`#!/bin/sh
-echo '[{"keys":["name","tags"],"fields":[{"row":["UserService",["auth","api","v2"]]}]}]'
-`);
-      expect(result.status).toBe(0);
-      const parsed = JSON.parse(result.stdout);
-      expect(parsed.results).toEqual([{ name: 'UserService', tags: ['auth', 'api', 'v2'] }]);
-    });
-
-    it('parses cypher-shell JSON output correctly — null values', () => {
-      const result = runWithMockCypher(`#!/bin/sh
-echo '[{"keys":["name","description"],"fields":[{"row":["UserService",null]}]}]'
-`);
+    it('parses cypher-shell plain output — null values (rendered as empty)', () => {
+      const result = runWithMockCypherPlain('name,description\nUserService,\n');
       expect(result.status).toBe(0);
       const parsed = JSON.parse(result.stdout);
       expect(parsed.results).toEqual([{ name: 'UserService', description: null }]);
     });
 
-    it('parses cypher-shell JSON output correctly — empty results', () => {
-      const result = runWithMockCypher(`#!/bin/sh
-echo '[{"keys":["name"],"fields":[]}]'
-`);
+    it('parses cypher-shell plain output — empty results (header only)', () => {
+      const result = runWithMockCypherPlain('name\n');
       expect(result.status).toBe(0);
       const parsed = JSON.parse(result.stdout);
       expect(parsed.results).toEqual([]);
@@ -335,10 +335,22 @@ echo '[{"keys":["name"],"fields":[]}]'
       // The -d flag passing is verified by test_neo4j_config_loader.test.mjs which
       // tests that NEO4J_DATABASE is read from env/.env and the run-query.mjs uses it.
       // This test verifies the cypher-shell integration works end-to-end.
-      const result = runWithMockCypher(`#!/bin/sh
+      const mockCypherPath = join(mockDir, 'cypher-shell');
+      writeFileSync(
+        mockCypherPath,
+        `#!/bin/sh
 echo "$@" > /dev/stderr
-echo '[{"keys":["n"],"fields":[]}]'
-`);
+printf 'name\\n'
+`,
+        { mode: 0o755 },
+      );
+      process.env.PATH = mockDir + ':' + origPath;
+      const result = runScript(RUN_QUERY_SCRIPT, [root, 'MATCH (n) RETURN n'], {
+        NEO4J_CONNECTION_TYPE: 'cypher-shell',
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USERNAME: 'neo4j',
+        NEO4J_PASSWORD: 'password',
+      });
       expect(result.status).toBe(0);
       expect(result.stderr).toContain('-d');
     });

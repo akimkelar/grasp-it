@@ -136,25 +136,22 @@ function runQueryViaCypherShell(neo4jConfig, query, params = {}) {
         "-u", username,
         "-p", password,
         "-d", neo4jConfig.NEO4J_DATABASE || "grasp",
-        "--format", "json",
+        "--format", "plain",
         ...paramArgs,
       ],
       { input: query, encoding: "utf-8", timeout: 10_000 },
     );
 
-    // cypher-shell --format json outputs: [{"keys":[...], "fields":[{"row":[...]}]}]
-    const parsed = JSON.parse(output.trim());
-    if (!parsed || !Array.isArray(parsed) || parsed.length === 0) {
-      return { ok: true, records: [] };
-    }
-    const resultSet = parsed[0];
-    const { keys, fields } = resultSet;
-    const records = (fields || []).map((field) => {
-      const row = field.row || [];
-      const record = {};
-      keys.forEach((key, i) => { record[key] = row[i] ?? null; });
-      return record;
-    });
+    // cypher-shell --format plain outputs (from SimpleOutputFormatter in
+    // cypher-shell 2026.03.1+):
+    //
+    //   key1, key2, key3        <- header line: comma-joined keys from first record
+    //   val1, val2, val3        <- data rows:   comma-joined values per record
+    //   val1, val2, val3
+    //
+    // There is no "rows available" trailer in plain format. Null values are
+    // rendered as empty strings (e.g. "Alice, , 30"). Lines may be CRLF or LF.
+    const records = parseCypherShellPlainOutput(output);
     return { ok: true, records };
   } catch (err) {
     // If cypher-shell binary not found, signal fallback
@@ -181,6 +178,54 @@ function formatCypherParam(name, value) {
   // Arrays / objects — JSON-encode. cypher-shell accepts JSON literal syntax
   // for arrays (e.g. [1, 2, 3]) and strings via the same single-quote rule.
   return `${name} => ${JSON.stringify(value)}`;
+}
+
+/**
+ * Parse plain-text output from cypher-shell.
+ *
+ * Format (cypher-shell 2026.x SimpleOutputFormatter):
+ *   - Line 1: comma-joined keys from the first record (the header).
+ *   - Lines 2..N: comma-joined values for each subsequent record.
+ *   - Null values are rendered as empty strings.
+ *   - No "rows available" trailer.
+ *   - Lines may end with LF or CRLF.
+ *
+ * If the query returns no rows, only the header line is emitted.
+ *
+ * Returns an array of { [key]: value, ... } records. Values are always
+ * strings (cypher-shell's plain format uses .toString() on values).
+ * An empty result yields an empty array.
+ */
+export function parseCypherShellPlainOutput(output) {
+  if (output == null) return [];
+  // Split on either \r\n or \n; drop the trailing empty line from a final
+  // newline. Trim trailing \r from each line so CRLF line endings parse.
+  const lines = String(output)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/\r$/, ""))
+    .filter((l) => l.length > 0);
+
+  if (lines.length === 0) return [];
+
+  const header = lines[0].split(",");
+  if (lines.length === 1) {
+    // Header only — query returned no rows.
+    return [];
+  }
+
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(",");
+    const record = {};
+    header.forEach((key, j) => {
+      const v = values[j];
+      // Empty string in plain format means NULL in Cypher — normalize.
+      record[key] = v === undefined || v === "" ? null : v;
+    });
+    records.push(record);
+  }
+  return records;
 }
 
 /**
