@@ -3,18 +3,24 @@
  *
  * SKILL.md Phase 6 step 2.5 runs a Cypher query against Neo4j to count
  * :Codebase nodes that have no relationships (degree-0 orphans from prior
- * scoped runs that used MERGE), parses the JSON output via python3, and
- * emits a warning iff the count is > 0.
+ * scoped runs that used MERGE), parses the JSON output via grep -oE,
+ * and emits a warning iff the count is > 0.
  *
  * These tests extract that exact bash block from SKILL.md and execute it
- * with a mock cypher-shell in PATH. The mock echoes the query to stderr
- * and produces canned `--format plain` output to stdout. After running,
+ * with a mock cypher-shell in PATH. The mock captures the query and
+ * produces canned `--format plain` output to stdout. After running,
  * we read `ORPHAN_COUNT` and the emitted warning from the bash stdout so
  * we can pin down behavior without baking a copy of the block into JS.
  *
- * The bash block is best-effort: if Neo4j is unavailable, the python JSON
- * parse fails, OR cypher-shell is missing, `ORPHAN_COUNT` defaults to 0
- * and no warning is emitted.
+ * The bash block is best-effort: if Neo4j is unavailable, the parse
+ * yields no number, OR cypher-shell is missing, `ORPHAN_COUNT` defaults
+ * to 0 and no warning is emitted.
+ *
+ * The block is executed AS-IS from SKILL.md (preserving its 3-space
+ * list indentation). The block uses only bash built-ins and grep — no
+ * Python — so the indentation does not cause a parse error. This is the
+ * whole point of the fix: the previous Python-based block silently
+ * failed with IndentationError, swallowing the warning.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -23,7 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from "node:path";
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -31,21 +37,16 @@ const SKILL_MD = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/SKILL
 const RUN_QUERY = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp/run-query.mjs');
 
 /**
- * Extract the orphan-check bash block from SKILL.md Phase 6 step 2.5 and
- * strip the markdown list indentation.
+ * Extract the orphan-check bash block from SKILL.md Phase 6 step 2.5
+ * AS-IS, preserving its markdown list indentation.
  *
  * The block in SKILL.md lives inside a numbered list item, so every line
- * is indented by a small number of spaces. The Python snippet inside the
- * block is doubly indented (list + code body), which leaves `try:` at
- * column 3 — `python3 -c` rejects this with IndentationError and the
- * `2>/dev/null || echo "0"` fallback swallows it, so the warning would
- * never fire. We de-indent (textwrap.dedent-style) so the embedded
- * Python parses correctly. This matches what a careful LLM agent does
- * when it copies a code block out of a markdown list into a real bash
- * script — and what the script was clearly written to do.
+ * is indented by 3 spaces. The previous Python-based block was broken
+ * by this (Python rejects indented scripts run via `-c`), but the new
+ * grep-only block is robust to leading whitespace because each pipeline
+ * stage operates on a line at a time.
  *
- * The block content is unchanged; only the uniform leading whitespace is
- * removed. The block is delimited by the line containing
+ * The block is delimited by the line containing
  * `ORPHAN_JSON=$(node <SKILL_DIR>/run-query.mjs` and the first standalone
  * `fi` line after that.
  */
@@ -65,14 +66,7 @@ function extractOrphanCheckBlock(skillMdText) {
   if (endIdx === -1) {
     throw new Error('Could not locate closing fi in orphan-check block of SKILL.md');
   }
-  const blockLines = lines.slice(startIdx, endIdx + 1);
-  // Compute the common leading-whitespace indent (Python textwrap.dedent).
-  // Blank lines are skipped when computing the minimum.
-  const nonBlank = blockLines.filter((l) => l.trim().length > 0);
-  const minIndent = Math.min(
-    ...nonBlank.map((l) => l.match(/^[ \t]*/)[0].length),
-  );
-  return blockLines.map((l) => l.slice(minIndent)).join('\n');
+  return lines.slice(startIdx, endIdx + 1).join('\n');
 }
 
 /**
@@ -200,8 +194,8 @@ describe('BUG-04: post-push orphan detection (Phase 6 step 2.5)', () => {
     installMockCypherShell(mockDir, 'orphanCount\n7\n');
 
     const result = runOrphanCheckBlock(bashBlock, root, dirname(RUN_QUERY), mockDir);
-    // The bash block uses `|| echo "0"` and `2>/dev/null` so even if
-    // run-query.mjs fails the wrapper completes.
+    // The bash block uses `2>/dev/null` so even if run-query.mjs fails
+    // the wrapper completes.
     expect(result.status).toBe(0);
 
     const outcome = parseOutcome(result.stdout);
@@ -228,9 +222,9 @@ describe('BUG-04: post-push orphan detection (Phase 6 step 2.5)', () => {
 
   it('Mock cypher-shell returns empty results → defaults gracefully to ORPHAN_COUNT=0', () => {
     // Empty plain output: header-only "orphanCount" with no data rows.
-    // parseCypherShellPlainOutput returns [] in that case, which the
-    // python JSON parser sees as {results: []} → orphanCount defaults
-    // via .get(..., 0).
+    // parseCypherShellPlainOutput returns [] in that case, run-query.mjs
+    // emits JSON with results:[], and the grep pipeline matches nothing
+    // so ORPHAN_COUNT defaults to 0 via `[ -z ... ] && ORPHAN_COUNT=0`.
     installMockCypherShell(mockDir, 'orphanCount\n');
 
     const result = runOrphanCheckBlock(bashBlock, root, dirname(RUN_QUERY), mockDir);
@@ -242,9 +236,9 @@ describe('BUG-04: post-push orphan detection (Phase 6 step 2.5)', () => {
   });
 
   it('Mock cypher-shell returns malformed JSON → defaults gracefully to ORPHAN_COUNT=0', () => {
-    // Mock emits raw junk to stdout that is not JSON. The python parser
-    // catches the exception and prints 0; bash || echo "0" is a
-    // belt-and-suspenders fallback.
+    // Mock emits raw junk to stdout that is not JSON. The grep pipeline
+    // matches nothing so ORPHAN_COUNT defaults to 0 via the
+    // `[ -z ... ] && ORPHAN_COUNT=0` fallback.
     installMockCypherShell(mockDir, 'not valid json at all');
 
     const result = runOrphanCheckBlock(bashBlock, root, dirname(RUN_QUERY), mockDir);
@@ -258,7 +252,8 @@ describe('BUG-04: post-push orphan detection (Phase 6 step 2.5)', () => {
   it('Mock cypher-shell binary not found → completes with ORPHAN_COUNT=0 (best-effort)', () => {
     // No mockDir in PATH — cypher-shell is not available. run-query.mjs
     // exits 2 (cypher-shell fallback signal) but the bash block uses
-    // 2>/dev/null + || echo "0" so this must not crash.
+    // 2>/dev/null + the `[ -z ... ] && ORPHAN_COUNT=0` fallback so this
+    // must not crash.
     const result = runOrphanCheckBlock(bashBlock, root, dirname(RUN_QUERY), null);
     expect(result.status).toBe(0);
 
@@ -296,10 +291,13 @@ describe('orphan-check block extraction (regression: SKILL.md text)', () => {
     expect(block).toContain('run-query.mjs');
     expect(block).toContain('MATCH (n:Codebase) WHERE NOT EXISTS');
     expect(block).toContain('count(n) AS orphanCount');
-    expect(block).toContain('python3');
+    expect(block).toContain('grep -oE');
+    expect(block).toContain('"orphanCount":"[0-9]+"');
     expect(block).toContain('orphanCount');
     expect(block).toMatch(/if \[\s*"\$ORPHAN_COUNT"\s+-gt 0\s*\];\s*then/);
     expect(block).toContain('⚠');
     expect(block).toMatch(/\bfi\b/);
+    // Regression guard: ensure the broken Python parser was removed.
+    expect(block).not.toContain('python3');
   });
 });
