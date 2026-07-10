@@ -1167,14 +1167,13 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
 
 ## Reference: KnowledgeGraph Schema
 
-### Node Types (13 total)
+### Codebase Subgraph Node Types (12 total)
 | Type | Description | ID Convention |
 |---|---|---|
 | `file` | Source code file | `file:<relative-path>` |
 | `function` | Function or method | `function:<relative-path>:<name>` |
 | `class` | Class, interface, or type | `class:<relative-path>:<name>` |
 | `module` | Logical module or package | `module:<name>` |
-| `concept` | Abstract concept or pattern | `concept:<name>` |
 | `config` | Configuration file (YAML, JSON, TOML, env) | `config:<relative-path>` |
 | `document` | Documentation file (Markdown, RST, TXT) | `document:<relative-path>` |
 | `service` | Deployable service definition (Dockerfile, K8s) | `service:<relative-path>` |
@@ -1183,6 +1182,10 @@ Report to the user: `[Phase 6/6] Saving knowledge graph...`
 | `pipeline` | CI/CD pipeline configuration | `pipeline:<relative-path>` |
 | `schema` | Schema definition (GraphQL, Protobuf, Prisma) | `schema:<relative-path>` |
 | `resource` | Infrastructure resource (Terraform, CloudFormation) | `resource:<relative-path>` |
+
+### Knowledge Subgraph Node Types
+
+Knowledge nodes (`kind: "knowledge"`) are **not** produced by `/grasp` — they are produced by the knowledge-layer skills: `/grasp-domain` (with `source: "code-analysis"`) and `/grasp-concept` (with `source: "concept"`). The full taxonomy is: `Domain`, `Feature`, `Operation`, `Actor`, `BusinessRule`, `Entity`, `Risk`, `Constraint`, `Decision`, `Concept`, `Claim`. For the canonical list and per-type properties, see `docs/architecture/neo4j-schema.md`.
 
 ### Edge Types (27 total)
 | Category | Types |
