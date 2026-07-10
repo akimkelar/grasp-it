@@ -24,9 +24,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = resolve(__dirname, '../../../grasp-it-plugin/skills/grasp-concept/push-concept-graph.mjs');
 
 function runPushConceptGraph(projectRoot, extraEnv = {}) {
+  // Both undefined and empty-string values are treated as "delete this var" so
+  // tests can intentionally clear inherited env vars (e.g. NEO4J_URI='') without
+  // the empty string leaking into the child as a falsy-but-present value that
+  // could mask a real config from ~/.grasp-it/neo4j.env or the project .env file.
   const env = { ...process.env };
   for (const [key, val] of Object.entries(extraEnv)) {
-    if (val === undefined) {
+    if (val === undefined || val === '') {
       delete env[key];
     } else {
       env[key] = val;
